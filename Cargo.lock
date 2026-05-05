@@ -1636,6 +1636,7 @@ dependencies = [
 name = "rustic-asset"
 version = "0.0.1"
 dependencies = [
+ "image",
  "quick-xml 0.36.2",
  "rustic-core",
  "serde",

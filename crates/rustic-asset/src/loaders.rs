@@ -4,7 +4,7 @@
 
 use crate::error::AssetResult;
 use crate::parsers::{
-    character::CharacterDefinition, chart::ParsedSong, sparrow::SparrowAtlas,
+    character::CharacterDefinition, chart::ParsedSong, png::PngImage, sparrow::SparrowAtlas,
     stage::StageDefinition,
 };
 use crate::path::AssetPath;
@@ -20,6 +20,12 @@ pub fn load_sparrow(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResu
     let src = resolver.resolve(path)?;
     let bytes = src.read_all()?;
     SparrowAtlas::parse(&bytes)
+}
+
+pub fn load_png(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult<PngImage> {
+    let src = resolver.resolve(path)?;
+    let bytes = src.read_all()?;
+    PngImage::parse(&bytes)
 }
 
 pub fn load_character(
@@ -72,6 +78,20 @@ mod tests {
         "objects": [{ "id": "stageback", "image": "images/stageback.png" }]
     }"#;
 
+    fn tiny_png() -> Vec<u8> {
+        use image::ImageEncoder;
+
+        let rgba = [
+            1, 2, 3, 255, //
+            4, 5, 6, 255,
+        ];
+        let mut out = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut out)
+            .write_image(&rgba, 2, 1, image::ColorType::Rgba8.into())
+            .unwrap();
+        out
+    }
+
     #[test]
     fn load_chart_through_resolver() {
         let mut resolver = OverlayResolver::new();
@@ -94,6 +114,18 @@ mod tests {
         let atlas = load_sparrow(&resolver, &ap("images/bf.xml")).unwrap();
         assert_eq!(atlas.image_path, "bf.png");
         assert_eq!(atlas.frames.len(), 1);
+    }
+
+    #[test]
+    fn load_png_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(ap("images/test.png"), tiny_png());
+        resolver.push_overlay(overlay);
+
+        let image = load_png(&resolver, &ap("images/test.png")).unwrap();
+        assert_eq!((image.width, image.height), (2, 1));
+        assert_eq!(image.rgba.len(), 8);
     }
 
     #[test]

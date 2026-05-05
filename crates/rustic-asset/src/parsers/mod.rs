@@ -3,6 +3,7 @@
 
 pub mod character;
 pub mod chart;
+pub mod png;
 pub mod sparrow;
 pub mod stage;
 pub mod types;
