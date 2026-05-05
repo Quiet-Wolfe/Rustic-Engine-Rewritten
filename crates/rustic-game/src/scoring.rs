@@ -4,12 +4,15 @@
 //! still centralising the FNF gameplay math under one type.
 //!
 //! ref: 50fccded:source/PlayState.hx:1684-1716   // popUpScore
+//! ref: 50fccded:source/PlayState.hx:1574-1577   // late note health penalty
 //! ref: 50fccded:source/PlayState.hx:2028-2042   // noteMiss
 //! ref: 50fccded:source/PlayState.hx:1961-1977   // held sustain goodNoteHit
 //! ref: 50fccded:source/PlayState.hx:2096-2139   // goodNoteHit
 //! ref: 50fccded:source/Note.hx:172-184          // canBeHit / tooLate
 
-use crate::judgment::{health_delta, score_value, Judgment, JudgmentWindows};
+use crate::judgment::{
+    health_delta, late_note_health_delta, score_value, Judgment, JudgmentWindows,
+};
 use crate::note::Lane;
 use crate::state::{PlayState, MAX_HEALTH};
 use rustic_core::input::NormalizedInputEvent;
@@ -44,13 +47,23 @@ impl PlayState {
         self.apply_health(health_delta(Judgment::Sick));
     }
 
-    /// Player either pressed an empty lane or let a note pass beyond the
-    /// safe zone.
+    /// Player pressed an empty lane or the wrong lane. This mirrors
+    /// `noteMiss`; late unhit notes use `register_late_note_miss`.
+    /// ref: 50fccded:source/PlayState.hx:2028-2042
     pub fn register_miss(&mut self) {
         self.score += score_value(Judgment::Miss);
         self.combo = 0;
         self.misses += 1;
         self.apply_health(health_delta(Judgment::Miss));
+    }
+
+    /// Player-side note became too late/unhit. Base FNF's offscreen note
+    /// path only reduces health and mutes vocals; score/combo are not
+    /// touched by this branch.
+    /// ref: 50fccded:source/PlayState.hx:1574-1577
+    pub fn register_late_note_miss(&mut self) {
+        self.misses += 1;
+        self.apply_health(late_note_health_delta());
     }
 
     /// Try to consume a player keypress against the closest unresolved
@@ -147,7 +160,7 @@ impl PlayState {
         let count = newly_missed.len() as u32;
         for id in newly_missed {
             self.resolved_notes.push(id);
-            self.register_miss();
+            self.register_late_note_miss();
         }
         count
     }
@@ -240,6 +253,20 @@ mod tests {
             s.register_miss();
         }
         assert!(s.is_dead());
+    }
+
+    #[test]
+    fn late_note_miss_uses_og_health_penalty_without_score_or_combo_reset() {
+        let mut s = PlayState::new();
+        s.score = 1_000;
+        s.combo = 7;
+
+        s.register_late_note_miss();
+
+        assert_eq!(s.score, 1_000);
+        assert_eq!(s.combo, 7);
+        assert_eq!(s.misses, 1);
+        assert!((s.health - (INITIAL_HEALTH - 0.0475)).abs() < 1e-6);
     }
 
     #[test]
@@ -353,10 +380,15 @@ mod tests {
         let mut s = PlayState::new();
         add_note(&mut s, 0, Lane::Left, 48_000);
         add_note(&mut s, 1, Lane::Left, 48_000 + 96_000);
+        s.score = 500;
+        s.combo = 3;
         let cursor = Samples(48_000 + 9_000);
         let missed = s.expire_late_notes(cursor, 48_000);
         assert_eq!(missed, 1);
         assert!(s.resolved_notes.contains(&NoteId::new(0)));
         assert_eq!(s.misses, 1);
+        assert_eq!(s.score, 500);
+        assert_eq!(s.combo, 3);
+        assert!((s.health - (INITIAL_HEALTH - 0.0475)).abs() < 1e-6);
     }
 }

@@ -15,6 +15,6 @@ pub mod scoring;
 pub mod state;
 
 pub use error::{GameError, GameResult};
-pub use judgment::{health_delta, score_value, Judgment, JudgmentWindows};
+pub use judgment::{health_delta, late_note_health_delta, score_value, Judgment, JudgmentWindows};
 pub use note::{notes_from_chart, Lane, Note};
 pub use state::{PlayState, DEATH_HEALTH, INITIAL_HEALTH, MAX_HEALTH};

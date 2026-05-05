@@ -7,6 +7,7 @@
 //! ref: 50fccded:source/Conductor.hx:26-27       // safeFrames=10, safeZoneOffset=(10/60)*1000
 //! ref: 50fccded:source/PlayState.hx:1684-1714   // popUpScore thresholds (sick/good/bad/shit)
 //! ref: 50fccded:source/PlayState.hx:2028-2042   // noteMiss: -10 score, -0.04 health, combo=0
+//! ref: 50fccded:source/PlayState.hx:1574-1577   // late note: -0.0475 health, vocals=0
 //! ref: 50fccded:source/PlayState.hx:2096-2109   // goodNoteHit: +1 combo, +0.023 health (taps)
 //! ref: 50fccded:source/PlayState.hx:78          // health starts at 1.0
 //! ref: 50fccded:source/PlayState.hx:1297-1298   // health clamped to 2.0
@@ -81,14 +82,24 @@ pub fn score_value(j: Judgment) -> i64 {
 }
 
 /// Health delta for a judgment. Upstream applies the same +0.023 hit
-/// health for normal note data, including sustain child notes.
+/// health for normal note data, including sustain child notes. `Miss`
+/// here is the bad-press `noteMiss` path; late notes use
+/// `late_note_health_delta`.
 /// ref: 50fccded:source/PlayState.hx:2107 (+0.023 on hit)
-/// ref: 50fccded:source/PlayState.hx:2032 (-0.04 on miss)
+/// ref: 50fccded:source/PlayState.hx:2032 (-0.04 on bad press miss)
 pub fn health_delta(j: Judgment) -> f32 {
     match j {
         Judgment::Sick | Judgment::Good | Judgment::Bad | Judgment::Shit => 0.023,
         Judgment::Miss => -0.04,
     }
+}
+
+/// Health delta for an unhit player note that has gone late/offscreen.
+/// This is distinct from `noteMiss` in base FNF: it does not apply the
+/// -10 score or combo reset branch.
+/// ref: 50fccded:source/PlayState.hx:1574-1577
+pub fn late_note_health_delta() -> f32 {
+    -0.0475
 }
 
 #[cfg(test)]
@@ -132,5 +143,6 @@ mod tests {
     fn health_deltas_match_fnf() {
         assert!((health_delta(Judgment::Sick) - 0.023).abs() < 1e-6);
         assert!((health_delta(Judgment::Miss) - -0.04).abs() < 1e-6);
+        assert!((late_note_health_delta() - -0.0475).abs() < 1e-6);
     }
 }
