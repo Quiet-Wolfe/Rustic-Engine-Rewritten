@@ -5,7 +5,7 @@
 use crate::error::AssetResult;
 use crate::parsers::{
     character::CharacterDefinition, chart::ParsedSong, png::PngImage, sparrow::SparrowAtlas,
-    stage::StageDefinition,
+    stage::StageDefinition, text_list::TextList,
 };
 use crate::path::AssetPath;
 use crate::resolver::AssetResolver;
@@ -43,6 +43,12 @@ pub fn load_stage(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult
     StageDefinition::parse(&bytes)
 }
 
+pub fn load_text_list(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult<TextList> {
+    let src = resolver.resolve(path)?;
+    let bytes = src.read_all()?;
+    TextList::parse(&bytes)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -77,6 +83,8 @@ mod tests {
         "id": "stage",
         "objects": [{ "id": "stageback", "image": "images/stageback.png" }]
     }"#;
+
+    const FREEPLAY_LIST: &str = "Tutorial\nBopeebo\nFresh\nDadbattle\n";
 
     fn tiny_png() -> Vec<u8> {
         use image::ImageEncoder;
@@ -156,6 +164,23 @@ mod tests {
     }
 
     #[test]
+    fn load_text_list_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(
+            ap("data/freeplaySonglist.txt"),
+            FREEPLAY_LIST.as_bytes().to_vec(),
+        );
+        resolver.push_overlay(overlay);
+
+        let list = load_text_list(&resolver, &ap("data/freeplaySonglist.txt")).unwrap();
+        assert_eq!(
+            list.items,
+            vec!["Tutorial", "Bopeebo", "Fresh", "Dadbattle"]
+        );
+    }
+
+    #[test]
     fn tracked_source_seed_definitions_parse() {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = manifest_dir.parent().unwrap().parent().unwrap();
@@ -169,5 +194,11 @@ mod tests {
         let stage = load_stage(&resolver, &ap("data/stages/stage.json")).unwrap();
         assert_eq!(stage.id, "stage");
         assert_eq!(stage.objects.len(), 3);
+
+        let songs = load_text_list(&resolver, &ap("data/freeplaySonglist.txt")).unwrap();
+        assert_eq!(
+            songs.items,
+            vec!["Tutorial", "Bopeebo", "Fresh", "Dadbattle"]
+        );
     }
 }

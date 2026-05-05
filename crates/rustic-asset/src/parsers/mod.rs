@@ -6,4 +6,5 @@ pub mod chart;
 pub mod png;
 pub mod sparrow;
 pub mod stage;
+pub mod text_list;
 pub mod types;

@@ -16,7 +16,7 @@ pub mod source;
 pub mod watcher;
 
 pub use error::{AssetError, AssetResult};
-pub use loaders::{load_character, load_chart, load_png, load_sparrow, load_stage};
+pub use loaders::{load_character, load_chart, load_png, load_sparrow, load_stage, load_text_list};
 pub use parsers::character::{CharacterAnimation, CharacterDefinition};
 pub use parsers::chart::{Chart, ChartNote, ChartSection, ParsedSong};
 pub use parsers::png::PngImage;
@@ -24,6 +24,7 @@ pub use parsers::sparrow::{SparrowAtlas, SparrowFrame};
 pub use parsers::stage::{
     stage_id_for_song_name, StageCharacterSlot, StageDefinition, StageObject,
 };
+pub use parsers::text_list::TextList;
 pub use parsers::types::AssetVec2;
 pub use path::AssetPath;
 pub use resolver::{AssetResolver, OverlayResolver};
