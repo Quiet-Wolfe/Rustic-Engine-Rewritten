@@ -1625,6 +1625,7 @@ dependencies = [
  "rustic-game",
  "rustic-render",
  "serde",
+ "tempfile",
  "toml",
  "tracing",
  "tracing-subscriber",
