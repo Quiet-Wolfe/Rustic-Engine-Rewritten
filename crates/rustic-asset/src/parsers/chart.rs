@@ -1,4 +1,5 @@
 //! FNF base-engine chart JSON parser.
+// LINT-ALLOW: long-file source-referenced chart tests stay beside lane parsing.
 //!
 //! ref: 50fccded:source/Song.hx:10-21      // SwagSong typedef
 //! ref: 50fccded:source/Section.hx:3-12    // SwagSection typedef
@@ -179,7 +180,7 @@ pub struct ParsedSong {
 
 impl ParsedSong {
     pub fn parse(bytes: &[u8]) -> AssetResult<Self> {
-        let outer: OuterSong = serde_json::from_slice(bytes)
+        let outer: OuterSong = serde_json::from_slice(trim_chart_bytes(bytes))
             .map_err(|e| AssetError::InvalidPath(format!("chart json: {e}")))?;
         let raw = outer.song;
         let mut chart = Chart {
@@ -223,6 +224,17 @@ impl ParsedSong {
             chart,
         })
     }
+}
+
+fn trim_chart_bytes(mut bytes: &[u8]) -> &[u8] {
+    while let Some((&last, rest)) = bytes.split_last() {
+        if last == 0 || last.is_ascii_whitespace() {
+            bytes = rest;
+        } else {
+            break;
+        }
+    }
+    bytes
 }
 
 fn parse_note(section_index: u32, must_hit: bool, n: &RawNote) -> AssetResult<ChartNote> {
@@ -354,6 +366,15 @@ mod tests {
         // sets validScore=true on load. Mirror that.
         let p = ParsedSong::parse(SAMPLE.as_bytes()).unwrap();
         assert!(p.chart.valid_score);
+    }
+
+    #[test]
+    fn accepts_reference_chart_nul_padding() {
+        let mut bytes = SAMPLE.as_bytes().to_vec();
+        bytes.extend_from_slice(&[0, 0, 0, b'\n']);
+
+        let p = ParsedSong::parse(&bytes).unwrap();
+        assert_eq!(p.name, "Test");
     }
 
     #[test]
