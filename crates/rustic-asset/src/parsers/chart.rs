@@ -1,0 +1,388 @@
+//! FNF base-engine chart JSON parser.
+//!
+//! ref: 50fccded:source/Song.hx:10-21      // SwagSong typedef
+//! ref: 50fccded:source/Section.hx:3-12    // SwagSection typedef
+//! ref: 50fccded:source/Song.hx:70-75      // parseJSONshit / validScore=true
+//! ref: 50fccded:source/PlayState.hx:1014-1018  // mustHit lane-flip rule
+//!
+//! Baseline pin: see `docs/fnf_baseline.md` (commit `50fccded`, tag
+//! `v0.2.7.1`, 2021-02-14). Source lives at `references/Funkin/`.
+//!
+//! Wire format (from `parseJSONshit`):
+//!
+//! ```json
+//! {
+//!   "song": {
+//!     "song": "Bopeebo",
+//!     "bpm": 100,
+//!     "speed": 1.0,
+//!     "needsVoices": true,
+//!     "player1": "bf",
+//!     "player2": "dad",
+//!     "notes": [
+//!       { "mustHitSection": true,
+//!         "lengthInSteps": 16,
+//!         "typeOfSection": 0,
+//!         "sectionNotes": [[2400.0, 0, 0]],
+//!         "altAnim": false,
+//!         "bpm": 100, "changeBPM": false }
+//!     ]
+//!   }
+//! }
+//! ```
+//!
+//! Lanes:
+//!   0..3  -> "owner" lanes for the section.
+//!   4..7  -> "non-owner" lanes for the section.
+//!
+//! Lane-ownership rule from PlayState.hx:1014-1018 — start with
+//! `gottaHitNote = mustHitSection`, and flip when `songNotes[1] > 3`.
+//! The parser preserves the raw lane index and exposes a derived
+//! `is_player` boolean.
+//!
+//! Stage is NOT in `SwagSong` at this baseline. PlayState picks the
+//! stage from the song name (`PlayState.hx:227`), so chart parsing
+//! does not produce one. The owning gameplay/screen layer should
+//! resolve stage from song name.
+
+use crate::error::{AssetError, AssetResult};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OuterSong {
+    song: RawSong,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawSong {
+    song: String,
+    bpm: f64,
+    #[serde(default = "default_speed")]
+    speed: f64,
+    #[serde(default = "default_needs_voices")]
+    needs_voices: bool,
+    #[serde(default = "default_player1")]
+    player1: String,
+    #[serde(default = "default_player2")]
+    player2: String,
+    #[serde(default)]
+    valid_score: bool,
+    notes: Vec<RawSection>,
+}
+
+fn default_speed() -> f64 {
+    1.0
+}
+
+// ref: 50fccded:source/Song.hx:28 — `needsVoices` defaults to true.
+fn default_needs_voices() -> bool {
+    true
+}
+
+// ref: 50fccded:source/Song.hx:31-32 — player defaults `bf` / `dad`.
+fn default_player1() -> String {
+    "bf".to_string()
+}
+
+fn default_player2() -> String {
+    "dad".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawSection {
+    // ref: 50fccded:source/Section.hx:20 — defaults to true.
+    #[serde(default = "default_must_hit_section")]
+    must_hit_section: bool,
+    // ref: 50fccded:source/Section.hx:18 — defaults to 16.
+    #[serde(default = "default_length_in_steps")]
+    length_in_steps: u32,
+    // ref: 50fccded:source/Section.hx:19 — defaults to 0.
+    #[serde(default)]
+    type_of_section: u32,
+    #[serde(default)]
+    section_notes: Vec<RawNote>,
+    #[serde(default)]
+    alt_anim: bool,
+    #[serde(default)]
+    bpm: Option<f64>,
+    /// FNF spells this `changeBPM` (full caps), which `rename_all =
+    /// "camelCase"` would map to `changeBpm`. Override explicitly.
+    #[serde(default, rename = "changeBPM")]
+    change_bpm: bool,
+}
+
+fn default_must_hit_section() -> bool {
+    true
+}
+
+fn default_length_in_steps() -> u32 {
+    16
+}
+
+/// `[time_ms, lane, sustain_ms]` plus optional trailing fields some
+/// charts include but we don't use yet (e.g. note type). `serde_json`
+/// drops the extras when reading into a tuple, so we read into a
+/// `Vec<f64>` and validate length.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RawNote(Vec<serde_json::Value>);
+
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct ChartNote {
+    /// Absolute time in milliseconds from song start.
+    pub time_ms: f64,
+    /// Sustain length in milliseconds (0 for tap).
+    pub sustain_ms: f64,
+    /// Raw lane index 0..7 as it appeared in the chart.
+    pub raw_lane: u8,
+    /// Resolved owner: `true` = player (BF), `false` = opponent.
+    pub is_player: bool,
+    /// Section index for diagnostics and rewind.
+    pub section_index: u32,
+}
+
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct ChartSection {
+    pub index: u32,
+    pub must_hit_section: bool,
+    pub length_in_steps: u32,
+    pub type_of_section: u32,
+    pub bpm_change: Option<f64>,
+    pub alt_anim: bool,
+}
+
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct Chart {
+    pub bpm: f64,
+    pub speed: f64,
+    pub needs_voices: bool,
+    pub player1: String,
+    pub player2: String,
+    /// Mirrors `parseJSONshit` setting `validScore = true` after
+    /// load.
+    /// ref: 50fccded:source/Song.hx:70-75
+    pub valid_score: bool,
+    pub sections: Vec<ChartSection>,
+    pub notes: Vec<ChartNote>,
+}
+
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct ParsedSong {
+    pub name: String,
+    pub chart: Chart,
+}
+
+impl ParsedSong {
+    pub fn parse(bytes: &[u8]) -> AssetResult<Self> {
+        let outer: OuterSong = serde_json::from_slice(bytes)
+            .map_err(|e| AssetError::InvalidPath(format!("chart json: {e}")))?;
+        let raw = outer.song;
+        let mut chart = Chart {
+            bpm: raw.bpm,
+            speed: raw.speed,
+            needs_voices: raw.needs_voices,
+            player1: raw.player1,
+            player2: raw.player2,
+            // ref: 50fccded:source/Song.hx:73 — parseJSONshit sets
+            // validScore=true unconditionally after load.
+            valid_score: true,
+            sections: Vec::with_capacity(raw.notes.len()),
+            notes: Vec::new(),
+        };
+
+        for (i, sec) in raw.notes.into_iter().enumerate() {
+            let bpm_change = if sec.change_bpm { sec.bpm } else { None };
+            chart.sections.push(ChartSection {
+                index: i as u32,
+                must_hit_section: sec.must_hit_section,
+                length_in_steps: sec.length_in_steps,
+                type_of_section: sec.type_of_section,
+                bpm_change,
+                alt_anim: sec.alt_anim,
+            });
+            for n in sec.section_notes {
+                let parsed = parse_note(i as u32, sec.must_hit_section, &n)?;
+                chart.notes.push(parsed);
+            }
+        }
+
+        // Stable sort by time so gameplay can step through linearly.
+        chart.notes.sort_by(|a, b| {
+            a.time_ms
+                .partial_cmp(&b.time_ms)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Ok(Self {
+            name: raw.song,
+            chart,
+        })
+    }
+}
+
+fn parse_note(section_index: u32, must_hit: bool, n: &RawNote) -> AssetResult<ChartNote> {
+    if n.0.len() < 3 {
+        return Err(AssetError::InvalidPath(format!(
+            "section {section_index} note has {} fields (need at least 3)",
+            n.0.len()
+        )));
+    }
+    let time_ms = as_f64(&n.0[0]).ok_or_else(|| invalid("note[0] not number"))?;
+    let lane_f = as_f64(&n.0[1]).ok_or_else(|| invalid("note[1] not number"))?;
+    let sustain_ms = as_f64(&n.0[2]).unwrap_or(0.0).max(0.0);
+
+    if !(0.0..=7.0).contains(&lane_f) {
+        return Err(invalid(&format!("lane {lane_f} out of 0..=7")));
+    }
+    let raw_lane = lane_f as u8;
+    // FNF flip rule: notes with raw lane 0..3 belong to whoever owns
+    // the section ("must_hit_section"); 4..7 belong to the other side.
+    let is_owner_lane = raw_lane < 4;
+    let is_player = if must_hit {
+        is_owner_lane
+    } else {
+        !is_owner_lane
+    };
+
+    Ok(ChartNote {
+        time_ms,
+        sustain_ms,
+        raw_lane,
+        is_player,
+        section_index,
+    })
+}
+
+fn as_f64(v: &serde_json::Value) -> Option<f64> {
+    v.as_f64().or_else(|| v.as_i64().map(|i| i as f64))
+}
+
+fn invalid(msg: &str) -> AssetError {
+    AssetError::InvalidPath(format!("chart: {msg}"))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    const SAMPLE: &str = r#"{
+        "song": {
+            "song": "Test",
+            "bpm": 120.0,
+            "speed": 2.0,
+            "needsVoices": true,
+            "player1": "bf",
+            "player2": "dad",
+            "stage": "stage",
+            "notes": [
+                {
+                    "mustHitSection": true,
+                    "lengthInSteps": 16,
+                    "sectionNotes": [[1000.0, 0, 0], [1500.0, 5, 200]],
+                    "altAnim": false,
+                    "bpm": 120, "changeBPM": false
+                },
+                {
+                    "mustHitSection": false,
+                    "lengthInSteps": 16,
+                    "sectionNotes": [[2000.0, 2, 0], [2500.0, 6, 0]],
+                    "altAnim": false,
+                    "bpm": 140, "changeBPM": true
+                }
+            ]
+        }
+    }"#;
+
+    #[test]
+    fn parses_full_chart_and_sorts_notes() {
+        let p = ParsedSong::parse(SAMPLE.as_bytes()).unwrap();
+        assert_eq!(p.name, "Test");
+        assert_eq!(p.chart.bpm, 120.0);
+        assert_eq!(p.chart.speed, 2.0);
+        assert_eq!(p.chart.player1, "bf");
+        assert_eq!(p.chart.sections.len(), 2);
+        assert_eq!(p.chart.notes.len(), 4);
+
+        // Sorted by time:
+        let times: Vec<_> = p.chart.notes.iter().map(|n| n.time_ms).collect();
+        assert_eq!(times, vec![1000.0, 1500.0, 2000.0, 2500.0]);
+    }
+
+    #[test]
+    fn must_hit_section_resolves_owner() {
+        let p = ParsedSong::parse(SAMPLE.as_bytes()).unwrap();
+        // Section 0 is mustHit=true.
+        // Note (1000.0, lane=0)  -> owner lane (0..3) under mustHit -> player.
+        // Note (1500.0, lane=5)  -> non-owner lane (4..7) under mustHit -> opponent.
+        let n0 = p.chart.notes.iter().find(|n| n.time_ms == 1000.0).unwrap();
+        let n1 = p.chart.notes.iter().find(|n| n.time_ms == 1500.0).unwrap();
+        assert!(n0.is_player);
+        assert!(!n1.is_player);
+
+        // Section 1 is mustHit=false (flipped).
+        // (2000.0, lane=2) -> 0..3 lane under mustHit=false -> opponent.
+        // (2500.0, lane=6) -> 4..7 lane under mustHit=false -> player.
+        let n2 = p.chart.notes.iter().find(|n| n.time_ms == 2000.0).unwrap();
+        let n3 = p.chart.notes.iter().find(|n| n.time_ms == 2500.0).unwrap();
+        assert!(!n2.is_player);
+        assert!(n3.is_player);
+    }
+
+    #[test]
+    fn sustain_preserved() {
+        let p = ParsedSong::parse(SAMPLE.as_bytes()).unwrap();
+        let n = p.chart.notes.iter().find(|n| n.time_ms == 1500.0).unwrap();
+        assert_eq!(n.sustain_ms, 200.0);
+    }
+
+    #[test]
+    fn section_change_bpm_recorded() {
+        let p = ParsedSong::parse(SAMPLE.as_bytes()).unwrap();
+        assert_eq!(p.chart.sections[0].bpm_change, None);
+        assert_eq!(p.chart.sections[1].bpm_change, Some(140.0));
+    }
+
+    #[test]
+    fn valid_score_set_after_parse() {
+        // ref: 50fccded:source/Song.hx:73 — parseJSONshit unconditionally
+        // sets validScore=true on load. Mirror that.
+        let p = ParsedSong::parse(SAMPLE.as_bytes()).unwrap();
+        assert!(p.chart.valid_score);
+    }
+
+    #[test]
+    fn missing_optional_song_fields_get_fnf_defaults() {
+        // Only song name + bpm + notes; the rest should fall back to
+        // FNF defaults from Song.hx (needsVoices=true, bf/dad, speed=1).
+        let minimal = r#"{"song":{"song":"x","bpm":100,"notes":[]}}"#;
+        let p = ParsedSong::parse(minimal.as_bytes()).unwrap();
+        assert!(p.chart.needs_voices);
+        assert_eq!(p.chart.player1, "bf");
+        assert_eq!(p.chart.player2, "dad");
+        assert_eq!(p.chart.speed, 1.0);
+    }
+
+    #[test]
+    fn rejects_lane_out_of_range() {
+        let bad = r#"{"song":{"song":"x","bpm":100,"notes":[
+            {"mustHitSection":true,"lengthInSteps":16,
+             "sectionNotes":[[100.0,9,0]]}
+        ]}}"#;
+        assert!(ParsedSong::parse(bad.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn rejects_short_note_tuple() {
+        let bad = r#"{"song":{"song":"x","bpm":100,"notes":[
+            {"mustHitSection":true,"lengthInSteps":16,
+             "sectionNotes":[[100.0,0]]}
+        ]}}"#;
+        assert!(ParsedSong::parse(bad.as_bytes()).is_err());
+    }
+}

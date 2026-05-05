@@ -1,0 +1,10 @@
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+/assets/baked/
+.DS_Store
+
+# External upstream sources cloned for porting reference. Pinned by
+# commit + tag in docs/fnf_baseline.md, not by vendoring.
+/references/
+

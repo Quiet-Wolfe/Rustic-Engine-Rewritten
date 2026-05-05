@@ -1,0 +1,17 @@
+[package]
+name = "rustic-game"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[dependencies]
+rustic-core = { workspace = true }
+rustic-asset = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+glam = { workspace = true }

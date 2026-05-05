@@ -1,0 +1,38 @@
+[package]
+name = "rustic-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "rustic"
+path = "src/main.rs"
+
+[dependencies]
+rustic-core = { workspace = true }
+rustic-asset = { workspace = true }
+rustic-audio = { workspace = true }
+rustic-render = { workspace = true }
+rustic-game = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+winit = { workspace = true }
+wgpu = { workspace = true }
+pollster = { workspace = true }
+glam = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.13"
+log = "0.4"
+
+[features]
+default = []
+dev = ["dep:rustic-dev"]
+
+[dependencies.rustic-dev]
+workspace = true
+optional = true

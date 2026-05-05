@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rustic-core",
+    "crates/rustic-asset",
+    "crates/rustic-audio",
+    "crates/rustic-render",
+    "crates/rustic-game",
+    "crates/rustic-app",
+    "crates/rustic-dev",
+    "crates/rustanimate",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.78"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+rustic-core = { path = "crates/rustic-core" }
+rustic-asset = { path = "crates/rustic-asset" }
+rustic-audio = { path = "crates/rustic-audio" }
+rustic-render = { path = "crates/rustic-render" }
+rustic-game = { path = "crates/rustic-game" }
+rustic-dev = { path = "crates/rustic-dev" }
+rustanimate = { path = "crates/rustanimate" }
+
+thiserror = "1"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+bincode = "1"
+glam = { version = "0.27", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wgpu = "22"
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
+bytemuck = { version = "1", features = ["derive"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+pollster = "0.3"
+quick-xml = { version = "0.36", features = ["serialize"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 1

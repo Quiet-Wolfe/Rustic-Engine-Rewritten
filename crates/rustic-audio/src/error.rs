@@ -1,0 +1,16 @@
+use thiserror::Error;
+
+pub type AudioResult<T> = Result<T, AudioError>;
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum AudioError {
+    #[error("audio device unavailable: {0}")]
+    DeviceUnavailable(String),
+
+    #[error("decode failure: {0}")]
+    Decode(String),
+
+    #[error("seek out of range: {0}")]
+    SeekRange(String),
+}
