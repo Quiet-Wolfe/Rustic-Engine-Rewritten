@@ -154,4 +154,20 @@ mod tests {
         assert_eq!(stage.id, "stage");
         assert_eq!(stage.objects[0].image.as_str(), "images/stageback.png");
     }
+
+    #[test]
+    fn tracked_source_seed_definitions_parse() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
+        let source_root = workspace.join("assets/source");
+        let resolver = OverlayResolver::new().with_baked_root(source_root);
+
+        let bf = load_character(&resolver, &ap("data/characters/bf.json")).unwrap();
+        assert_eq!(bf.id, "bf");
+        assert_eq!(bf.animations.len(), 14);
+
+        let stage = load_stage(&resolver, &ap("data/stages/stage.json")).unwrap();
+        assert_eq!(stage.id, "stage");
+        assert_eq!(stage.objects.len(), 3);
+    }
 }

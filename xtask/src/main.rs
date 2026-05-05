@@ -2,8 +2,9 @@
 //!
 //! Subcommands:
 //!   - `bake [--check]` — bake source assets into `assets/baked/` and write
-//!     a manifest. Currently a no-op that emits the manifest shape so CI
-//!     and `--check` can verify staleness once real bakers land.
+//!     a manifest. Source assets are copied byte-for-byte for now; later
+//!     phases can replace individual extensions with real transforms while
+//!     preserving the manifest contract.
 //!   - `regression` — placeholder for the visual regression runner.
 
 use anyhow::{Context, Result};
@@ -52,13 +53,11 @@ struct BakeManifest {
 
 fn cmd_bake(check: bool) -> Result<()> {
     let root = workspace_root()?;
+    let source = root.join("assets/source");
     let baked = root.join("assets/baked");
     fs::create_dir_all(&baked).with_context(|| format!("create {}", baked.display()))?;
 
-    let manifest = BakeManifest {
-        version: 1,
-        ..Default::default()
-    };
+    let manifest = build_manifest(&source)?;
     let manifest_path = baked.join("manifest.json");
     let new_text = serde_json::to_string_pretty(&manifest)? + "\n";
 
@@ -70,8 +69,10 @@ fn cmd_bake(check: bool) -> Result<()> {
                 manifest_path.display()
             );
         }
+        check_baked_files(&source, &baked, &manifest)?;
         println!("bake: manifest up-to-date");
     } else {
+        write_baked_files(&source, &baked, &manifest)?;
         fs::write(&manifest_path, &new_text)
             .with_context(|| format!("write {}", manifest_path.display()))?;
         println!(
@@ -79,6 +80,88 @@ fn cmd_bake(check: bool) -> Result<()> {
             manifest_path.display(),
             manifest.entries.len()
         );
+    }
+    Ok(())
+}
+
+fn build_manifest(source: &Path) -> Result<BakeManifest> {
+    let mut files = Vec::new();
+    collect_files(source, &mut files)?;
+
+    let mut entries = std::collections::BTreeMap::new();
+    for file in files {
+        let logical = logical_path(source, &file)?;
+        entries.insert(logical.clone(), logical);
+    }
+
+    Ok(BakeManifest {
+        version: 1,
+        entries,
+    })
+}
+
+fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+        let entry = entry.with_context(|| format!("read entry in {}", dir.display()))?;
+        let path = entry.path();
+        let ty = entry
+            .file_type()
+            .with_context(|| format!("file type {}", path.display()))?;
+        if ty.is_dir() {
+            collect_files(&path, out)?;
+        } else if ty.is_file() {
+            out.push(path);
+        }
+    }
+    out.sort();
+    Ok(())
+}
+
+fn logical_path(source_root: &Path, path: &Path) -> Result<String> {
+    let relative = path
+        .strip_prefix(source_root)
+        .with_context(|| format!("strip {} from {}", source_root.display(), path.display()))?;
+    let parts = relative
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>();
+    Ok(parts.join("/"))
+}
+
+fn write_baked_files(source: &Path, baked: &Path, manifest: &BakeManifest) -> Result<()> {
+    for (logical, baked_relative) in &manifest.entries {
+        let src = source.join(logical);
+        let dst = baked.join(baked_relative);
+        if let Some(parent) = dst.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+        }
+        fs::copy(&src, &dst)
+            .with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
+    }
+    Ok(())
+}
+
+fn check_baked_files(source: &Path, baked: &Path, manifest: &BakeManifest) -> Result<()> {
+    for (logical, baked_relative) in &manifest.entries {
+        let src = source.join(logical);
+        let dst = baked.join(baked_relative);
+        let src_bytes = fs::read(&src).with_context(|| format!("read {}", src.display()))?;
+        let dst_bytes = fs::read(&dst).with_context(|| {
+            format!(
+                "baked file is missing or unreadable: {} (run `cargo xtask bake`)",
+                dst.display()
+            )
+        })?;
+        if src_bytes != dst_bytes {
+            anyhow::bail!(
+                "baked file is stale: {} (run `cargo xtask bake`)",
+                dst.display()
+            );
+        }
     }
     Ok(())
 }

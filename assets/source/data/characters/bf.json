@@ -1,0 +1,147 @@
+{
+  "id": "bf",
+  "atlas": "images/BOYFRIEND.xml",
+  "flipX": true,
+  "animations": [
+    {
+      "name": "idle",
+      "prefix": "BF idle dance",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": -5.0,
+        "y": 0.0
+      }
+    },
+    {
+      "name": "singUP",
+      "prefix": "BF NOTE UP0",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": -29.0,
+        "y": 27.0
+      }
+    },
+    {
+      "name": "singLEFT",
+      "prefix": "BF NOTE LEFT0",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": 12.0,
+        "y": -6.0
+      }
+    },
+    {
+      "name": "singRIGHT",
+      "prefix": "BF NOTE RIGHT0",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": -38.0,
+        "y": -7.0
+      }
+    },
+    {
+      "name": "singDOWN",
+      "prefix": "BF NOTE DOWN0",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": -10.0,
+        "y": -50.0
+      }
+    },
+    {
+      "name": "singUPmiss",
+      "prefix": "BF NOTE UP MISS",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": -29.0,
+        "y": 27.0
+      }
+    },
+    {
+      "name": "singLEFTmiss",
+      "prefix": "BF NOTE LEFT MISS",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": 12.0,
+        "y": 24.0
+      }
+    },
+    {
+      "name": "singRIGHTmiss",
+      "prefix": "BF NOTE RIGHT MISS",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": -30.0,
+        "y": 21.0
+      }
+    },
+    {
+      "name": "singDOWNmiss",
+      "prefix": "BF NOTE DOWN MISS",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": -11.0,
+        "y": -19.0
+      }
+    },
+    {
+      "name": "hey",
+      "prefix": "BF HEY",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": 7.0,
+        "y": 4.0
+      }
+    },
+    {
+      "name": "firstDeath",
+      "prefix": "BF dies",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": 37.0,
+        "y": 11.0
+      }
+    },
+    {
+      "name": "deathLoop",
+      "prefix": "BF Dead Loop",
+      "fps": 24,
+      "looped": true,
+      "offset": {
+        "x": 37.0,
+        "y": 5.0
+      }
+    },
+    {
+      "name": "deathConfirm",
+      "prefix": "BF Dead confirm",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": 37.0,
+        "y": 69.0
+      }
+    },
+    {
+      "name": "scared",
+      "prefix": "BF idle shaking",
+      "fps": 24,
+      "looped": false,
+      "offset": {
+        "x": -4.0,
+        "y": 0.0
+      }
+    }
+  ]
+}
