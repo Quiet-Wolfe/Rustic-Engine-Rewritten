@@ -67,9 +67,20 @@ impl AssetResolver for OverlayResolver {
         self.resolve_baked(path)
     }
 
-    fn watch(&mut self, _path: &AssetPath) -> AssetResult<Watcher> {
-        // Real implementation lands with hot-reload in Phase 1.
-        Ok(Watcher::placeholder())
+    fn watch(&mut self, path: &AssetPath) -> AssetResult<Watcher> {
+        for layer in &self.overlays {
+            match layer.resolve(path) {
+                Ok(AssetSource::File(file)) => return Watcher::file(file),
+                Ok(AssetSource::Bytes(_)) => return Ok(Watcher::placeholder()),
+                Err(AssetError::NotFound(_)) => continue,
+                Err(other) => return Err(other),
+            }
+        }
+
+        match self.resolve_baked(path)? {
+            AssetSource::File(file) => Watcher::file(file),
+            AssetSource::Bytes(_) => Ok(Watcher::placeholder()),
+        }
     }
 }
 
@@ -188,5 +199,21 @@ mod tests {
             AssetSource::File(p) => assert!(p.ends_with("ui/title.png")),
             _ => panic!("expected file source from baked root"),
         }
+    }
+
+    #[test]
+    fn watch_uses_resolved_disk_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("ui");
+        std::fs::create_dir_all(&nested).unwrap();
+        let file = nested.join("title.png");
+        std::fs::write(&file, b"BAKED").unwrap();
+
+        let mut resolver = OverlayResolver::new().with_baked_root(dir.path());
+        let mut watcher = resolver.watch(&ap("ui/title.png")).unwrap();
+        assert!(!watcher.poll().unwrap());
+
+        std::fs::write(&file, b"BAKED2").unwrap();
+        assert!(watcher.poll().unwrap());
     }
 }
