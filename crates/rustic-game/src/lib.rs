@@ -11,6 +11,7 @@
 pub mod error;
 pub mod judgment;
 pub mod note;
+pub mod progress;
 pub mod scoring;
 pub mod state;
 
