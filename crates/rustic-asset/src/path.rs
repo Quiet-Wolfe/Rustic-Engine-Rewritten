@@ -6,10 +6,10 @@
 //! tight.
 
 use crate::error::{AssetError, AssetResult};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssetPath(String);
 
 impl AssetPath {
@@ -64,6 +64,25 @@ impl fmt::Display for AssetPath {
     }
 }
 
+impl Serialize for AssetPath {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for AssetPath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        Self::new(raw).map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -90,5 +109,14 @@ mod tests {
     fn rejects_empty() {
         assert!(AssetPath::new("").is_err());
         assert!(AssetPath::new("///").is_err());
+    }
+
+    #[test]
+    fn serde_deserialize_normalizes_and_rejects_parent() {
+        let p: AssetPath = serde_json::from_str(r#""images\\bf/./idle.png""#).unwrap();
+        assert_eq!(p.as_str(), "images/bf/idle.png");
+
+        let err = serde_json::from_str::<AssetPath>(r#""images/../secret.png""#);
+        assert!(err.is_err());
     }
 }

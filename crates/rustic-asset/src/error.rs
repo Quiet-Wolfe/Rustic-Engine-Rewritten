@@ -11,6 +11,9 @@ pub enum AssetError {
     #[error("invalid asset path: {0}")]
     InvalidPath(String),
 
+    #[error("invalid asset data: {0}")]
+    InvalidData(String),
+
     #[error("io error reading {path}: {source}")]
     Io {
         path: String,

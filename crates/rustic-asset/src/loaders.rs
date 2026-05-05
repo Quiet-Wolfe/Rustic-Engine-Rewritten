@@ -3,7 +3,10 @@
 //! touch the filesystem directly.
 
 use crate::error::AssetResult;
-use crate::parsers::{chart::ParsedSong, sparrow::SparrowAtlas};
+use crate::parsers::{
+    character::CharacterDefinition, chart::ParsedSong, sparrow::SparrowAtlas,
+    stage::StageDefinition,
+};
 use crate::path::AssetPath;
 use crate::resolver::AssetResolver;
 
@@ -17,6 +20,21 @@ pub fn load_sparrow(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResu
     let src = resolver.resolve(path)?;
     let bytes = src.read_all()?;
     SparrowAtlas::parse(&bytes)
+}
+
+pub fn load_character(
+    resolver: &dyn AssetResolver,
+    path: &AssetPath,
+) -> AssetResult<CharacterDefinition> {
+    let src = resolver.resolve(path)?;
+    let bytes = src.read_all()?;
+    CharacterDefinition::parse(&bytes)
+}
+
+pub fn load_stage(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult<StageDefinition> {
+    let src = resolver.resolve(path)?;
+    let bytes = src.read_all()?;
+    StageDefinition::parse(&bytes)
 }
 
 #[cfg(test)]
@@ -43,6 +61,17 @@ mod tests {
               frameX="-2" frameY="-3" frameWidth="104" frameHeight="106"/>
 </TextureAtlas>"#;
 
+    const CHARACTER_JSON: &str = r#"{
+        "id": "bf",
+        "atlas": "images/BOYFRIEND.xml",
+        "animations": [{ "name": "idle", "prefix": "BF idle dance" }]
+    }"#;
+
+    const STAGE_JSON: &str = r#"{
+        "id": "stage",
+        "objects": [{ "id": "stageback", "image": "images/stageback.png" }]
+    }"#;
+
     #[test]
     fn load_chart_through_resolver() {
         let mut resolver = OverlayResolver::new();
@@ -65,5 +94,32 @@ mod tests {
         let atlas = load_sparrow(&resolver, &ap("images/bf.xml")).unwrap();
         assert_eq!(atlas.image_path, "bf.png");
         assert_eq!(atlas.frames.len(), 1);
+    }
+
+    #[test]
+    fn load_character_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(
+            ap("data/characters/bf.json"),
+            CHARACTER_JSON.as_bytes().to_vec(),
+        );
+        resolver.push_overlay(overlay);
+
+        let character = load_character(&resolver, &ap("data/characters/bf.json")).unwrap();
+        assert_eq!(character.id, "bf");
+        assert_eq!(character.animations[0].name, "idle");
+    }
+
+    #[test]
+    fn load_stage_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(ap("data/stages/stage.json"), STAGE_JSON.as_bytes().to_vec());
+        resolver.push_overlay(overlay);
+
+        let stage = load_stage(&resolver, &ap("data/stages/stage.json")).unwrap();
+        assert_eq!(stage.id, "stage");
+        assert_eq!(stage.objects[0].image.as_str(), "images/stageback.png");
     }
 }
