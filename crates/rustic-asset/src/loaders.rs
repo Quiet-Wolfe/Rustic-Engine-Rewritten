@@ -201,4 +201,30 @@ mod tests {
             vec!["Tutorial", "Bopeebo", "Fresh", "Dadbattle"]
         );
     }
+
+    #[test]
+    fn tracked_source_week1_charts_parse() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
+        let source_root = workspace.join("assets/source");
+        let resolver = OverlayResolver::new().with_baked_root(source_root);
+
+        for (path, name) in [
+            ("data/tutorial/tutorial-easy.json", "Tutorial"),
+            ("data/tutorial/tutorial.json", "Tutorial"),
+            ("data/tutorial/tutorial-hard.json", "Tutorial"),
+            ("data/bopeebo/bopeebo.json", "Bopeebo"),
+            ("data/fresh/fresh-easy.json", "Fresh"),
+            ("data/fresh/fresh.json", "Fresh"),
+            ("data/fresh/fresh-hard.json", "Fresh"),
+            ("data/dadbattle/dadbattle-easy.json", "Dadbattle"),
+            ("data/dadbattle/dadbattle.json", "Dadbattle"),
+            ("data/dadbattle/dadbattle-hard.json", "Dadbattle"),
+        ] {
+            let song = load_chart(&resolver, &ap(path)).unwrap();
+            assert_eq!(song.name, name);
+            assert!(song.chart.valid_score);
+            assert!(!song.chart.notes.is_empty());
+        }
+    }
 }

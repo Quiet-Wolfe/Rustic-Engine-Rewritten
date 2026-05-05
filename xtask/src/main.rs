@@ -5,6 +5,8 @@
 //!     a manifest. Source assets are copied byte-for-byte for now; later
 //!     phases can replace individual extensions with real transforms while
 //!     preserving the manifest contract.
+//!   - `import-week1` — import normalized Week 1 chart/list data from the
+//!     pinned local `references/Funkin` checkout.
 //!   - `regression` — placeholder for the visual regression runner.
 
 use anyhow::{Context, Result};
@@ -21,6 +23,7 @@ fn main() -> Result<()> {
             let check = args.any(|a| a == "--check");
             cmd_bake(check)
         }
+        "import-week1" => cmd_import_week1(),
         "regression" => cmd_regression(),
         "" | "help" | "--help" | "-h" => {
             print_help();
@@ -39,6 +42,7 @@ fn print_help() {
     println!("Commands:");
     println!("  bake [--check]   Bake assets/source/ into assets/baked/.");
     println!("                   --check fails if the manifest would change.");
+    println!("  import-week1     Import OG Week 1 charts from references/Funkin.");
     println!("  regression       Run the visual regression suite (TODO).");
     println!("  help             Show this message.");
 }
@@ -164,6 +168,73 @@ fn check_baked_files(source: &Path, baked: &Path, manifest: &BakeManifest) -> Re
         }
     }
     Ok(())
+}
+
+fn cmd_import_week1() -> Result<()> {
+    let root = workspace_root()?;
+    let reference_data = root.join("references/Funkin/assets/data");
+    if !reference_data.exists() {
+        anyhow::bail!(
+            "missing pinned reference data at {}",
+            reference_data.display()
+        );
+    }
+
+    let source_data = root.join("assets/source/data");
+    let mut written = 0usize;
+    for relative in WEEK1_CHARTS {
+        let src = reference_data.join(relative);
+        let dst = source_data.join(relative);
+        import_text_asset(&src, &dst)?;
+        written += 1;
+    }
+
+    import_text_asset(
+        &reference_data.join("freeplaySonglist.txt"),
+        &source_data.join("freeplaySonglist.txt"),
+    )?;
+    written += 1;
+
+    println!("import-week1: wrote {written} source assets from references/Funkin");
+    Ok(())
+}
+
+const WEEK1_CHARTS: &[&str] = &[
+    "tutorial/tutorial-easy.json",
+    "tutorial/tutorial.json",
+    "tutorial/tutorial-hard.json",
+    "bopeebo/bopeebo.json",
+    "fresh/fresh-easy.json",
+    "fresh/fresh.json",
+    "fresh/fresh-hard.json",
+    "dadbattle/dadbattle-easy.json",
+    "dadbattle/dadbattle.json",
+    "dadbattle/dadbattle-hard.json",
+];
+
+fn import_text_asset(src: &Path, dst: &Path) -> Result<()> {
+    let bytes = fs::read(src).with_context(|| format!("read {}", src.display()))?;
+    let trimmed = trim_reference_text(&bytes);
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+
+    let mut out = Vec::with_capacity(trimmed.len() + 1);
+    out.extend_from_slice(trimmed);
+    out.push(b'\n');
+    fs::write(dst, out).with_context(|| format!("write {}", dst.display()))?;
+    Ok(())
+}
+
+fn trim_reference_text(mut bytes: &[u8]) -> &[u8] {
+    while let Some((&last, rest)) = bytes.split_last() {
+        if last == 0 || last.is_ascii_whitespace() {
+            bytes = rest;
+        } else {
+            break;
+        }
+    }
+    bytes
 }
 
 fn cmd_regression() -> Result<()> {
