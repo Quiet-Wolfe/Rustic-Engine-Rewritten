@@ -10,7 +10,8 @@
 //! ref: 50fccded:source/PlayState.hx:1462        // game over at health <= 0
 
 use crate::judgment::JudgmentWindows;
-use crate::note::Note;
+use crate::note::{notes_from_chart, Note};
+use rustic_asset::ParsedSong;
 use rustic_core::ids::{NoteId, SongId};
 use serde::{Deserialize, Serialize};
 
@@ -70,6 +71,21 @@ impl PlayState {
         Self::default()
     }
 
+    pub fn from_chart(song: SongId, parsed: &ParsedSong, sample_rate: u32) -> Self {
+        let mut state = Self::default();
+        state.load_chart(song, parsed, sample_rate);
+        state
+    }
+
+    pub fn load_chart(&mut self, song: SongId, parsed: &ParsedSong, sample_rate: u32) {
+        let notes = notes_from_chart(parsed.chart.notes.iter(), sample_rate);
+        *self = Self {
+            song: Some(song),
+            notes,
+            ..Self::default()
+        };
+    }
+
     /// Total non-miss judgments — used for accuracy and UI counters.
     pub fn total_hits(&self) -> u32 {
         self.sicks + self.goods + self.bads + self.shits
@@ -114,6 +130,7 @@ impl From<JudgmentWindowsSerde> for JudgmentWindows {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use rustic_core::time::Samples;
 
     #[test]
     fn defaults_match_fnf() {
@@ -137,5 +154,34 @@ mod tests {
         let zero = JudgmentWindowsSerde { safe_zone_ms: 0.0 };
         let back: JudgmentWindows = zero.into();
         assert!((back.safe_zone_ms.0 - JudgmentWindows::DEFAULT_SAFE_ZONE_MS).abs() < 1e-9);
+    }
+
+    #[test]
+    fn load_chart_sets_song_notes_and_fresh_counters() {
+        const CHART: &str = r#"{
+            "song": {
+                "song": "Bopeebo",
+                "bpm": 100.0,
+                "notes": [
+                    {"mustHitSection": true, "lengthInSteps": 16,
+                     "sectionNotes": [[1000.0, 0, 0], [2000.0, 5, 250]]}
+                ]
+            }
+        }"#;
+        let parsed = ParsedSong::parse(CHART.as_bytes()).unwrap();
+        let mut state = PlayState::new();
+        state.score = 1234;
+        state.combo = 12;
+        state.health = 0.25;
+
+        state.load_chart(SongId::new(7), &parsed, 48_000);
+
+        assert_eq!(state.song, Some(SongId::new(7)));
+        assert_eq!(state.notes.len(), 2);
+        assert_eq!(state.notes[0].hit_at, Samples(48_000));
+        assert_eq!(state.notes[1].sustain_samples, 12_000);
+        assert_eq!(state.score, 0);
+        assert_eq!(state.combo, 0);
+        assert!((state.health - INITIAL_HEALTH).abs() < 1e-6);
     }
 }
