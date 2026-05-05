@@ -11,6 +11,12 @@ pub enum AudioError {
     #[error("decode failure: {0}")]
     Decode(String),
 
+    #[error("invalid audio source: {0}")]
+    InvalidSource(String),
+
+    #[error("mix failure: {0}")]
+    Mix(String),
+
     #[error("seek out of range: {0}")]
     SeekRange(String),
 }
