@@ -78,7 +78,7 @@ impl PlayState {
     }
 
     pub fn load_chart(&mut self, song: SongId, parsed: &ParsedSong, sample_rate: u32) {
-        let notes = notes_from_chart(parsed.chart.notes.iter(), sample_rate);
+        let notes = notes_from_chart(parsed.chart.notes.iter(), sample_rate, parsed.chart.bpm);
         *self = Self {
             song: Some(song),
             notes,
@@ -177,9 +177,10 @@ mod tests {
         state.load_chart(SongId::new(7), &parsed, 48_000);
 
         assert_eq!(state.song, Some(SongId::new(7)));
-        assert_eq!(state.notes.len(), 2);
+        assert_eq!(state.notes.len(), 3);
         assert_eq!(state.notes[0].hit_at, Samples(48_000));
         assert_eq!(state.notes[1].sustain_samples, 12_000);
+        assert!(state.notes[2].is_sustain);
         assert_eq!(state.score, 0);
         assert_eq!(state.combo, 0);
         assert!((state.health - INITIAL_HEALTH).abs() < 1e-6);

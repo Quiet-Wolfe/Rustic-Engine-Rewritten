@@ -5,6 +5,7 @@
 //!
 //! ref: 50fccded:source/PlayState.hx:1010-1018  // strumTime, lane mod 4, mustHit flip
 //! ref: 50fccded:source/PlayState.hx:1028        // sustainLength = songNotes[2]
+//! ref: 50fccded:source/PlayState.hx:1031-1042   // sustain child note expansion
 
 use rustic_asset::ChartNote;
 use rustic_core::ids::NoteId;
@@ -43,6 +44,8 @@ pub struct Note {
     pub hit_at: Samples,
     /// Sustain duration in samples. Zero for tap notes.
     pub sustain_samples: i64,
+    /// True for generated sustain child notes.
+    pub is_sustain: bool,
     /// Whose side the note belongs to. `false` = player, `true` = opponent.
     pub opponent: bool,
 }
@@ -54,19 +57,65 @@ pub struct Note {
 pub fn notes_from_chart<'a>(
     chart_notes: impl IntoIterator<Item = &'a ChartNote>,
     sample_rate: u32,
+    bpm: f64,
 ) -> Vec<Note> {
     let scale = sample_rate as f64 / 1000.0;
-    chart_notes
+    let step_crochet_ms = 15_000.0 / bpm;
+    let mut expanded = Vec::new();
+
+    for n in chart_notes {
+        let lane = Lane::from_raw(n.raw_lane);
+        let opponent = !n.is_player;
+        expanded.push(ExpandedNote {
+            time_ms: n.time_ms,
+            lane,
+            sustain_ms: n.sustain_ms,
+            is_sustain: false,
+            opponent,
+        });
+
+        // ref: 50fccded:source/PlayState.hx:1031-1042 — floor
+        // sustainLength / stepCrochet and place child notes one step
+        // after the head note.
+        let sustain_steps = (n.sustain_ms / step_crochet_ms).floor() as u32;
+        for i in 0..sustain_steps {
+            expanded.push(ExpandedNote {
+                time_ms: n.time_ms + step_crochet_ms * (i + 1) as f64,
+                lane,
+                sustain_ms: 0.0,
+                is_sustain: true,
+                opponent,
+            });
+        }
+    }
+
+    expanded.sort_by(|a, b| {
+        a.time_ms
+            .partial_cmp(&b.time_ms)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    expanded
         .into_iter()
         .enumerate()
         .map(|(i, n)| Note {
             id: NoteId::new(i as u32),
-            lane: Lane::from_raw(n.raw_lane),
+            lane: n.lane,
             hit_at: Samples((n.time_ms * scale).round() as i64),
             sustain_samples: (n.sustain_ms * scale).round() as i64,
-            opponent: !n.is_player,
+            is_sustain: n.is_sustain,
+            opponent: n.opponent,
         })
         .collect()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ExpandedNote {
+    time_ms: f64,
+    lane: Lane,
+    sustain_ms: f64,
+    is_sustain: bool,
+    opponent: bool,
 }
 
 #[cfg(test)]
@@ -99,13 +148,14 @@ mod tests {
             }
         }"#;
         let parsed = ParsedSong::parse(CHART.as_bytes()).unwrap();
-        let notes = notes_from_chart(parsed.chart.notes.iter(), 48_000);
-        assert_eq!(notes.len(), 2);
+        let notes = notes_from_chart(parsed.chart.notes.iter(), 48_000, parsed.chart.bpm);
+        assert_eq!(notes.len(), 3);
 
         // First note: 1000ms, lane 0 (player owner because mustHit=true).
         assert_eq!(notes[0].lane, Lane::Left);
         assert_eq!(notes[0].hit_at, Samples(48_000));
         assert_eq!(notes[0].sustain_samples, 0);
+        assert!(!notes[0].is_sustain);
         assert!(!notes[0].opponent);
 
         // Second note: 2000ms, raw lane 5 → mod 4 = Down,
@@ -113,6 +163,14 @@ mod tests {
         assert_eq!(notes[1].lane, Lane::Down);
         assert_eq!(notes[1].hit_at, Samples(96_000));
         assert_eq!(notes[1].sustain_samples, 12_000);
+        assert!(!notes[1].is_sustain);
         assert!(notes[1].opponent);
+
+        // 250ms sustain at 100 BPM produces one child at stepCrochet
+        // (150ms) after the head.
+        assert_eq!(notes[2].lane, Lane::Down);
+        assert_eq!(notes[2].hit_at, Samples(103_200));
+        assert!(notes[2].is_sustain);
+        assert!(notes[2].opponent);
     }
 }

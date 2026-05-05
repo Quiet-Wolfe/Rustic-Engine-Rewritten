@@ -80,9 +80,8 @@ pub fn score_value(j: Judgment) -> i64 {
     }
 }
 
-/// Health delta for a judgment. Tap notes only — sustain segments use a
-/// smaller delta in upstream (`+0.004`); add a separate path when sustain
-/// scoring lands.
+/// Health delta for a judgment. Upstream applies the same +0.023 hit
+/// health for normal note data, including sustain child notes.
 /// ref: 50fccded:source/PlayState.hx:2107 (+0.023 on hit)
 /// ref: 50fccded:source/PlayState.hx:2032 (-0.04 on miss)
 pub fn health_delta(j: Judgment) -> f32 {

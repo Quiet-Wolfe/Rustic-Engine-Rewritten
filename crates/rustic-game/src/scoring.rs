@@ -5,7 +5,8 @@
 //!
 //! ref: 50fccded:source/PlayState.hx:1684-1716   // popUpScore
 //! ref: 50fccded:source/PlayState.hx:2028-2042   // noteMiss
-//! ref: 50fccded:source/PlayState.hx:2096-2109   // goodNoteHit
+//! ref: 50fccded:source/PlayState.hx:1961-1977   // held sustain goodNoteHit
+//! ref: 50fccded:source/PlayState.hx:2096-2139   // goodNoteHit
 //! ref: 50fccded:source/Note.hx:172-184          // canBeHit / tooLate
 
 use crate::judgment::{health_delta, score_value, Judgment, JudgmentWindows};
@@ -34,6 +35,13 @@ impl PlayState {
         }
         self.apply_health(health_delta(j));
         j
+    }
+
+    /// Sustain child notes do not call `popUpScore` and do not increment
+    /// combo in base FNF, but they do receive the normal hit health.
+    /// ref: 50fccded:source/PlayState.hx:2098-2139
+    pub fn register_sustain_hit(&mut self) {
+        self.apply_health(health_delta(Judgment::Sick));
     }
 
     /// Player either pressed an empty lane or let a note pass beyond the
@@ -77,8 +85,48 @@ impl PlayState {
 
         let (idx, abs_diff_ms) = best?;
         let id = self.notes[idx].id;
+        let is_sustain = self.notes[idx].is_sustain;
         self.resolved_notes.push(id);
-        Some(self.register_hit(abs_diff_ms))
+        if is_sustain {
+            self.register_sustain_hit();
+            Some(Judgment::Sick)
+        } else {
+            Some(self.register_hit(abs_diff_ms))
+        }
+    }
+
+    /// Resolve player-side sustain child notes while a lane is held. This
+    /// mirrors the per-frame held-input path in `PlayState.update`.
+    /// ref: 50fccded:source/PlayState.hx:1961-1977
+    pub fn resolve_held_sustains_in_lane(
+        &mut self,
+        cursor: Samples,
+        lane: Lane,
+        sample_rate: u32,
+    ) -> u32 {
+        let safe_zone = JudgmentWindows::from(self.windows).safe_zone_ms.0;
+        let ms_per_sample = 1000.0 / sample_rate as f64;
+        let mut hits = Vec::new();
+
+        for n in &self.notes {
+            if n.opponent || !n.is_sustain || n.lane != lane {
+                continue;
+            }
+            if self.resolved_notes.contains(&n.id) {
+                continue;
+            }
+            let diff_ms = (n.hit_at.0 - cursor.0) as f64 * ms_per_sample;
+            if diff_ms > -safe_zone && diff_ms < safe_zone * 0.5 {
+                hits.push(n.id);
+            }
+        }
+
+        let count = hits.len() as u32;
+        for id in hits {
+            self.resolved_notes.push(id);
+            self.register_sustain_hit();
+        }
+        count
     }
 
     /// Mark every player-side note whose hit_at is more than `safe_zone_ms`
@@ -136,6 +184,18 @@ mod tests {
             lane,
             hit_at: Samples(hit_at_samples),
             sustain_samples: 0,
+            is_sustain: false,
+            opponent: false,
+        });
+    }
+
+    fn add_sustain(s: &mut PlayState, id: u32, lane: Lane, hit_at_samples: i64) {
+        s.notes.push(Note {
+            id: NoteId::new(id),
+            lane,
+            hit_at: Samples(hit_at_samples),
+            sustain_samples: 0,
+            is_sustain: true,
             opponent: false,
         });
     }
@@ -241,6 +301,7 @@ mod tests {
             lane: Lane::Right,
             hit_at: Samples(48_000),
             sustain_samples: 0,
+            is_sustain: false,
             opponent: false,
         });
         s.notes.push(Note {
@@ -248,10 +309,43 @@ mod tests {
             lane: Lane::Left,
             hit_at: Samples(48_000),
             sustain_samples: 0,
+            is_sustain: false,
             opponent: true,
         });
         let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
         assert_eq!(j, None);
+    }
+
+    #[test]
+    fn sustain_hit_adds_health_without_score_or_combo() {
+        let mut s = PlayState::new();
+        add_sustain(&mut s, 0, Lane::Left, 48_000);
+
+        let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
+
+        assert_eq!(j, Some(Judgment::Sick));
+        assert_eq!(s.score, 0);
+        assert_eq!(s.combo, 0);
+        assert_eq!(s.sicks, 0);
+        assert!(s.resolved_notes.contains(&NoteId::new(0)));
+        assert!((s.health - (INITIAL_HEALTH + 0.023)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn held_lane_resolves_sustain_children_in_fnf_window() {
+        let mut s = PlayState::new();
+        add_sustain(&mut s, 0, Lane::Left, 48_000);
+        add_sustain(&mut s, 1, Lane::Left, 62_400);
+        add_note(&mut s, 2, Lane::Left, 48_000);
+
+        let count = s.resolve_held_sustains_in_lane(Samples(48_000), Lane::Left, 48_000);
+
+        assert_eq!(count, 1);
+        assert!(s.resolved_notes.contains(&NoteId::new(0)));
+        assert!(!s.resolved_notes.contains(&NoteId::new(1)));
+        assert!(!s.resolved_notes.contains(&NoteId::new(2)));
+        assert_eq!(s.score, 0);
+        assert_eq!(s.combo, 0);
     }
 
     #[test]
