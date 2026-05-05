@@ -1692,7 +1692,6 @@ version = "0.0.1"
 dependencies = [
  "bytemuck",
  "glam",
- "image",
  "pollster",
  "rustanimate",
  "rustic-asset",

@@ -19,7 +19,4 @@ pub enum RenderError {
 
     #[error("texture upload failed: {0}")]
     Texture(String),
-
-    #[error("image decode failed: {0}")]
-    Decode(String),
 }

@@ -1,11 +1,11 @@
 //! Texture upload path. See `PLAN.md` Section 7.
 //!
 //! Textures are renderer-owned: gameplay never touches `wgpu::Texture`.
-//! The app loads bytes via `AssetResolver`, passes them here, gets back
-//! an opaque `Texture` it can name with an `AssetId`.
+//! The app loads typed image data via `rustic-asset`, passes RGBA pixels
+//! here, and gets back an opaque `Texture` it can name with an `AssetId`.
 
-use crate::error::{RenderError, RenderResult};
 use crate::filter::FilterMode;
+use rustic_asset::PngImage;
 
 #[derive(Debug)]
 pub struct Texture {
@@ -17,21 +17,23 @@ pub struct Texture {
 }
 
 impl Texture {
-    /// Decode PNG bytes and upload as an RGBA8 sRGB 2D texture.
-    pub fn from_png_bytes(
+    /// Upload decoded PNG RGBA8 pixels as an sRGB 2D texture.
+    pub fn from_png_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        bytes: &[u8],
+        image: &PngImage,
         filter: FilterMode,
         label: Option<&str>,
-    ) -> RenderResult<Self> {
-        let img = image::load_from_memory(bytes)
-            .map_err(|e| RenderError::Decode(e.to_string()))?
-            .to_rgba8();
-        let (width, height) = img.dimensions();
-        Ok(Self::from_rgba8(
-            device, queue, &img, width, height, filter, label,
-        ))
+    ) -> Self {
+        Self::from_rgba8(
+            device,
+            queue,
+            &image.rgba,
+            image.width,
+            image.height,
+            filter,
+            label,
+        )
     }
 
     pub fn from_rgba8(
