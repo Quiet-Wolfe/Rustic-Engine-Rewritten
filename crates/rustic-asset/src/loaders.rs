@@ -191,6 +191,18 @@ mod tests {
         assert_eq!(bf.id, "bf");
         assert_eq!(bf.animations.len(), 14);
 
+        let dad = load_character(&resolver, &ap("data/characters/dad.json")).unwrap();
+        assert_eq!(dad.id, "dad");
+        assert_eq!(dad.animations.len(), 5);
+        assert_eq!(dad.animations[1].offset.x, -6.0);
+        assert_eq!(dad.animations[1].offset.y, 50.0);
+
+        let gf = load_character(&resolver, &ap("data/characters/gf.json")).unwrap();
+        assert_eq!(gf.id, "gf");
+        assert_eq!(gf.animations.len(), 11);
+        assert_eq!(gf.animations[6].indices.len(), 16);
+        assert_eq!(gf.animations[10].offset.y, -17.0);
+
         let stage = load_stage(&resolver, &ap("data/stages/stage.json")).unwrap();
         assert_eq!(stage.id, "stage");
         assert_eq!(stage.objects.len(), 3);

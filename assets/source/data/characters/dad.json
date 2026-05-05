@@ -1,0 +1,52 @@
+{
+  "id": "dad",
+  "atlas": "images/DADDY_DEAREST.xml",
+  "animations": [
+    {
+      "name": "idle",
+      "prefix": "Dad idle dance",
+      "fps": 24,
+      "looped": true
+    },
+    {
+      "name": "singUP",
+      "prefix": "Dad Sing Note UP",
+      "fps": 24,
+      "looped": true,
+      "offset": {
+        "x": -6.0,
+        "y": 50.0
+      }
+    },
+    {
+      "name": "singRIGHT",
+      "prefix": "Dad Sing Note RIGHT",
+      "fps": 24,
+      "looped": true,
+      "offset": {
+        "x": 0.0,
+        "y": 27.0
+      }
+    },
+    {
+      "name": "singLEFT",
+      "prefix": "Dad Sing Note LEFT",
+      "fps": 24,
+      "looped": true,
+      "offset": {
+        "x": -10.0,
+        "y": 10.0
+      }
+    },
+    {
+      "name": "singDOWN",
+      "prefix": "Dad Sing Note DOWN",
+      "fps": 24,
+      "looped": true,
+      "offset": {
+        "x": 0.0,
+        "y": -30.0
+      }
+    }
+  ]
+}
