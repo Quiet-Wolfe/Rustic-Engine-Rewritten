@@ -7,12 +7,13 @@
 // LINT-ALLOW: long-file app event loop plus temporary gameplay preview wiring
 
 use crate::boot::{init_logging, install_panic_hook};
+use crate::character_anim::CharacterAnimState;
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::scene_assets::{
-    load_default_scene, load_preview_play_state, NoteSkin, ReceptorState, SAMPLE_RATE,
+    load_default_scene, load_preview_play_state, CharacterSet, NoteSkin, ReceptorState, SAMPLE_RATE,
 };
 use crate::screen::ScreenStack;
 use crate::song_audio::load_bopeebo_stems;
@@ -62,6 +63,8 @@ struct App {
     static_cmds: RenderCommandList,
     cmds: RenderCommandList,
     atlases: HashMap<AssetId, Texture>,
+    characters: Option<CharacterSet>,
+    character_anim: CharacterAnimState,
     note_skin: Option<NoteSkin>,
     hud_skin: Option<HudSkin>,
     popup_skin: Option<PopupSkin>,
@@ -116,6 +119,8 @@ impl App {
             static_cmds: RenderCommandList::new(),
             cmds: RenderCommandList::new(),
             atlases: HashMap::new(),
+            characters: None,
+            character_anim: CharacterAnimState::default(),
             note_skin: None,
             hud_skin: None,
             popup_skin: None,
@@ -174,6 +179,7 @@ impl App {
                 self.cmds = scene.commands;
                 self.static_cmds = self.cmds.clone();
                 self.atlases = scene.textures;
+                self.characters = scene.characters;
                 self.note_skin = scene.note_skin;
                 self.hud_skin = scene.hud_skin;
                 self.popup_skin = scene.popup_skin;
@@ -296,15 +302,35 @@ impl App {
     fn rebuild_frame_commands(&mut self) {
         let cursor = self.preview_cursor();
         let sample_rate = self.play_sample_rate();
+        let mut opponent_hits = Vec::new();
+        let mut bpm = None;
         if let Some(play_state) = self.play_state.as_mut() {
-            play_state.resolve_opponent_notes(cursor);
+            opponent_hits = play_state.resolve_opponent_notes(cursor);
             for lane in self.held_lanes.active_lanes() {
                 play_state.resolve_held_sustains_in_lane(cursor, lane, sample_rate);
             }
             play_state.expire_late_notes(cursor, sample_rate);
+            bpm = Some(play_state.bpm);
+        }
+        if let Some(bpm) = bpm {
+            for hit in opponent_hits {
+                self.character_anim
+                    .opponent_note_hit(hit.lane, cursor, sample_rate, bpm);
+            }
+            self.character_anim.update(
+                cursor,
+                sample_rate,
+                bpm,
+                self.held_lanes.active_lanes().next().is_some(),
+            );
         }
 
         self.cmds = self.static_cmds.clone();
+        if let Some(characters) = &self.characters {
+            for cmd in characters.commands(self.character_anim.poses()) {
+                self.cmds.push(cmd);
+            }
+        }
         let (Some(play_state), Some(note_skin)) = (&self.play_state, &self.note_skin) else {
             return;
         };
@@ -357,6 +383,8 @@ impl App {
             let confirm_samples = i64::from(sample_rate) / 6;
             self.held_lanes
                 .confirm_until(lane, Samples(cursor.0 + confirm_samples));
+            self.character_anim
+                .player_note_hit(lane, cursor, sample_rate, play_state.bpm);
             if !outcome.is_sustain {
                 self.score_popups.push(
                     outcome.judgment,
@@ -366,6 +394,7 @@ impl App {
             }
         } else {
             play_state.register_miss();
+            self.character_anim.player_note_miss(lane);
         }
     }
 

@@ -29,6 +29,10 @@ pub const DEATH_HEALTH: f32 = 0.0;
 #[non_exhaustive]
 pub struct PlayState {
     pub song: Option<SongId>,
+    /// Chart BPM, used by beat/hold-timer behavior.
+    /// ref: 50fccded:source/PlayState.hx:983
+    #[serde(default = "default_bpm")]
+    pub bpm: f64,
     /// Chart scroll speed (`SONG.speed`) used by the OG note-y formula.
     /// ref: 50fccded:source/PlayState.hx:1512
     #[serde(default = "default_scroll_speed")]
@@ -54,6 +58,7 @@ impl Default for PlayState {
     fn default() -> Self {
         Self {
             song: None,
+            bpm: default_bpm(),
             scroll_speed: default_scroll_speed(),
             notes: Vec::new(),
             resolved_notes: Vec::new(),
@@ -86,6 +91,7 @@ impl PlayState {
         let notes = notes_from_chart(parsed.chart.notes.iter(), sample_rate, parsed.chart.bpm);
         *self = Self {
             song: Some(song),
+            bpm: parsed.chart.bpm,
             scroll_speed: parsed.chart.speed as f32,
             notes,
             ..Self::default()
@@ -106,6 +112,10 @@ impl PlayState {
 
 pub(crate) fn default_scroll_speed() -> f32 {
     1.0
+}
+
+pub(crate) fn default_bpm() -> f64 {
+    100.0
 }
 
 /// Serde-friendly wrapper because `JudgmentWindows` is `non_exhaustive`.
@@ -148,6 +158,7 @@ mod tests {
         assert_eq!(s.score, 0);
         assert_eq!(s.combo, 0);
         assert_eq!(s.max_combo, 0);
+        assert_eq!(s.bpm, 100.0);
         assert_eq!(s.scroll_speed, 1.0);
         assert!((s.health - INITIAL_HEALTH).abs() < 1e-6);
         assert!(!s.is_dead());
@@ -189,6 +200,7 @@ mod tests {
         state.load_chart(SongId::new(7), &parsed, 48_000);
 
         assert_eq!(state.song, Some(SongId::new(7)));
+        assert_eq!(state.bpm, 100.0);
         assert_eq!(state.scroll_speed, 1.4);
         assert_eq!(state.notes.len(), 3);
         assert_eq!(state.notes[0].hit_at, Samples(48_000));

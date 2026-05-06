@@ -4,6 +4,7 @@
 //! uploads textures, and emits render commands, but gameplay and render
 //! crates remain free of filesystem and wgpu wiring.
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
+use crate::character_anim::CharacterPoseNames;
 use crate::hud_assets::{load_hud_assets, HudSkin};
 use crate::popup_assets::{load_popup_assets, PopupSkin};
 use anyhow::{Context, Result};
@@ -27,9 +28,78 @@ pub struct LoadedScene {
     pub camera_zoom: f32,
     pub commands: RenderCommandList,
     pub textures: HashMap<AssetId, Texture>,
+    pub characters: Option<CharacterSet>,
     pub note_skin: Option<NoteSkin>,
     pub hud_skin: Option<HudSkin>,
     pub popup_skin: Option<PopupSkin>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CharacterSet {
+    girlfriend: CharacterSprite,
+    opponent: CharacterSprite,
+    player: CharacterSprite,
+}
+
+impl CharacterSet {
+    pub fn commands(&self, poses: CharacterPoseNames) -> Vec<DrawCommand> {
+        vec![
+            self.girlfriend.command(poses.girlfriend),
+            self.opponent.command(poses.opponent),
+            self.player.command(poses.player),
+        ]
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CharacterSprite {
+    texture_id: AssetId,
+    texture_width: u32,
+    texture_height: u32,
+    character: CharacterDefinition,
+    slot: StageCharacterSlot,
+    is_player: bool,
+    z: i32,
+    filter: FilterMode,
+    poses: Vec<CharacterPose>,
+    initial_pose: usize,
+}
+
+impl CharacterSprite {
+    fn command(&self, animation_name: &str) -> DrawCommand {
+        let pose = self.pose(animation_name);
+        let frame = &pose.frame;
+        let mut cmd = DrawCommand::sprite(
+            self.texture_id,
+            character_frame_pos(&self.character, &pose.animation, frame, self.slot),
+            glam::vec2(
+                frame.width as f32 * self.character.scale,
+                frame.height as f32 * self.character.scale,
+            ),
+        );
+        cmd.pivot = glam::Vec2::ZERO;
+        cmd.layer = RenderLayer::Characters;
+        cmd.z = self.z;
+        cmd.filter = self.filter;
+        (cmd.uv_min, cmd.uv_max) = frame_uv(frame, self.texture_width, self.texture_height);
+        if effective_flip_x(&self.character, self.is_player) {
+            std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
+        }
+        cmd
+    }
+
+    fn pose(&self, animation_name: &str) -> &CharacterPose {
+        self.poses
+            .iter()
+            .find(|pose| pose.animation.name == animation_name)
+            .unwrap_or(&self.poses[self.initial_pose])
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CharacterPose {
+    animation: CharacterAnimation,
+    frame: SparrowFrame,
 }
 #[derive(Debug, Clone)]
 pub struct NoteSkin {
@@ -145,6 +215,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         camera_zoom: stage.camera_zoom,
         commands: RenderCommandList::new(),
         textures: HashMap::new(),
+        characters: None,
         note_skin: None,
         hud_skin: None,
         popup_skin: None,
@@ -153,7 +224,9 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
     for object in &stage.objects {
         load_stage_object(device, queue, &resolver, object, &mut scene)?;
     }
-    load_stage_characters(device, queue, &resolver, &stage, &mut scene)?;
+    scene.characters = Some(load_stage_characters(
+        device, queue, &resolver, &stage, &mut scene,
+    )?);
     scene.note_skin = Some(load_note_skin(device, queue, &resolver, &mut scene)?);
     scene.hud_skin = Some(load_hud_assets(
         device,
@@ -216,8 +289,8 @@ fn load_stage_characters(
     resolver: &OverlayResolver,
     stage: &StageDefinition,
     scene: &mut LoadedScene,
-) -> Result<()> {
-    load_character_slot(
+) -> Result<CharacterSet> {
+    let girlfriend = load_character_slot(
         device,
         queue,
         resolver,
@@ -227,7 +300,7 @@ fn load_stage_characters(
         0,
         scene,
     )?;
-    load_character_slot(
+    let opponent = load_character_slot(
         device,
         queue,
         resolver,
@@ -237,7 +310,7 @@ fn load_stage_characters(
         1,
         scene,
     )?;
-    load_character_slot(
+    let player = load_character_slot(
         device,
         queue,
         resolver,
@@ -246,7 +319,12 @@ fn load_stage_characters(
         true,
         2,
         scene,
-    )
+    )?;
+    Ok(CharacterSet {
+        girlfriend,
+        opponent,
+        player,
+    })
 }
 
 fn load_note_skin(
@@ -320,7 +398,7 @@ fn load_character_slot(
     is_player: bool,
     z: i32,
     scene: &mut LoadedScene,
-) -> Result<()> {
+) -> Result<CharacterSprite> {
     let character_path = AssetPath::new(character_path)?;
     let character = load_character(resolver, &character_path)
         .with_context(|| format!("load {}", character_path.as_str()))?;
@@ -331,33 +409,48 @@ fn load_character_slot(
         .with_context(|| format!("load {}", texture_path.as_str()))?;
     let texture_id = asset_id_for_path(&texture_path);
     let filter = filter_for_antialiasing(character.antialiasing);
-    let animation = initial_animation(&character)?;
-    let frame = atlas
-        .first_animation_frame(&animation.prefix, &animation.indices)
-        .with_context(|| format!("resolve initial frame {}:{}", character.id, animation.name))?;
+    let poses = character_poses(&character, &atlas)?;
+    let initial_animation = initial_animation(&character)?;
+    let initial_pose = poses
+        .iter()
+        .position(|pose| pose.animation.name == initial_animation.name)
+        .with_context(|| format!("resolve initial pose {}", character.id))?;
 
     let texture =
         Texture::from_png_image(device, queue, &image, filter, Some(texture_path.as_str()));
     scene.textures.insert(texture_id, texture);
 
-    let mut cmd = DrawCommand::sprite(
+    Ok(CharacterSprite {
         texture_id,
-        character_frame_pos(&character, animation, frame, slot),
-        glam::vec2(
-            frame.width as f32 * character.scale,
-            frame.height as f32 * character.scale,
-        ),
-    );
-    cmd.pivot = glam::Vec2::ZERO;
-    cmd.layer = RenderLayer::Characters;
-    cmd.z = z;
-    cmd.filter = filter;
-    (cmd.uv_min, cmd.uv_max) = frame_uv(frame, image.width, image.height);
-    if effective_flip_x(&character, is_player) {
-        std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
-    }
-    scene.commands.push(cmd);
-    Ok(())
+        texture_width: image.width,
+        texture_height: image.height,
+        character,
+        slot,
+        is_player,
+        z,
+        filter,
+        poses,
+        initial_pose,
+    })
+}
+
+fn character_poses(
+    character: &CharacterDefinition,
+    atlas: &SparrowAtlas,
+) -> Result<Vec<CharacterPose>> {
+    character
+        .animations
+        .iter()
+        .map(|animation| {
+            let frame = atlas
+                .first_animation_frame(&animation.prefix, &animation.indices)
+                .with_context(|| format!("resolve frame {}:{}", character.id, animation.name))?;
+            Ok(CharacterPose {
+                animation: animation.clone(),
+                frame: frame.clone(),
+            })
+        })
+        .collect()
 }
 
 fn initial_animation(character: &CharacterDefinition) -> Result<&CharacterAnimation> {

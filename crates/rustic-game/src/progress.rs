@@ -3,27 +3,40 @@
 //! ref: 50fccded:source/Note.hx:186-192          // opponent note wasGoodHit at songPosition
 //! ref: 50fccded:source/PlayState.hx:1528-1552   // opponent note animation/removal
 
+use crate::note::Lane;
 use crate::state::PlayState;
 use rustic_core::time::Samples;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ResolvedOpponentNote {
+    pub lane: Lane,
+    pub is_sustain: bool,
+}
 
 impl PlayState {
     /// Resolve opponent-side notes whose strum time has reached the current
     /// conductor cursor. Base FNF uses this to drive dad animations and
     /// remove the note; it does not change player score/combo/health.
-    pub fn resolve_opponent_notes(&mut self, cursor: Samples) -> u32 {
+    pub fn resolve_opponent_notes(&mut self, cursor: Samples) -> Vec<ResolvedOpponentNote> {
         let mut hits = Vec::new();
         for note in &self.notes {
             if !note.opponent || self.resolved_notes.contains(&note.id) {
                 continue;
             }
             if note.hit_at.0 <= cursor.0 {
-                hits.push(note.id);
+                hits.push((
+                    note.id,
+                    ResolvedOpponentNote {
+                        lane: note.lane,
+                        is_sustain: note.is_sustain,
+                    },
+                ));
             }
         }
 
-        let count = hits.len() as u32;
-        self.resolved_notes.extend(hits);
-        count
+        self.resolved_notes.extend(hits.iter().map(|(id, _)| *id));
+        hits.into_iter().map(|(_, hit)| hit).collect()
     }
 }
 
@@ -55,9 +68,15 @@ mod tests {
         state.score = 900;
         state.combo = 4;
 
-        let count = state.resolve_opponent_notes(Samples(1_000));
+        let hits = state.resolve_opponent_notes(Samples(1_000));
 
-        assert_eq!(count, 1);
+        assert_eq!(
+            hits,
+            vec![ResolvedOpponentNote {
+                lane: Lane::Left,
+                is_sustain: false
+            }]
+        );
         assert!(state.resolved_notes.contains(&NoteId::new(0)));
         assert!(!state.resolved_notes.contains(&NoteId::new(1)));
         assert!(!state.resolved_notes.contains(&NoteId::new(2)));
