@@ -4,11 +4,13 @@
 //! lazily on `resumed` so the same code path works on Android (which
 //! also pauses/resumes the surface). Surface is `'static` because the
 //! window is held in an `Arc`.
+// LINT-ALLOW: long-file app event loop plus temporary gameplay preview wiring
 
 use crate::boot::{init_logging, install_panic_hook};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
+use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::scene_assets::{
     load_default_scene, load_preview_play_state, NoteSkin, ReceptorState, SAMPLE_RATE,
 };
@@ -61,6 +63,8 @@ struct App {
     atlases: HashMap<AssetId, Texture>,
     note_skin: Option<NoteSkin>,
     hud_skin: Option<HudSkin>,
+    popup_skin: Option<PopupSkin>,
+    score_popups: ScorePopups,
     held_lanes: HeldLanes,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -92,6 +96,8 @@ impl App {
             atlases: HashMap::new(),
             note_skin: None,
             hud_skin: None,
+            popup_skin: None,
+            score_popups: ScorePopups::default(),
             held_lanes: HeldLanes::default(),
             play_state: None,
             song_start: now,
@@ -148,6 +154,7 @@ impl App {
                 self.atlases = scene.textures;
                 self.note_skin = scene.note_skin;
                 self.hud_skin = scene.hud_skin;
+                self.popup_skin = scene.popup_skin;
                 if let Some(camera) = self.cameras.get_mut(CameraId(0)) {
                     camera.zoom = scene.camera_zoom;
                 }
@@ -297,6 +304,11 @@ impl App {
                 self.cmds.push(cmd);
             }
         }
+        if let Some(popup_skin) = &self.popup_skin {
+            for cmd in self.score_popups.commands(popup_skin, cursor, SAMPLE_RATE) {
+                self.cmds.push(cmd);
+            }
+        }
     }
 
     fn handle_gameplay_input(&mut self, event: &NormalizedInputEvent) {
@@ -312,12 +324,16 @@ impl App {
         let Some(play_state) = self.play_state.as_mut() else {
             return;
         };
-        let hit = play_state
-            .try_hit_in_lane(&gameplay_event, lane, SAMPLE_RATE)
-            .is_some();
-        if hit {
+        if let Some(outcome) = play_state.try_hit_in_lane(&gameplay_event, lane, SAMPLE_RATE) {
             self.held_lanes
                 .confirm_until(lane, Samples(cursor.0 + RECEPTOR_CONFIRM_SAMPLES));
+            if !outcome.is_sustain {
+                self.score_popups.push(
+                    outcome.judgment,
+                    play_state.combo.saturating_sub(1),
+                    cursor,
+                );
+            }
         } else {
             play_state.register_miss();
         }

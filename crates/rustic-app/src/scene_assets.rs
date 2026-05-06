@@ -5,6 +5,7 @@
 //! crates remain free of filesystem and wgpu wiring.
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
 use crate::hud_assets::{load_hud_assets, HudSkin};
+use crate::popup_assets::{load_popup_assets, PopupSkin};
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_character, load_chart, load_png, load_sparrow, load_stage, AssetPath, CharacterAnimation,
@@ -28,6 +29,7 @@ pub struct LoadedScene {
     pub textures: HashMap<AssetId, Texture>,
     pub note_skin: Option<NoteSkin>,
     pub hud_skin: Option<HudSkin>,
+    pub popup_skin: Option<PopupSkin>,
 }
 #[derive(Debug, Clone)]
 pub struct NoteSkin {
@@ -145,6 +147,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         textures: HashMap::new(),
         note_skin: None,
         hud_skin: None,
+        popup_skin: None,
     };
 
     for object in &stage.objects {
@@ -153,6 +156,12 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
     load_stage_characters(device, queue, &resolver, &stage, &mut scene)?;
     scene.note_skin = Some(load_note_skin(device, queue, &resolver, &mut scene)?);
     scene.hud_skin = Some(load_hud_assets(
+        device,
+        queue,
+        &resolver,
+        &mut scene.textures,
+    )?);
+    scene.popup_skin = Some(load_popup_assets(
         device,
         queue,
         &resolver,
