@@ -5,6 +5,7 @@
 //! crates remain free of filesystem and wgpu wiring.
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
 use crate::character_anim::CharacterPoseNames;
+use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
 use crate::hud_assets::{load_hud_assets, HudSkin};
 use crate::popup_assets::{load_popup_assets, PopupSkin};
 use anyhow::{Context, Result};
@@ -32,6 +33,7 @@ pub struct LoadedScene {
     pub note_skin: Option<NoteSkin>,
     pub hud_skin: Option<HudSkin>,
     pub popup_skin: Option<PopupSkin>,
+    pub countdown_skin: Option<CountdownSkin>,
 }
 
 #[derive(Debug, Clone)]
@@ -219,6 +221,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         note_skin: None,
         hud_skin: None,
         popup_skin: None,
+        countdown_skin: None,
     };
 
     for object in &stage.objects {
@@ -235,6 +238,12 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         &mut scene.textures,
     )?);
     scene.popup_skin = Some(load_popup_assets(
+        device,
+        queue,
+        &resolver,
+        &mut scene.textures,
+    )?);
+    scene.countdown_skin = Some(load_countdown_assets(
         device,
         queue,
         &resolver,

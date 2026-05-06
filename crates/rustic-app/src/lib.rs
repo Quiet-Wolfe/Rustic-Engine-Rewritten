@@ -6,6 +6,7 @@
 pub mod app;
 pub mod boot;
 pub mod character_anim;
+pub mod countdown_assets;
 pub mod hud_assets;
 pub mod input_bridge;
 pub mod lane_state;

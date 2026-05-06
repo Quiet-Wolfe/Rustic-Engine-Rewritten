@@ -8,6 +8,7 @@
 
 use crate::boot::{init_logging, install_panic_hook};
 use crate::character_anim::CharacterAnimState;
+use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
@@ -68,11 +69,13 @@ struct App {
     note_skin: Option<NoteSkin>,
     hud_skin: Option<HudSkin>,
     popup_skin: Option<PopupSkin>,
+    countdown_skin: Option<CountdownSkin>,
     score_popups: ScorePopups,
     held_lanes: HeldLanes,
     play_state: Option<PlayState>,
     song_start: Instant,
     song_start_cursor: Samples,
+    song_started: bool,
     batcher: SpriteBatcher,
     screens: ScreenStack,
     runtime: Option<Runtime>,
@@ -124,11 +127,13 @@ impl App {
             note_skin: None,
             hud_skin: None,
             popup_skin: None,
+            countdown_skin: None,
             score_popups: ScorePopups::default(),
             held_lanes: HeldLanes::default(),
             play_state: None,
             song_start: now,
             song_start_cursor: Samples(0),
+            song_started: false,
             batcher: SpriteBatcher::new(),
             screens: ScreenStack::new(),
             runtime: None,
@@ -183,16 +188,24 @@ impl App {
                 self.note_skin = scene.note_skin;
                 self.hud_skin = scene.hud_skin;
                 self.popup_skin = scene.popup_skin;
+                self.countdown_skin = scene.countdown_skin;
                 if let Some(camera) = self.cameras.get_mut(CameraId(0)) {
                     camera.zoom = scene.camera_zoom;
                 }
                 let sample_rate = self.play_sample_rate();
                 match load_preview_play_state(sample_rate) {
                     Ok(play_state) => {
-                        self.song_start_cursor = initial_preview_cursor(&play_state, sample_rate);
+                        self.song_start_cursor =
+                            countdown_start_cursor(sample_rate, play_state.bpm);
                         self.song_start = Instant::now();
-                        if let Err(e) = load_bopeebo_stems(&self.mixer, self.song_start_cursor) {
+                        self.song_started = false;
+                        if let Err(e) = load_bopeebo_stems(&self.mixer, Samples(0)) {
                             tracing::warn!(target: "rustic.audio", "preview stems unavailable: {e:#}");
+                        } else if let Err(e) = self.mixer.edit(|mixer| {
+                            mixer.pause();
+                            Ok(())
+                        }) {
+                            tracing::warn!(target: "rustic.audio", "pause countdown audio: {e:#}");
                         }
                         self.play_state = Some(play_state);
                         self.rebuild_frame_commands();
@@ -300,7 +313,7 @@ impl App {
     }
 
     fn rebuild_frame_commands(&mut self) {
-        let cursor = self.preview_cursor();
+        let cursor = self.advance_song_clock();
         let sample_rate = self.play_sample_rate();
         let mut opponent_hits = Vec::new();
         let mut bpm = None;
@@ -363,6 +376,11 @@ impl App {
                 self.cmds.push(cmd);
             }
         }
+        if let Some(countdown_skin) = &self.countdown_skin {
+            for cmd in countdown_skin.commands(cursor, sample_rate, play_state.bpm) {
+                self.cmds.push(cmd);
+            }
+        }
     }
 
     fn handle_gameplay_input(&mut self, event: &NormalizedInputEvent) {
@@ -372,7 +390,7 @@ impl App {
         let Some(lane) = lane_for_action(event.action) else {
             return;
         };
-        let cursor = self.preview_cursor();
+        let cursor = self.advance_song_clock();
         let sample_rate = self.play_sample_rate();
         let gameplay_event =
             NormalizedInputEvent::new(event.action, event.state, event.wall_clock_ns, cursor);
@@ -398,29 +416,37 @@ impl App {
         }
     }
 
-    fn preview_cursor(&self) -> Samples {
+    fn advance_song_clock(&mut self) -> Samples {
+        if !self.song_started {
+            let elapsed = self.song_start.elapsed().as_secs_f64();
+            let elapsed_samples = (elapsed * f64::from(self.play_sample_rate())).round() as i64;
+            let cursor = Samples(self.song_start_cursor.0 + elapsed_samples);
+            if cursor.0 < 0 {
+                return cursor;
+            }
+            self.song_started = true;
+            self.song_start = Instant::now();
+            if let Err(e) = self.mixer.edit(|mixer| {
+                mixer.seek(Samples(0))?;
+                mixer.resume();
+                Ok(())
+            }) {
+                tracing::warn!(target: "rustic.audio", "start countdown audio: {e:#}");
+            }
+            return Samples(0);
+        }
+
         if self.audio_output.is_some() {
             return self.mixer.sample_cursor();
         }
         let elapsed = self.song_start.elapsed().as_secs_f64();
         let elapsed_samples = (elapsed * f64::from(self.play_sample_rate())).round() as i64;
-        Samples(self.song_start_cursor.0 + elapsed_samples)
+        Samples(elapsed_samples)
     }
 
     fn play_sample_rate(&self) -> u32 {
         self.mixer.sample_rate().max(1)
     }
-}
-
-fn initial_preview_cursor(play_state: &PlayState, sample_rate: u32) -> Samples {
-    let first_note = play_state
-        .notes
-        .iter()
-        .map(|note| note.hit_at.0)
-        .min()
-        .unwrap_or(0);
-    let preview_lead = i64::from(sample_rate);
-    Samples(first_note.saturating_sub(preview_lead))
 }
 
 impl ApplicationHandler for App {
