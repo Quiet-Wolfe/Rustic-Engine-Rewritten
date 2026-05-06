@@ -1,6 +1,7 @@
 //! App-owned lane hold state for gameplay input.
 
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
+use rustic_core::time::Samples;
 use rustic_game::Lane;
 
 const LANES: [Lane; 4] = [Lane::Left, Lane::Down, Lane::Up, Lane::Right];
@@ -8,6 +9,7 @@ const LANES: [Lane; 4] = [Lane::Left, Lane::Down, Lane::Up, Lane::Right];
 #[derive(Debug, Default, Clone)]
 pub struct HeldLanes {
     pressed: [bool; 4],
+    confirm_until: [Samples; 4],
 }
 
 impl HeldLanes {
@@ -27,6 +29,15 @@ impl HeldLanes {
 
     pub fn is_held(&self, lane: Lane) -> bool {
         self.pressed[lane_index(lane)]
+    }
+
+    pub fn confirm_until(&mut self, lane: Lane, until: Samples) {
+        self.confirm_until[lane_index(lane)] = until;
+    }
+
+    pub fn is_confirming(&self, lane: Lane, cursor: Samples) -> bool {
+        let until = self.confirm_until[lane_index(lane)];
+        until.0 > 0 && until >= cursor
     }
 }
 
@@ -53,7 +64,6 @@ fn lane_index(lane: Lane) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustic_core::time::Samples;
 
     fn event(action: InputAction, state: InputState) -> NormalizedInputEvent {
         NormalizedInputEvent::new(action, state, 0, Samples(0))
@@ -92,5 +102,15 @@ mod tests {
 
         let lanes: Vec<_> = held.active_lanes().collect();
         assert_eq!(lanes, vec![Lane::Down, Lane::Right]);
+    }
+
+    #[test]
+    fn confirm_window_is_sample_cursor_based() {
+        let mut held = HeldLanes::default();
+        held.confirm_until(Lane::Up, Samples(200));
+
+        assert!(held.is_confirming(Lane::Up, Samples(199)));
+        assert!(held.is_confirming(Lane::Up, Samples(200)));
+        assert!(!held.is_confirming(Lane::Up, Samples(201)));
     }
 }

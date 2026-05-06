@@ -31,6 +31,7 @@ use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowAttributes};
 
+const RECEPTOR_CONFIRM_SAMPLES: i64 = SAMPLE_RATE as i64 / 6;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct AppOptions {
@@ -274,7 +275,9 @@ impl App {
         };
 
         for cmd in note_skin.receptor_commands(|lane| {
-            if self.held_lanes.is_held(lane) {
+            if self.held_lanes.is_confirming(lane, cursor) {
+                ReceptorState::Confirm
+            } else if self.held_lanes.is_held(lane) {
                 ReceptorState::Pressed
             } else {
                 ReceptorState::Static
@@ -309,10 +312,13 @@ impl App {
         let Some(play_state) = self.play_state.as_mut() else {
             return;
         };
-        if play_state
+        let hit = play_state
             .try_hit_in_lane(&gameplay_event, lane, SAMPLE_RATE)
-            .is_none()
-        {
+            .is_some();
+        if hit {
+            self.held_lanes
+                .confirm_until(lane, Samples(cursor.0 + RECEPTOR_CONFIRM_SAMPLES));
+        } else {
             play_state.register_miss();
         }
     }
