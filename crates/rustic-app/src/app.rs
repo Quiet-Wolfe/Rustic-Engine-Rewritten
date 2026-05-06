@@ -7,11 +7,13 @@
 
 use crate::boot::{init_logging, install_panic_hook};
 use crate::input_bridge::{build_event, map_key};
-use crate::scene_assets::load_default_scene;
+use crate::scene_assets::{load_default_scene, load_preview_play_state, NoteSkin, SAMPLE_RATE};
 use crate::screen::ScreenStack;
 use anyhow::Result;
 use rustic_audio::Mixer;
 use rustic_core::ids::{AssetId, CameraId};
+use rustic_core::time::Samples;
+use rustic_game::PlayState;
 use rustic_render::{
     CameraRegistry, Composite, RenderCommandList, RenderState, SpriteBatcher, SpritePipeline,
     SurfaceConfig, Texture,
@@ -48,8 +50,13 @@ struct App {
     boot_instant: Instant,
     mixer: Mixer,
     cameras: CameraRegistry,
+    static_cmds: RenderCommandList,
     cmds: RenderCommandList,
     atlases: HashMap<AssetId, Texture>,
+    note_skin: Option<NoteSkin>,
+    play_state: Option<PlayState>,
+    song_start: Instant,
+    song_start_cursor: Samples,
     batcher: SpriteBatcher,
     screens: ScreenStack,
     runtime: Option<Runtime>,
@@ -66,13 +73,19 @@ struct Runtime {
 
 impl App {
     fn new(options: AppOptions) -> Self {
+        let now = Instant::now();
         Self {
             options,
-            boot_instant: Instant::now(),
+            boot_instant: now,
             mixer: Mixer::new(48_000),
             cameras: CameraRegistry::with_default_fnf(),
+            static_cmds: RenderCommandList::new(),
             cmds: RenderCommandList::new(),
             atlases: HashMap::new(),
+            note_skin: None,
+            play_state: None,
+            song_start: now,
+            song_start_cursor: Samples(0),
             batcher: SpriteBatcher::new(),
             screens: ScreenStack::new(),
             runtime: None,
@@ -121,9 +134,22 @@ impl App {
         match load_default_scene(&runtime.rs.device, &runtime.rs.queue) {
             Ok(scene) => {
                 self.cmds = scene.commands;
+                self.static_cmds = self.cmds.clone();
                 self.atlases = scene.textures;
+                self.note_skin = scene.note_skin;
                 if let Some(camera) = self.cameras.get_mut(CameraId(0)) {
                     camera.zoom = scene.camera_zoom;
+                }
+                match load_preview_play_state() {
+                    Ok(play_state) => {
+                        self.song_start_cursor = initial_preview_cursor(&play_state);
+                        self.song_start = Instant::now();
+                        self.play_state = Some(play_state);
+                        self.rebuild_frame_commands();
+                    }
+                    Err(e) => {
+                        tracing::warn!(target: "rustic.asset", "preview chart unavailable: {e:#}");
+                    }
                 }
             }
             Err(e) => {
@@ -136,6 +162,7 @@ impl App {
     }
 
     fn redraw(&mut self) {
+        self.rebuild_frame_commands();
         let Some(rt) = self.runtime.as_mut() else {
             return;
         };
@@ -221,6 +248,34 @@ impl App {
             },
         );
     }
+
+    fn rebuild_frame_commands(&mut self) {
+        self.cmds = self.static_cmds.clone();
+        let (Some(play_state), Some(note_skin)) = (&self.play_state, &self.note_skin) else {
+            return;
+        };
+        let elapsed = self.song_start.elapsed().as_secs_f64();
+        let elapsed_samples = (elapsed * f64::from(SAMPLE_RATE)).round() as i64;
+        let cursor = Samples(self.song_start_cursor.0 + elapsed_samples);
+
+        for view in play_state.note_views(cursor, SAMPLE_RATE) {
+            let cmd = note_skin.command_for_view(&view);
+            if cmd.world_pos.y + cmd.size.y >= -200.0 {
+                self.cmds.push(cmd);
+            }
+        }
+    }
+}
+
+fn initial_preview_cursor(play_state: &PlayState) -> Samples {
+    let first_note = play_state
+        .notes
+        .iter()
+        .map(|note| note.hit_at.0)
+        .min()
+        .unwrap_or(0);
+    let preview_lead = i64::from(SAMPLE_RATE);
+    Samples(first_note.saturating_sub(preview_lead))
 }
 
 impl ApplicationHandler for App {

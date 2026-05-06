@@ -6,15 +6,17 @@
 
 use anyhow::{Context, Result};
 use rustic_asset::{
-    load_character, load_png, load_sparrow, load_stage, AssetPath, CharacterAnimation,
+    load_character, load_chart, load_png, load_sparrow, load_stage, AssetPath, CharacterAnimation,
     CharacterDefinition, OverlayResolver, SparrowAtlas, SparrowFrame, StageCharacterSlot,
     StageDefinition, StageObject,
 };
-use rustic_core::ids::{AssetId, CameraId};
+use rustic_core::ids::{AssetId, CameraId, SongId};
 use rustic_core::render::RenderLayer;
+use rustic_game::{Lane, NoteView, PlayState};
 use rustic_render::{DrawCommand, FilterMode, RenderCommandList, Texture};
 use std::collections::HashMap;
 
+pub const SAMPLE_RATE: u32 = 48_000;
 const NOTE_SWAG_WIDTH: f32 = 160.0 * 0.7;
 const STRUM_LINE_Y: f32 = 50.0;
 const FNF_WIDTH: f32 = 1280.0;
@@ -24,6 +26,52 @@ pub struct LoadedScene {
     pub camera_zoom: f32,
     pub commands: RenderCommandList,
     pub textures: HashMap<AssetId, Texture>,
+    pub note_skin: Option<NoteSkin>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NoteSkin {
+    texture_id: AssetId,
+    texture_width: u32,
+    texture_height: u32,
+    tap_frames: [SparrowFrame; 4],
+    hold_frames: [SparrowFrame; 4],
+}
+
+impl NoteSkin {
+    pub fn command_for_view(&self, view: &NoteView) -> DrawCommand {
+        let frame = self.frame_for_view(view);
+        let size = glam::vec2(
+            frame.width as f32 * NOTE_ASSET_SCALE,
+            frame.height as f32 * NOTE_ASSET_SCALE,
+        );
+        let x = if view.is_sustain {
+            view.x + (NOTE_SWAG_WIDTH - size.x) * 0.5
+        } else {
+            view.x
+        };
+
+        let mut cmd = DrawCommand::sprite(self.texture_id, glam::vec2(x, view.y), size);
+        cmd.camera = CameraId(1);
+        cmd.pivot = glam::Vec2::ZERO;
+        cmd.layer = RenderLayer::Notes;
+        cmd.z = if view.is_sustain { 0 } else { 1 };
+        cmd.filter = FilterMode::Linear;
+        (cmd.uv_min, cmd.uv_max) = frame_uv(frame, self.texture_width, self.texture_height);
+        if view.is_sustain {
+            cmd.color.w = 0.6;
+        }
+        cmd
+    }
+
+    fn frame_for_view(&self, view: &NoteView) -> &SparrowFrame {
+        let index = lane_index(view.lane);
+        if view.is_sustain {
+            &self.hold_frames[index]
+        } else {
+            &self.tap_frames[index]
+        }
+    }
 }
 
 pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<LoadedScene> {
@@ -35,14 +83,23 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         camera_zoom: stage.camera_zoom,
         commands: RenderCommandList::new(),
         textures: HashMap::new(),
+        note_skin: None,
     };
 
     for object in &stage.objects {
         load_stage_object(device, queue, &resolver, object, &mut scene)?;
     }
     load_stage_characters(device, queue, &resolver, &stage, &mut scene)?;
-    load_static_receptors(device, queue, &resolver, &mut scene)?;
+    scene.note_skin = Some(load_static_receptors(device, queue, &resolver, &mut scene)?);
     Ok(scene)
+}
+
+pub fn load_preview_play_state() -> Result<PlayState> {
+    let resolver = OverlayResolver::new().with_baked_root("assets/baked");
+    let chart_path = AssetPath::new("data/bopeebo/bopeebo.json")?;
+    let chart =
+        load_chart(&resolver, &chart_path).with_context(|| format!("load {}", chart_path))?;
+    Ok(PlayState::from_chart(SongId::new(0), &chart, SAMPLE_RATE))
 }
 
 fn load_stage_object(
@@ -121,7 +178,7 @@ fn load_static_receptors(
     queue: &wgpu::Queue,
     resolver: &OverlayResolver,
     scene: &mut LoadedScene,
-) -> Result<()> {
+) -> Result<NoteSkin> {
     let atlas_path = AssetPath::new("images/NOTE_assets.xml")?;
     let atlas = load_sparrow(resolver, &atlas_path)
         .with_context(|| format!("load {}", atlas_path.as_str()))?;
@@ -137,6 +194,24 @@ fn load_static_receptors(
         Some(texture_path.as_str()),
     );
     scene.textures.insert(texture_id, texture);
+
+    let note_skin = NoteSkin {
+        texture_id,
+        texture_width: image.width,
+        texture_height: image.height,
+        tap_frames: [
+            cloned_first_frame(&atlas, "purple0")?,
+            cloned_first_frame(&atlas, "blue0")?,
+            cloned_first_frame(&atlas, "green0")?,
+            cloned_first_frame(&atlas, "red0")?,
+        ],
+        hold_frames: [
+            cloned_first_frame(&atlas, "purple hold piece")?,
+            cloned_first_frame(&atlas, "blue hold piece")?,
+            cloned_first_frame(&atlas, "green hold piece")?,
+            cloned_first_frame(&atlas, "red hold piece")?,
+        ],
+    };
 
     for player in 0..=1 {
         for lane in 0..4 {
@@ -163,7 +238,7 @@ fn load_static_receptors(
             scene.commands.push(cmd);
         }
     }
-    Ok(())
+    Ok(note_skin)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -280,6 +355,23 @@ fn receptor_prefix(lane: u8) -> &'static str {
         1 => "arrowDOWN",
         2 => "arrowUP",
         _ => "arrowRIGHT",
+    }
+}
+
+fn cloned_first_frame(atlas: &SparrowAtlas, prefix: &str) -> Result<SparrowFrame> {
+    atlas
+        .first_animation_frame(prefix, &[])
+        .cloned()
+        .with_context(|| format!("resolve note frame {prefix}"))
+}
+
+fn lane_index(lane: Lane) -> usize {
+    match lane {
+        Lane::Left => 0,
+        Lane::Down => 1,
+        Lane::Up => 2,
+        Lane::Right => 3,
+        _ => 3,
     }
 }
 

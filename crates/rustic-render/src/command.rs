@@ -48,7 +48,7 @@ impl DrawCommand {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RenderCommandList {
     commands: Vec<DrawCommand>,
 }
