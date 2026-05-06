@@ -1,6 +1,7 @@
 {
   "id": "bf",
   "atlas": "images/BOYFRIEND.xml",
+  "initialAnimation": "idle",
   "flipX": true,
   "animations": [
     {

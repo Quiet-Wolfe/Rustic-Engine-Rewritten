@@ -18,6 +18,8 @@ pub struct CharacterDefinition {
     #[serde(default)]
     pub icon: Option<AssetPath>,
     #[serde(default)]
+    pub initial_animation: Option<String>,
+    #[serde(default)]
     pub position: AssetVec2,
     #[serde(default)]
     pub camera_offset: AssetVec2,
@@ -75,6 +77,20 @@ impl CharacterDefinition {
         if self.animations.is_empty() {
             return Err(invalid(&format!("character {} has no animations", self.id)));
         }
+        if let Some(initial) = &self.initial_animation {
+            if initial.trim().is_empty() {
+                return Err(invalid(&format!(
+                    "character {} has empty initial animation",
+                    self.id
+                )));
+            }
+            if !self.animations.iter().any(|a| a.name == *initial) {
+                return Err(invalid(&format!(
+                    "character {} initial animation {} is not defined",
+                    self.id, initial
+                )));
+            }
+        }
         for animation in &self.animations {
             if animation.name.trim().is_empty() {
                 return Err(invalid(&format!(
@@ -111,6 +127,7 @@ mod tests {
     const BF: &str = r#"{
         "id": "bf",
         "atlas": "images/BOYFRIEND.xml",
+        "initialAnimation": "idle",
         "flipX": true,
         "animations": [
             {
@@ -137,6 +154,7 @@ mod tests {
         let character = CharacterDefinition::parse(BF.as_bytes()).unwrap();
         assert_eq!(character.id, "bf");
         assert_eq!(character.atlas.as_str(), "images/BOYFRIEND.xml");
+        assert_eq!(character.initial_animation.as_deref(), Some("idle"));
         assert_eq!(character.position, AssetVec2::ZERO);
         assert_eq!(character.scale, 1.0);
         assert!(character.flip_x);
@@ -159,6 +177,17 @@ mod tests {
         let json = r#"{
             "id":"dad",
             "atlas":"../dad.xml",
+            "animations":[{"name":"idle","prefix":"Dad idle dance"}]
+        }"#;
+        assert!(CharacterDefinition::parse(json.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_initial_animation() {
+        let json = r#"{
+            "id":"dad",
+            "atlas":"images/dad.xml",
+            "initialAnimation":"danceRight",
             "animations":[{"name":"idle","prefix":"Dad idle dance"}]
         }"#;
         assert!(CharacterDefinition::parse(json.as_bytes()).is_err());

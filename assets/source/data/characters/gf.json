@@ -1,6 +1,7 @@
 {
   "id": "gf",
   "atlas": "images/GF_assets.xml",
+  "initialAnimation": "danceRight",
   "animations": [
     {
       "name": "cheer",

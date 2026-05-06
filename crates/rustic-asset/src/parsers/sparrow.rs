@@ -79,6 +79,35 @@ impl SparrowAtlas {
         }
         Ok(atlas)
     }
+
+    pub fn animation_frames<'a>(&'a self, prefix: &str, indices: &[u16]) -> Vec<&'a SparrowFrame> {
+        let mut frames: Vec<&SparrowFrame> = self
+            .frames
+            .iter()
+            .filter(|frame| frame.name.starts_with(prefix))
+            .collect();
+        frames.sort_by_key(|frame| (frame_index(&frame.name).unwrap_or(u16::MAX), &frame.name));
+
+        if indices.is_empty() {
+            return frames;
+        }
+
+        let mut selected = Vec::with_capacity(indices.len());
+        for index in indices {
+            if let Some(frame) = frames
+                .iter()
+                .copied()
+                .find(|frame| frame_index(&frame.name) == Some(*index))
+            {
+                selected.push(frame);
+            }
+        }
+        selected
+    }
+
+    pub fn first_animation_frame(&self, prefix: &str, indices: &[u16]) -> Option<&SparrowFrame> {
+        self.animation_frames(prefix, indices).into_iter().next()
+    }
 }
 
 fn parse_subtexture(e: &quick_xml::events::BytesStart<'_>) -> AssetResult<SparrowFrame> {
@@ -136,6 +165,19 @@ fn read_uint(e: &quick_xml::events::BytesStart<'_>, key: &[u8], default: u32) ->
     }
 }
 
+fn frame_index(name: &str) -> Option<u16> {
+    let digit_count = name
+        .as_bytes()
+        .iter()
+        .rev()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    if digit_count == 0 {
+        return None;
+    }
+    name[name.len() - digit_count..].parse().ok()
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -166,6 +208,32 @@ mod tests {
         let f1 = &a.frames[1];
         assert_eq!((f1.frame_x, f1.frame_y), (0, 0));
         assert_eq!((f1.frame_width, f1.frame_height), (221, 271));
+    }
+
+    #[test]
+    fn selects_animation_frames_by_prefix_and_indices() {
+        let xml = br#"<TextureAtlas imagePath="gf.png">
+          <SubTexture name="GF Dancing Beat0015" x="0" y="0" width="10" height="10"/>
+          <SubTexture name="GF Dancing Beat0000" x="10" y="0" width="10" height="10"/>
+          <SubTexture name="GF Dancing Beat0030" x="20" y="0" width="10" height="10"/>
+          <SubTexture name="GF Cheer0000" x="30" y="0" width="10" height="10"/>
+        </TextureAtlas>"#;
+        let atlas = SparrowAtlas::parse(xml).unwrap();
+
+        let frames = atlas.animation_frames("GF Dancing Beat", &[]);
+        let names: Vec<_> = frames.iter().map(|frame| frame.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "GF Dancing Beat0000",
+                "GF Dancing Beat0015",
+                "GF Dancing Beat0030"
+            ]
+        );
+
+        let frames = atlas.animation_frames("GF Dancing Beat", &[30, 0]);
+        let names: Vec<_> = frames.iter().map(|frame| frame.name.as_str()).collect();
+        assert_eq!(names, vec!["GF Dancing Beat0030", "GF Dancing Beat0000"]);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 {
   "id": "dad",
   "atlas": "images/DADDY_DEAREST.xml",
+  "initialAnimation": "idle",
   "animations": [
     {
       "name": "idle",

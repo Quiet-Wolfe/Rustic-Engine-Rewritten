@@ -28,6 +28,15 @@ impl AssetPath {
     pub fn into_string(self) -> String {
         self.0
     }
+
+    pub fn sibling(&self, file_name: &str) -> AssetResult<Self> {
+        let file_name = normalize(file_name)?;
+        let path = match self.0.rsplit_once('/') {
+            Some((dir, _)) => format!("{dir}/{file_name}"),
+            None => file_name,
+        };
+        Self::new(path)
+    }
 }
 
 fn normalize(raw: &str) -> AssetResult<String> {
@@ -118,5 +127,15 @@ mod tests {
 
         let err = serde_json::from_str::<AssetPath>(r#""images/../secret.png""#);
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn sibling_keeps_parent_directory() {
+        let p = AssetPath::new("images/BOYFRIEND.xml").unwrap();
+        assert_eq!(
+            p.sibling("BOYFRIEND.png").unwrap().as_str(),
+            "images/BOYFRIEND.png"
+        );
+        assert!(p.sibling("../secret.png").is_err());
     }
 }
