@@ -61,6 +61,9 @@ struct App {
     mixer: SharedMixer,
     audio_output: Option<AudioOutput>,
     cameras: CameraRegistry,
+    default_game_zoom: f32,
+    cam_zooming: bool,
+    last_camera_beat: i64,
     static_cmds: RenderCommandList,
     cmds: RenderCommandList,
     atlases: HashMap<AssetId, Texture>,
@@ -128,6 +131,9 @@ impl App {
             mixer,
             audio_output,
             cameras: CameraRegistry::with_default_fnf(),
+            default_game_zoom: 1.0,
+            cam_zooming: false,
+            last_camera_beat: -1,
             static_cmds: RenderCommandList::new(),
             cmds: RenderCommandList::new(),
             atlases: HashMap::new(),
@@ -199,8 +205,14 @@ impl App {
                 self.hud_skin = scene.hud_skin;
                 self.popup_skin = scene.popup_skin;
                 self.countdown_skin = scene.countdown_skin;
+                self.default_game_zoom = scene.camera_zoom;
+                self.cam_zooming = false;
+                self.last_camera_beat = -1;
                 if let Some(camera) = self.cameras.get_mut(CameraId(0)) {
                     camera.zoom = scene.camera_zoom;
+                }
+                if let Some(camera) = self.cameras.get_mut(CameraId(1)) {
+                    camera.zoom = 1.0;
                 }
                 let sample_rate = self.play_sample_rate();
                 match load_preview_play_state(sample_rate) {
@@ -362,6 +374,7 @@ impl App {
                     .opponent_note_hit(hit.lane, cursor, sample_rate, bpm);
             }
             if had_opponent_hits {
+                self.cam_zooming = true;
                 self.set_vocals_gain(1.0);
             }
             self.character_anim.update(
@@ -371,6 +384,7 @@ impl App {
                 self.held_lanes.active_lanes().next().is_some(),
                 true,
             );
+            self.update_camera_zoom(cursor, sample_rate, bpm);
         }
 
         self.cmds = self.static_cmds.clone();
@@ -564,12 +578,56 @@ impl App {
             ));
         }
     }
+
+    fn update_camera_zoom(&mut self, cursor: Samples, sample_rate: u32, bpm: f64) {
+        // ref: 50fccded:source/PlayState.hx:1408-1411,1528-1530,2284-2287
+        if !self.cam_zooming {
+            return;
+        }
+        if let Some(camera) = self.cameras.get_mut(CameraId(0)) {
+            camera.zoom = camera_zoom_decay(camera.zoom, self.default_game_zoom);
+        }
+        if let Some(camera) = self.cameras.get_mut(CameraId(1)) {
+            camera.zoom = camera_zoom_decay(camera.zoom, 1.0);
+        }
+
+        let beat = camera_beat_index(cursor, sample_rate, bpm);
+        if beat <= self.last_camera_beat {
+            return;
+        }
+        self.last_camera_beat = beat;
+        if beat.rem_euclid(4) != 0 {
+            return;
+        }
+        let mut bumped = false;
+        if let Some(camera) = self.cameras.get_mut(CameraId(0)) {
+            if camera.zoom < 1.35 {
+                camera.zoom += 0.015;
+                bumped = true;
+            }
+        }
+        if bumped {
+            if let Some(camera) = self.cameras.get_mut(CameraId(1)) {
+                camera.zoom += 0.03;
+            }
+        }
+    }
 }
 
 fn game_over_cursor(game_over: GameOverState, sample_rate: u32) -> Samples {
     let elapsed = game_over.animation_started.elapsed().as_secs_f64();
     let elapsed_samples = (elapsed * f64::from(sample_rate.max(1))).round() as i64;
     Samples(game_over.song_cursor.0 + elapsed_samples)
+}
+
+fn camera_zoom_decay(current: f32, target: f32) -> f32 {
+    // ref: 50fccded:source/PlayState.hx:1410-1411
+    target + (current - target) * 0.95
+}
+
+fn camera_beat_index(cursor: Samples, sample_rate: u32, bpm: f64) -> i64 {
+    let samples_per_beat = f64::from(sample_rate.max(1)) * 60.0 / bpm.max(1.0);
+    (cursor.0.max(0) as f64 / samples_per_beat).floor() as i64
 }
 
 fn health_icon_scale(cursor: Samples, sample_rate: u32, bpm: f64) -> f32 {
@@ -643,4 +701,22 @@ pub fn run(options: AppOptions) -> Result<()> {
     let mut app = App::new(options);
     event_loop.run_app(&mut app)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn camera_zoom_decay_matches_og_lerp_direction() {
+        let decayed = camera_zoom_decay(1.20, 1.05);
+        assert!((decayed - 1.1925).abs() < 0.0001);
+    }
+
+    #[test]
+    fn camera_beat_index_uses_audio_cursor() {
+        assert_eq!(camera_beat_index(Samples(-1), 48_000, 100.0), 0);
+        assert_eq!(camera_beat_index(Samples(28_799), 48_000, 100.0), 0);
+        assert_eq!(camera_beat_index(Samples(28_800), 48_000, 100.0), 1);
+    }
 }
