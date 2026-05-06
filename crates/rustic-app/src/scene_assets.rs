@@ -58,6 +58,23 @@ impl CharacterSet {
             self.player.command(poses.player, cursor, sample_rate),
         ]
     }
+
+    pub fn player_command(
+        &self,
+        request: CharacterPoseRequest,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> DrawCommand {
+        self.player.command(request, cursor, sample_rate)
+    }
+
+    pub fn player_animation_duration(
+        &self,
+        animation_name: &str,
+        sample_rate: u32,
+    ) -> Option<Samples> {
+        self.player.animation_duration(animation_name, sample_rate)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -107,6 +124,18 @@ impl CharacterSprite {
             .iter()
             .find(|pose| pose.animation.name == animation_name)
             .unwrap_or(&self.poses[self.initial_pose])
+    }
+
+    fn animation_duration(&self, animation_name: &str, sample_rate: u32) -> Option<Samples> {
+        let pose = self
+            .poses
+            .iter()
+            .find(|pose| pose.animation.name == animation_name)?;
+        Some(animation_duration_samples(
+            sample_rate,
+            pose.animation.fps,
+            pose.frames.len(),
+        ))
     }
 }
 
@@ -514,6 +543,11 @@ fn animation_frame_index(
     }
 }
 
+fn animation_duration_samples(sample_rate: u32, fps: u16, frame_count: usize) -> Samples {
+    let samples_per_frame = f64::from(sample_rate.max(1)) / f64::from(fps.max(1));
+    Samples((samples_per_frame * frame_count.max(1) as f64).ceil() as i64)
+}
+
 fn initial_animation(character: &CharacterDefinition) -> Result<&CharacterAnimation> {
     match character.initial_animation.as_deref() {
         Some(name) => character
@@ -646,5 +680,11 @@ mod tests {
             animation_frame_index(Samples(12_000), 48_000, Samples(10_000), 24, 3, false),
             1
         );
+    }
+
+    #[test]
+    fn animation_duration_uses_frame_count_and_fps() {
+        assert_eq!(animation_duration_samples(48_000, 24, 12), Samples(24_000));
+        assert_eq!(animation_duration_samples(48_000, 0, 0), Samples(48_000));
     }
 }

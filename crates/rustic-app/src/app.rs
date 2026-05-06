@@ -21,7 +21,7 @@ use crate::song_audio::load_bopeebo_stems;
 use anyhow::Result;
 use rustic_audio::{AudioOutput, Mixer, SharedMixer, Stem};
 use rustic_core::ids::{AssetId, CameraId};
-use rustic_core::input::{InputState, NormalizedInputEvent};
+use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
 use rustic_game::PlayState;
 use rustic_render::{
@@ -76,9 +76,18 @@ struct App {
     song_start: Instant,
     song_start_cursor: Samples,
     song_started: bool,
+    game_over: Option<GameOverState>,
     batcher: SpriteBatcher,
     screens: ScreenStack,
     runtime: Option<Runtime>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct GameOverState {
+    song_cursor: Samples,
+    animation_started: Instant,
+    loop_at: Samples,
+    loop_started: bool,
 }
 
 struct Runtime {
@@ -134,6 +143,7 @@ impl App {
             song_start: now,
             song_start_cursor: Samples(0),
             song_started: false,
+            game_over: None,
             batcher: SpriteBatcher::new(),
             screens: ScreenStack::new(),
             runtime: None,
@@ -199,6 +209,7 @@ impl App {
                             countdown_start_cursor(sample_rate, play_state.bpm);
                         self.song_start = Instant::now();
                         self.song_started = false;
+                        self.game_over = None;
                         if let Err(e) = load_bopeebo_stems(&self.mixer, Samples(0)) {
                             tracing::warn!(target: "rustic.audio", "preview stems unavailable: {e:#}");
                         } else if let Err(e) = self.mixer.edit(|mixer| {
@@ -313,18 +324,33 @@ impl App {
     }
 
     fn rebuild_frame_commands(&mut self) {
-        let cursor = self.advance_song_clock();
         let sample_rate = self.play_sample_rate();
+        let cursor = if let Some(game_over) = self.game_over {
+            game_over_cursor(game_over, sample_rate)
+        } else {
+            self.advance_song_clock()
+        };
+        if self.game_over.is_some() {
+            self.rebuild_game_over_commands(cursor, sample_rate);
+            return;
+        }
         let mut opponent_hits = Vec::new();
         let mut bpm = None;
         let mut late_misses = 0;
+        let mut dead = false;
         if let Some(play_state) = self.play_state.as_mut() {
             opponent_hits = play_state.resolve_opponent_notes(cursor);
             for lane in self.held_lanes.active_lanes() {
                 play_state.resolve_held_sustains_in_lane(cursor, lane, sample_rate);
             }
             late_misses = play_state.expire_late_notes(cursor, sample_rate);
+            dead = play_state.is_dead();
             bpm = Some(play_state.bpm);
+        }
+        if dead {
+            self.enter_game_over(cursor);
+            self.rebuild_game_over_commands(cursor, sample_rate);
+            return;
         }
         if late_misses > 0 {
             self.set_vocals_gain(0.0);
@@ -398,37 +424,55 @@ impl App {
         if event.state != InputState::Pressed {
             return;
         }
-        let Some(lane) = lane_for_action(event.action) else {
-            return;
-        };
         let cursor = event.audio_sample_cursor_at_receive;
+        if self.game_over.is_some() {
+            return;
+        }
         let sample_rate = self.play_sample_rate();
         let gameplay_event =
             NormalizedInputEvent::new(event.action, event.state, event.wall_clock_ns, cursor);
-        let Some(play_state) = self.play_state.as_mut() else {
-            return;
-        };
         let mut restore_vocals = false;
-        if let Some(outcome) = play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate) {
-            let confirm_samples = i64::from(sample_rate) / 6;
-            self.held_lanes
-                .confirm_until(lane, Samples(cursor.0 + confirm_samples));
-            self.character_anim
-                .player_note_hit(lane, cursor, sample_rate, play_state.bpm);
-            restore_vocals = true;
-            if !outcome.is_sustain {
-                self.score_popups.push(
-                    outcome.judgment,
-                    play_state.combo.saturating_sub(1),
-                    cursor,
-                );
+        let should_enter_game_over;
+        {
+            let Some(play_state) = self.play_state.as_mut() else {
+                return;
+            };
+            if event.action == InputAction::Reset {
+                // ref: 50fccded:source/PlayState.hx:1450-1454
+                play_state.health = 0.0;
+                should_enter_game_over = true;
+            } else {
+                let Some(lane) = lane_for_action(event.action) else {
+                    return;
+                };
+                if let Some(outcome) =
+                    play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate)
+                {
+                    let confirm_samples = i64::from(sample_rate) / 6;
+                    self.held_lanes
+                        .confirm_until(lane, Samples(cursor.0 + confirm_samples));
+                    self.character_anim
+                        .player_note_hit(lane, cursor, sample_rate, play_state.bpm);
+                    restore_vocals = true;
+                    if !outcome.is_sustain {
+                        self.score_popups.push(
+                            outcome.judgment,
+                            play_state.combo.saturating_sub(1),
+                            cursor,
+                        );
+                    }
+                } else {
+                    play_state.register_miss();
+                    self.character_anim.player_note_miss(lane, cursor);
+                }
+                should_enter_game_over = play_state.is_dead();
             }
-        } else {
-            play_state.register_miss();
-            self.character_anim.player_note_miss(lane, cursor);
         }
         if restore_vocals {
             self.set_vocals_gain(1.0);
+        }
+        if should_enter_game_over {
+            self.enter_game_over(cursor);
         }
     }
 
@@ -472,6 +516,59 @@ impl App {
             tracing::warn!(target: "rustic.audio", "set vocals gain: {e:#}");
         }
     }
+
+    fn enter_game_over(&mut self, cursor: Samples) {
+        // ref: 50fccded:source/PlayState.hx:1462-1480
+        if self.game_over.is_some() {
+            return;
+        }
+        let sample_rate = self.play_sample_rate();
+        let loop_after = self
+            .characters
+            .as_ref()
+            .and_then(|characters| characters.player_animation_duration("firstDeath", sample_rate))
+            .unwrap_or(Samples(i64::from(sample_rate)));
+        self.character_anim.player_first_death(cursor);
+        self.held_lanes = HeldLanes::default();
+        self.set_vocals_gain(0.0);
+        if let Err(e) = self.mixer.edit(|mixer| {
+            mixer.pause();
+            Ok(())
+        }) {
+            tracing::warn!(target: "rustic.audio", "pause game over audio: {e:#}");
+        }
+        self.game_over = Some(GameOverState {
+            song_cursor: cursor,
+            animation_started: Instant::now(),
+            loop_at: Samples(cursor.0 + loop_after.0),
+            loop_started: false,
+        });
+    }
+
+    fn rebuild_game_over_commands(&mut self, cursor: Samples, sample_rate: u32) {
+        let Some(game_over) = self.game_over.as_mut() else {
+            return;
+        };
+        if !game_over.loop_started && cursor >= game_over.loop_at {
+            game_over.loop_started = true;
+            self.character_anim.player_death_loop(game_over.loop_at);
+        }
+
+        self.cmds.clear();
+        if let Some(characters) = &self.characters {
+            self.cmds.push(characters.player_command(
+                self.character_anim.poses().player,
+                cursor,
+                sample_rate,
+            ));
+        }
+    }
+}
+
+fn game_over_cursor(game_over: GameOverState, sample_rate: u32) -> Samples {
+    let elapsed = game_over.animation_started.elapsed().as_secs_f64();
+    let elapsed_samples = (elapsed * f64::from(sample_rate.max(1))).round() as i64;
+    Samples(game_over.song_cursor.0 + elapsed_samples)
 }
 
 fn health_icon_scale(cursor: Samples, sample_rate: u32, bpm: f64) -> f32 {

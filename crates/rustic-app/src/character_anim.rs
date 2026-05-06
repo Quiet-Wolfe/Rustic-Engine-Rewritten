@@ -107,6 +107,18 @@ impl CharacterAnimState {
         self.player_started = cursor;
     }
 
+    pub fn player_first_death(&mut self, cursor: Samples) {
+        // ref: 50fccded:source/GameOverSubstate.hx:51
+        self.player_pose = "firstDeath";
+        self.player_started = cursor;
+    }
+
+    pub fn player_death_loop(&mut self, cursor: Samples) {
+        // ref: 50fccded:source/Boyfriend.hx:36-38
+        self.player_pose = "deathLoop";
+        self.player_started = cursor;
+    }
+
     fn update_girlfriend_dance(&mut self, cursor: Samples, sample_rate: u32, bpm: f64) {
         // ref: 50fccded:source/PlayState.hx:2298
         let beat = beat_index(cursor, sample_rate, bpm);
@@ -205,5 +217,18 @@ mod tests {
 
         assert_eq!(state.poses().player.name, "singRIGHTmiss");
         assert_eq!(state.poses().player.started_at, Samples(1_234));
+    }
+
+    #[test]
+    fn death_poses_restart_from_death_cursors() {
+        let mut state = CharacterAnimState::default();
+        state.player_first_death(Samples(4_800));
+
+        assert_eq!(state.poses().player.name, "firstDeath");
+        assert_eq!(state.poses().player.started_at, Samples(4_800));
+
+        state.player_death_loop(Samples(9_600));
+        assert_eq!(state.poses().player.name, "deathLoop");
+        assert_eq!(state.poses().player.started_at, Samples(9_600));
     }
 }
