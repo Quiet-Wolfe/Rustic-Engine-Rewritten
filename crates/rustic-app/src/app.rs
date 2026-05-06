@@ -390,7 +390,7 @@ impl App {
         let Some(lane) = lane_for_action(event.action) else {
             return;
         };
-        let cursor = self.advance_song_clock();
+        let cursor = event.audio_sample_cursor_at_receive;
         let sample_rate = self.play_sample_rate();
         let gameplay_event =
             NormalizedInputEvent::new(event.action, event.state, event.wall_clock_ns, cursor);
@@ -471,7 +471,8 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) => self.handle_resize(size.width, size.height),
             WindowEvent::KeyboardInput { event, .. } => {
                 if let Some(action) = map_key(event.physical_key) {
-                    let evt = build_event(action, event.state, self.boot_instant, &self.mixer);
+                    let song_cursor = self.advance_song_clock();
+                    let evt = build_event(action, event.state, self.boot_instant, song_cursor);
                     self.held_lanes.apply(&evt);
                     self.screens.input(&evt);
                     self.handle_gameplay_input(&evt);

@@ -1,11 +1,12 @@
 //! winit -> `NormalizedInputEvent`. See `PLAN.md` Section 10.
 //!
 //! Wall-clock and audio-cursor stamps are captured at platform-event
-//! receipt. Wall clock is from `std::time::Instant`; the audio cursor is
-//! sampled from the mixer (passed in by the caller, who owns it).
+//! receipt. Wall clock is from `std::time::Instant`; the song cursor is
+//! sampled by the app because countdown time can be negative before the
+//! mixer starts.
 
-use rustic_audio::SharedMixer;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
+use rustic_core::time::Samples;
 use winit::event::ElementState;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
@@ -33,12 +34,12 @@ pub fn build_event(
     action: InputAction,
     state: ElementState,
     boot_instant: std::time::Instant,
-    mixer: &SharedMixer,
+    song_cursor: Samples,
 ) -> NormalizedInputEvent {
     let wall_clock_ns = boot_instant.elapsed().as_nanos() as u64;
     let state = match state {
         ElementState::Pressed => InputState::Pressed,
         ElementState::Released => InputState::Released,
     };
-    NormalizedInputEvent::new(action, state, wall_clock_ns, mixer.sample_cursor())
+    NormalizedInputEvent::new(action, state, wall_clock_ns, song_cursor)
 }
