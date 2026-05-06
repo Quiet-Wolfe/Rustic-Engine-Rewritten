@@ -348,7 +348,7 @@ impl App {
 
         self.cmds = self.static_cmds.clone();
         if let Some(characters) = &self.characters {
-            for cmd in characters.commands(self.character_anim.poses()) {
+            for cmd in characters.commands(self.character_anim.poses(), cursor, sample_rate) {
                 self.cmds.push(cmd);
             }
         }
@@ -425,7 +425,7 @@ impl App {
             }
         } else {
             play_state.register_miss();
-            self.character_anim.player_note_miss(lane);
+            self.character_anim.player_note_miss(lane, cursor);
         }
         if restore_vocals {
             self.set_vocals_gain(1.0);

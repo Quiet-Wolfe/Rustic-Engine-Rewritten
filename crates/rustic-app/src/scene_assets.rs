@@ -4,7 +4,7 @@
 //! uploads textures, and emits render commands, but gameplay and render
 //! crates remain free of filesystem and wgpu wiring.
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
-use crate::character_anim::CharacterPoseNames;
+use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
 use crate::hud_assets::{load_hud_assets, HudSkin};
 use crate::popup_assets::{load_popup_assets, PopupSkin};
@@ -16,6 +16,7 @@ use rustic_asset::{
 };
 use rustic_core::ids::{AssetId, CameraId, SongId};
 use rustic_core::render::RenderLayer;
+use rustic_core::time::Samples;
 use rustic_game::{Lane, NoteView, PlayState};
 use rustic_render::{DrawCommand, FilterMode, RenderCommandList, Texture};
 use std::collections::HashMap;
@@ -44,11 +45,17 @@ pub struct CharacterSet {
 }
 
 impl CharacterSet {
-    pub fn commands(&self, poses: CharacterPoseNames) -> Vec<DrawCommand> {
+    pub fn commands(
+        &self,
+        poses: CharacterPoseNames,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> Vec<DrawCommand> {
         vec![
-            self.girlfriend.command(poses.girlfriend),
-            self.opponent.command(poses.opponent),
-            self.player.command(poses.player),
+            self.girlfriend
+                .command(poses.girlfriend, cursor, sample_rate),
+            self.opponent.command(poses.opponent, cursor, sample_rate),
+            self.player.command(poses.player, cursor, sample_rate),
         ]
     }
 }
@@ -68,9 +75,14 @@ struct CharacterSprite {
 }
 
 impl CharacterSprite {
-    fn command(&self, animation_name: &str) -> DrawCommand {
-        let pose = self.pose(animation_name);
-        let frame = &pose.frame;
+    fn command(
+        &self,
+        request: CharacterPoseRequest,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> DrawCommand {
+        let pose = self.pose(request.name);
+        let frame = pose.frame(cursor, sample_rate, request.started_at);
         let mut cmd = DrawCommand::sprite(
             self.texture_id,
             character_frame_pos(&self.character, &pose.animation, frame, self.slot),
@@ -101,7 +113,21 @@ impl CharacterSprite {
 #[derive(Debug, Clone)]
 struct CharacterPose {
     animation: CharacterAnimation,
-    frame: SparrowFrame,
+    frames: Vec<SparrowFrame>,
+}
+
+impl CharacterPose {
+    fn frame(&self, cursor: Samples, sample_rate: u32, started_at: Samples) -> &SparrowFrame {
+        let index = animation_frame_index(
+            cursor,
+            sample_rate,
+            started_at,
+            self.animation.fps,
+            self.frames.len(),
+            self.animation.looped,
+        );
+        &self.frames[index]
+    }
 }
 #[derive(Debug, Clone)]
 pub struct NoteSkin {
@@ -451,15 +477,41 @@ fn character_poses(
         .animations
         .iter()
         .map(|animation| {
-            let frame = atlas
-                .first_animation_frame(&animation.prefix, &animation.indices)
-                .with_context(|| format!("resolve frame {}:{}", character.id, animation.name))?;
+            let frames: Vec<_> = atlas
+                .animation_frames(&animation.prefix, &animation.indices)
+                .into_iter()
+                .cloned()
+                .collect();
+            if frames.is_empty() {
+                anyhow::bail!("resolve frame {}:{}", character.id, animation.name);
+            }
             Ok(CharacterPose {
                 animation: animation.clone(),
-                frame: frame.clone(),
+                frames,
             })
         })
         .collect()
+}
+
+fn animation_frame_index(
+    cursor: Samples,
+    sample_rate: u32,
+    started_at: Samples,
+    fps: u16,
+    frame_count: usize,
+    looped: bool,
+) -> usize {
+    if frame_count <= 1 {
+        return 0;
+    }
+    let elapsed = cursor.0.saturating_sub(started_at.0).max(0) as f64;
+    let samples_per_frame = f64::from(sample_rate.max(1)) / f64::from(fps.max(1));
+    let frame = (elapsed / samples_per_frame).floor() as usize;
+    if looped {
+        frame % frame_count
+    } else {
+        frame.min(frame_count - 1)
+    }
 }
 
 fn initial_animation(character: &CharacterDefinition) -> Result<&CharacterAnimation> {
@@ -552,4 +604,47 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
     AssetId::new(hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_looping_animation_frames_clamp_to_last_frame() {
+        // ref: 50fccded:source/Character.hx:271-284
+        assert_eq!(
+            animation_frame_index(Samples(0), 48_000, Samples(0), 24, 3, false),
+            0
+        );
+        assert_eq!(
+            animation_frame_index(Samples(2_000), 48_000, Samples(0), 24, 3, false),
+            1
+        );
+        assert_eq!(
+            animation_frame_index(Samples(96_000), 48_000, Samples(0), 24, 3, false),
+            2
+        );
+    }
+
+    #[test]
+    fn looping_animation_frames_wrap() {
+        // ref: 50fccded:source/Character.hx:128-133
+        assert_eq!(
+            animation_frame_index(Samples(6_000), 48_000, Samples(0), 24, 3, true),
+            0
+        );
+        assert_eq!(
+            animation_frame_index(Samples(8_000), 48_000, Samples(0), 24, 3, true),
+            1
+        );
+    }
+
+    #[test]
+    fn animation_frame_index_uses_pose_start_cursor() {
+        assert_eq!(
+            animation_frame_index(Samples(12_000), 48_000, Samples(10_000), 24, 3, false),
+            1
+        );
+    }
 }

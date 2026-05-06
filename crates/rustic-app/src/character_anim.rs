@@ -10,10 +10,16 @@ const DAD_HOLD_STEPS: f64 = 6.1;
 const BF_HOLD_STEPS: f64 = 4.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CharacterPoseRequest {
+    pub name: &'static str,
+    pub started_at: Samples,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CharacterPoseNames {
-    pub girlfriend: &'static str,
-    pub opponent: &'static str,
-    pub player: &'static str,
+    pub girlfriend: CharacterPoseRequest,
+    pub opponent: CharacterPoseRequest,
+    pub player: CharacterPoseRequest,
 }
 
 #[derive(Debug, Clone)]
@@ -21,6 +27,9 @@ pub struct CharacterAnimState {
     girlfriend_pose: &'static str,
     opponent_pose: &'static str,
     player_pose: &'static str,
+    girlfriend_started: Samples,
+    opponent_started: Samples,
+    player_started: Samples,
     opponent_until: Samples,
     player_until: Samples,
     last_beat: i64,
@@ -33,6 +42,9 @@ impl Default for CharacterAnimState {
             girlfriend_pose: "danceRight",
             opponent_pose: "idle",
             player_pose: "idle",
+            girlfriend_started: Samples(0),
+            opponent_started: Samples(0),
+            player_started: Samples(0),
             opponent_until: Samples(0),
             player_until: Samples(0),
             last_beat: -1,
@@ -44,9 +56,18 @@ impl Default for CharacterAnimState {
 impl CharacterAnimState {
     pub fn poses(&self) -> CharacterPoseNames {
         CharacterPoseNames {
-            girlfriend: self.girlfriend_pose,
-            opponent: self.opponent_pose,
-            player: self.player_pose,
+            girlfriend: CharacterPoseRequest {
+                name: self.girlfriend_pose,
+                started_at: self.girlfriend_started,
+            },
+            opponent: CharacterPoseRequest {
+                name: self.opponent_pose,
+                started_at: self.opponent_started,
+            },
+            player: CharacterPoseRequest {
+                name: self.player_pose,
+                started_at: self.player_started,
+            },
         }
     }
 
@@ -54,6 +75,7 @@ impl CharacterAnimState {
         self.update_girlfriend_dance(cursor, sample_rate, bpm);
         if self.opponent_pose.starts_with("sing") && cursor >= self.opponent_until {
             self.opponent_pose = "idle";
+            self.opponent_started = cursor;
         }
         if self.player_pose.starts_with("sing")
             && !self.player_pose.ends_with("miss")
@@ -61,24 +83,28 @@ impl CharacterAnimState {
             && cursor >= self.player_until
         {
             self.player_pose = "idle";
+            self.player_started = cursor;
         }
     }
 
     pub fn opponent_note_hit(&mut self, lane: Lane, cursor: Samples, sample_rate: u32, bpm: f64) {
         // ref: 50fccded:source/PlayState.hx:1538-1549
         self.opponent_pose = sing_pose(lane);
+        self.opponent_started = cursor;
         self.opponent_until = Samples(cursor.0 + hold_samples(sample_rate, bpm, DAD_HOLD_STEPS));
     }
 
     pub fn player_note_hit(&mut self, lane: Lane, cursor: Samples, sample_rate: u32, bpm: f64) {
         // ref: 50fccded:source/PlayState.hx:2111-2122
         self.player_pose = sing_pose(lane);
+        self.player_started = cursor;
         self.player_until = Samples(cursor.0 + hold_samples(sample_rate, bpm, BF_HOLD_STEPS));
     }
 
-    pub fn player_note_miss(&mut self, lane: Lane) {
+    pub fn player_note_miss(&mut self, lane: Lane, cursor: Samples) {
         // ref: 50fccded:source/PlayState.hx:2056-2066
         self.player_pose = miss_pose(lane);
+        self.player_started = cursor;
     }
 
     fn update_girlfriend_dance(&mut self, cursor: Samples, sample_rate: u32, bpm: f64) {
@@ -97,6 +123,7 @@ impl CharacterAnimState {
         } else {
             "danceLeft"
         };
+        self.girlfriend_started = cursor;
     }
 }
 
@@ -139,11 +166,13 @@ mod tests {
         let mut state = CharacterAnimState::default();
         state.opponent_note_hit(Lane::Left, Samples(1_000), 48_000, 100.0);
 
-        assert_eq!(state.poses().opponent, "singLEFT");
+        assert_eq!(state.poses().opponent.name, "singLEFT");
+        assert_eq!(state.poses().opponent.started_at, Samples(1_000));
         state.update(Samples(44_919), 48_000, 100.0, false);
-        assert_eq!(state.poses().opponent, "singLEFT");
+        assert_eq!(state.poses().opponent.name, "singLEFT");
         state.update(Samples(44_920), 48_000, 100.0, false);
-        assert_eq!(state.poses().opponent, "idle");
+        assert_eq!(state.poses().opponent.name, "idle");
+        assert_eq!(state.poses().opponent.started_at, Samples(44_920));
     }
 
     #[test]
@@ -152,9 +181,9 @@ mod tests {
         state.player_note_hit(Lane::Down, Samples(0), 48_000, 100.0);
 
         state.update(Samples(30_000), 48_000, 100.0, true);
-        assert_eq!(state.poses().player, "singDOWN");
+        assert_eq!(state.poses().player.name, "singDOWN");
         state.update(Samples(30_000), 48_000, 100.0, false);
-        assert_eq!(state.poses().player, "idle");
+        assert_eq!(state.poses().player.name, "idle");
     }
 
     #[test]
@@ -162,8 +191,19 @@ mod tests {
         let mut state = CharacterAnimState::default();
 
         state.update(Samples(0), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend, "danceRight");
+        assert_eq!(state.poses().girlfriend.name, "danceRight");
+        assert_eq!(state.poses().girlfriend.started_at, Samples(0));
         state.update(Samples(28_800), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend, "danceLeft");
+        assert_eq!(state.poses().girlfriend.name, "danceLeft");
+        assert_eq!(state.poses().girlfriend.started_at, Samples(28_800));
+    }
+
+    #[test]
+    fn miss_pose_restarts_from_the_miss_cursor() {
+        let mut state = CharacterAnimState::default();
+        state.player_note_miss(Lane::Right, Samples(1_234));
+
+        assert_eq!(state.poses().player.name, "singRIGHTmiss");
+        assert_eq!(state.poses().player.started_at, Samples(1_234));
     }
 }
