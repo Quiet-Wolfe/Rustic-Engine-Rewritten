@@ -71,8 +71,15 @@ impl CharacterAnimState {
         }
     }
 
-    pub fn update(&mut self, cursor: Samples, sample_rate: u32, bpm: f64, player_holding: bool) {
-        self.update_girlfriend_dance(cursor, sample_rate, bpm);
+    pub fn update(
+        &mut self,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        player_holding: bool,
+        bopeebo_hey: bool,
+    ) {
+        self.update_beat_dances(cursor, sample_rate, bpm, bopeebo_hey);
         if self.opponent_pose.starts_with("sing") && cursor >= self.opponent_until {
             self.opponent_pose = "idle";
             self.opponent_started = cursor;
@@ -119,23 +126,37 @@ impl CharacterAnimState {
         self.player_started = cursor;
     }
 
-    fn update_girlfriend_dance(&mut self, cursor: Samples, sample_rate: u32, bpm: f64) {
-        // ref: 50fccded:source/PlayState.hx:2298
+    fn update_beat_dances(
+        &mut self,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        bopeebo_hey: bool,
+    ) {
         let beat = beat_index(cursor, sample_rate, bpm);
         if beat <= self.last_beat {
             return;
         }
         self.last_beat = beat;
-        if !self.girlfriend_pose.starts_with("dance") {
-            return;
+        // ref: 50fccded:source/PlayState.hx:2296-2298
+        if self.girlfriend_pose.starts_with("dance") {
+            self.gf_danced = !self.gf_danced;
+            self.girlfriend_pose = if self.gf_danced {
+                "danceRight"
+            } else {
+                "danceLeft"
+            };
+            self.girlfriend_started = cursor;
         }
-        self.gf_danced = !self.gf_danced;
-        self.girlfriend_pose = if self.gf_danced {
-            "danceRight"
-        } else {
-            "danceLeft"
-        };
-        self.girlfriend_started = cursor;
+        // ref: 50fccded:source/PlayState.hx:2300-2308
+        if !self.player_pose.starts_with("sing") && !self.player_pose.starts_with("death") {
+            self.player_pose = "idle";
+            self.player_started = cursor;
+        }
+        if bopeebo_hey && beat.rem_euclid(8) == 7 && !self.player_pose.starts_with("sing") {
+            self.player_pose = "hey";
+            self.player_started = cursor;
+        }
     }
 }
 
@@ -180,9 +201,9 @@ mod tests {
 
         assert_eq!(state.poses().opponent.name, "singLEFT");
         assert_eq!(state.poses().opponent.started_at, Samples(1_000));
-        state.update(Samples(44_919), 48_000, 100.0, false);
+        state.update(Samples(44_919), 48_000, 100.0, false, false);
         assert_eq!(state.poses().opponent.name, "singLEFT");
-        state.update(Samples(44_920), 48_000, 100.0, false);
+        state.update(Samples(44_920), 48_000, 100.0, false, false);
         assert_eq!(state.poses().opponent.name, "idle");
         assert_eq!(state.poses().opponent.started_at, Samples(44_920));
     }
@@ -192,9 +213,9 @@ mod tests {
         let mut state = CharacterAnimState::default();
         state.player_note_hit(Lane::Down, Samples(0), 48_000, 100.0);
 
-        state.update(Samples(30_000), 48_000, 100.0, true);
+        state.update(Samples(30_000), 48_000, 100.0, true, false);
         assert_eq!(state.poses().player.name, "singDOWN");
-        state.update(Samples(30_000), 48_000, 100.0, false);
+        state.update(Samples(30_000), 48_000, 100.0, false, false);
         assert_eq!(state.poses().player.name, "idle");
     }
 
@@ -202,12 +223,36 @@ mod tests {
     fn girlfriend_toggles_dance_on_new_beat() {
         let mut state = CharacterAnimState::default();
 
-        state.update(Samples(0), 48_000, 100.0, false);
+        state.update(Samples(0), 48_000, 100.0, false, false);
         assert_eq!(state.poses().girlfriend.name, "danceRight");
         assert_eq!(state.poses().girlfriend.started_at, Samples(0));
-        state.update(Samples(28_800), 48_000, 100.0, false);
+        state.update(Samples(28_800), 48_000, 100.0, false, false);
         assert_eq!(state.poses().girlfriend.name, "danceLeft");
         assert_eq!(state.poses().girlfriend.started_at, Samples(28_800));
+    }
+
+    #[test]
+    fn player_idle_restarts_on_each_beat_when_not_singing() {
+        let mut state = CharacterAnimState::default();
+
+        state.update(Samples(0), 48_000, 100.0, false, false);
+        state.update(Samples(28_800), 48_000, 100.0, false, false);
+
+        assert_eq!(state.poses().player.name, "idle");
+        assert_eq!(state.poses().player.started_at, Samples(28_800));
+    }
+
+    #[test]
+    fn bopeebo_triggers_bf_hey_on_beat_seven() {
+        let mut state = CharacterAnimState::default();
+
+        state.update(Samples(201_600), 48_000, 100.0, false, true);
+        assert_eq!(state.poses().player.name, "hey");
+        assert_eq!(state.poses().player.started_at, Samples(201_600));
+
+        state.update(Samples(230_400), 48_000, 100.0, false, true);
+        assert_eq!(state.poses().player.name, "idle");
+        assert_eq!(state.poses().player.started_at, Samples(230_400));
     }
 
     #[test]

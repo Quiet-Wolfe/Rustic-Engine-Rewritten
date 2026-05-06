@@ -369,6 +369,7 @@ impl App {
                 sample_rate,
                 bpm,
                 self.held_lanes.active_lanes().next().is_some(),
+                true,
             );
         }
 
