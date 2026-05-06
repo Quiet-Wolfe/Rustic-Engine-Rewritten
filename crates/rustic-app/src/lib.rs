@@ -7,6 +7,7 @@ pub mod app;
 pub mod boot;
 pub mod hud_assets;
 pub mod input_bridge;
+pub mod lane_state;
 pub mod scene_assets;
 pub mod screen;
 pub mod settings;

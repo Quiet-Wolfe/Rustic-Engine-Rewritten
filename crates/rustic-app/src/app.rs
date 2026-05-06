@@ -8,14 +8,15 @@
 use crate::boot::{init_logging, install_panic_hook};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
+use crate::lane_state::{lane_for_action, HeldLanes};
 use crate::scene_assets::{load_default_scene, load_preview_play_state, NoteSkin, SAMPLE_RATE};
 use crate::screen::ScreenStack;
 use anyhow::Result;
 use rustic_audio::Mixer;
 use rustic_core::ids::{AssetId, CameraId};
-use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
+use rustic_core::input::{InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
-use rustic_game::{Lane, PlayState};
+use rustic_game::PlayState;
 use rustic_render::{
     CameraRegistry, Composite, RenderCommandList, RenderState, SpriteBatcher, SpritePipeline,
     SurfaceConfig, Texture,
@@ -57,6 +58,7 @@ struct App {
     atlases: HashMap<AssetId, Texture>,
     note_skin: Option<NoteSkin>,
     hud_skin: Option<HudSkin>,
+    held_lanes: HeldLanes,
     play_state: Option<PlayState>,
     song_start: Instant,
     song_start_cursor: Samples,
@@ -87,6 +89,7 @@ impl App {
             atlases: HashMap::new(),
             note_skin: None,
             hud_skin: None,
+            held_lanes: HeldLanes::default(),
             play_state: None,
             song_start: now,
             song_start_cursor: Samples(0),
@@ -257,6 +260,9 @@ impl App {
     fn rebuild_frame_commands(&mut self) {
         let cursor = self.preview_cursor();
         if let Some(play_state) = self.play_state.as_mut() {
+            for lane in self.held_lanes.active_lanes() {
+                play_state.resolve_held_sustains_in_lane(cursor, lane, SAMPLE_RATE);
+            }
             play_state.expire_late_notes(cursor, SAMPLE_RATE);
         }
 
@@ -317,16 +323,6 @@ fn initial_preview_cursor(play_state: &PlayState) -> Samples {
     Samples(first_note.saturating_sub(preview_lead))
 }
 
-fn lane_for_action(action: InputAction) -> Option<Lane> {
-    match action {
-        InputAction::LaneLeft => Some(Lane::Left),
-        InputAction::LaneDown => Some(Lane::Down),
-        InputAction::LaneUp => Some(Lane::Up),
-        InputAction::LaneRight => Some(Lane::Right),
-        _ => None,
-    }
-}
-
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.runtime.is_some() {
@@ -350,6 +346,7 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 if let Some(action) = map_key(event.physical_key) {
                     let evt = build_event(action, event.state, self.boot_instant, &self.mixer);
+                    self.held_lanes.apply(&evt);
                     self.screens.input(&evt);
                     self.handle_gameplay_input(&evt);
                     if event.state == ElementState::Pressed
