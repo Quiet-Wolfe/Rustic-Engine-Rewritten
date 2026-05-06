@@ -29,6 +29,10 @@ pub const DEATH_HEALTH: f32 = 0.0;
 #[non_exhaustive]
 pub struct PlayState {
     pub song: Option<SongId>,
+    /// Chart scroll speed (`SONG.speed`) used by the OG note-y formula.
+    /// ref: 50fccded:source/PlayState.hx:1512
+    #[serde(default = "default_scroll_speed")]
+    pub scroll_speed: f32,
     pub notes: Vec<Note>,
     /// IDs of notes that have already been resolved (hit or expired). Kept
     /// separately from `notes` so the chart stays immutable and rewind
@@ -50,6 +54,7 @@ impl Default for PlayState {
     fn default() -> Self {
         Self {
             song: None,
+            scroll_speed: default_scroll_speed(),
             notes: Vec::new(),
             resolved_notes: Vec::new(),
             windows: JudgmentWindows::base_fnf().into(),
@@ -81,6 +86,7 @@ impl PlayState {
         let notes = notes_from_chart(parsed.chart.notes.iter(), sample_rate, parsed.chart.bpm);
         *self = Self {
             song: Some(song),
+            scroll_speed: parsed.chart.speed as f32,
             notes,
             ..Self::default()
         };
@@ -96,6 +102,10 @@ impl PlayState {
     pub fn is_dead(&self) -> bool {
         self.health <= DEATH_HEALTH
     }
+}
+
+pub(crate) fn default_scroll_speed() -> f32 {
+    1.0
 }
 
 /// Serde-friendly wrapper because `JudgmentWindows` is `non_exhaustive`.
@@ -138,6 +148,7 @@ mod tests {
         assert_eq!(s.score, 0);
         assert_eq!(s.combo, 0);
         assert_eq!(s.max_combo, 0);
+        assert_eq!(s.scroll_speed, 1.0);
         assert!((s.health - INITIAL_HEALTH).abs() < 1e-6);
         assert!(!s.is_dead());
     }
@@ -162,6 +173,7 @@ mod tests {
             "song": {
                 "song": "Bopeebo",
                 "bpm": 100.0,
+                "speed": 1.4,
                 "notes": [
                     {"mustHitSection": true, "lengthInSteps": 16,
                      "sectionNotes": [[1000.0, 0, 0], [2000.0, 5, 250]]}
@@ -177,6 +189,7 @@ mod tests {
         state.load_chart(SongId::new(7), &parsed, 48_000);
 
         assert_eq!(state.song, Some(SongId::new(7)));
+        assert_eq!(state.scroll_speed, 1.4);
         assert_eq!(state.notes.len(), 3);
         assert_eq!(state.notes[0].hit_at, Samples(48_000));
         assert_eq!(state.notes[1].sustain_samples, 12_000);
