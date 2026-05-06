@@ -3,6 +3,7 @@
 //! This module is intentionally app-owned: it resolves vanilla assets,
 //! uploads textures, and emits render commands, but gameplay and render
 //! crates remain free of filesystem and wgpu wiring.
+// LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
 use crate::hud_assets::{load_hud_assets, HudSkin};
 use anyhow::{Context, Result};
 use rustic_asset::{
@@ -20,6 +21,7 @@ const NOTE_SWAG_WIDTH: f32 = 160.0 * 0.7;
 const STRUM_LINE_Y: f32 = 50.0;
 const FNF_WIDTH: f32 = 1280.0;
 const NOTE_ASSET_SCALE: f32 = 0.7;
+const LANES: [Lane; 4] = [Lane::Left, Lane::Down, Lane::Up, Lane::Right];
 pub struct LoadedScene {
     pub camera_zoom: f32,
     pub commands: RenderCommandList,
@@ -32,9 +34,20 @@ pub struct NoteSkin {
     texture_id: AssetId,
     texture_width: u32,
     texture_height: u32,
+    static_frames: [SparrowFrame; 4],
+    press_frames: [SparrowFrame; 4],
+    confirm_frames: [SparrowFrame; 4],
     tap_frames: [SparrowFrame; 4],
     hold_frames: [SparrowFrame; 4],
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceptorState {
+    Static,
+    Pressed,
+    Confirm,
+}
+
 impl NoteSkin {
     pub fn command_for_view(&self, view: &NoteView) -> DrawCommand {
         let frame = self.frame_for_view(view);
@@ -69,6 +82,57 @@ impl NoteSkin {
             &self.tap_frames[index]
         }
     }
+
+    pub fn receptor_commands<F>(&self, lane_state: F) -> Vec<DrawCommand>
+    where
+        F: Fn(Lane) -> ReceptorState,
+    {
+        let mut commands = Vec::with_capacity(8);
+        for player in 0..=1 {
+            for lane in LANES {
+                let state = if player == 1 {
+                    lane_state(lane)
+                } else {
+                    ReceptorState::Static
+                };
+                commands.push(self.receptor_command(player, lane, state));
+            }
+        }
+        commands
+    }
+
+    fn receptor_command(&self, player: u8, lane: Lane, state: ReceptorState) -> DrawCommand {
+        let frame = self.receptor_frame(lane, state);
+        let lane = lane_index(lane);
+        let base_x = 50.0 + lane as f32 * NOTE_SWAG_WIDTH + player as f32 * (FNF_WIDTH / 2.0);
+        let base_y = STRUM_LINE_Y;
+        let mut cmd = DrawCommand::sprite(
+            self.texture_id,
+            glam::vec2(
+                base_x - frame.frame_x as f32 * NOTE_ASSET_SCALE,
+                base_y - frame.frame_y as f32 * NOTE_ASSET_SCALE,
+            ),
+            glam::vec2(
+                frame.width as f32 * NOTE_ASSET_SCALE,
+                frame.height as f32 * NOTE_ASSET_SCALE,
+            ),
+        );
+        cmd.camera = CameraId(1);
+        cmd.pivot = glam::Vec2::ZERO;
+        cmd.layer = RenderLayer::Notes;
+        cmd.filter = FilterMode::Linear;
+        (cmd.uv_min, cmd.uv_max) = frame_uv(frame, self.texture_width, self.texture_height);
+        cmd
+    }
+
+    fn receptor_frame(&self, lane: Lane, state: ReceptorState) -> &SparrowFrame {
+        let index = lane_index(lane);
+        match state {
+            ReceptorState::Static => &self.static_frames[index],
+            ReceptorState::Pressed => &self.press_frames[index],
+            ReceptorState::Confirm => &self.confirm_frames[index],
+        }
+    }
 }
 pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<LoadedScene> {
     let resolver = OverlayResolver::new().with_baked_root("assets/baked");
@@ -87,7 +151,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         load_stage_object(device, queue, &resolver, object, &mut scene)?;
     }
     load_stage_characters(device, queue, &resolver, &stage, &mut scene)?;
-    scene.note_skin = Some(load_static_receptors(device, queue, &resolver, &mut scene)?);
+    scene.note_skin = Some(load_note_skin(device, queue, &resolver, &mut scene)?);
     scene.hud_skin = Some(load_hud_assets(
         device,
         queue,
@@ -176,7 +240,7 @@ fn load_stage_characters(
     )
 }
 
-fn load_static_receptors(
+fn load_note_skin(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     resolver: &OverlayResolver,
@@ -202,6 +266,24 @@ fn load_static_receptors(
         texture_id,
         texture_width: image.width,
         texture_height: image.height,
+        static_frames: [
+            cloned_first_frame(&atlas, "arrowLEFT")?,
+            cloned_first_frame(&atlas, "arrowDOWN")?,
+            cloned_first_frame(&atlas, "arrowUP")?,
+            cloned_first_frame(&atlas, "arrowRIGHT")?,
+        ],
+        press_frames: [
+            cloned_first_frame(&atlas, "left press")?,
+            cloned_first_frame(&atlas, "down press")?,
+            cloned_first_frame(&atlas, "up press")?,
+            cloned_first_frame(&atlas, "right press")?,
+        ],
+        confirm_frames: [
+            cloned_first_frame(&atlas, "left confirm")?,
+            cloned_first_frame(&atlas, "down confirm")?,
+            cloned_first_frame(&atlas, "up confirm")?,
+            cloned_first_frame(&atlas, "right confirm")?,
+        ],
         tap_frames: [
             cloned_first_frame(&atlas, "purple0")?,
             cloned_first_frame(&atlas, "blue0")?,
@@ -216,31 +298,6 @@ fn load_static_receptors(
         ],
     };
 
-    for player in 0..=1 {
-        for lane in 0..4 {
-            let prefix = receptor_prefix(lane);
-            let frame = atlas
-                .first_animation_frame(prefix, &[])
-                .with_context(|| format!("resolve receptor frame {prefix}"))?;
-            let mut cmd = DrawCommand::sprite(
-                texture_id,
-                glam::vec2(
-                    50.0 + lane as f32 * NOTE_SWAG_WIDTH + player as f32 * (FNF_WIDTH / 2.0),
-                    STRUM_LINE_Y,
-                ),
-                glam::vec2(
-                    frame.width as f32 * NOTE_ASSET_SCALE,
-                    frame.height as f32 * NOTE_ASSET_SCALE,
-                ),
-            );
-            cmd.camera = CameraId(1);
-            cmd.pivot = glam::Vec2::ZERO;
-            cmd.layer = RenderLayer::Notes;
-            cmd.filter = FilterMode::Linear;
-            (cmd.uv_min, cmd.uv_max) = frame_uv(frame, image.width, image.height);
-            scene.commands.push(cmd);
-        }
-    }
     Ok(note_skin)
 }
 
@@ -349,15 +406,6 @@ fn effective_flip_x(character: &CharacterDefinition, is_player: bool) -> bool {
         !character.flip_x
     } else {
         character.flip_x
-    }
-}
-
-fn receptor_prefix(lane: u8) -> &'static str {
-    match lane {
-        0 => "arrowLEFT",
-        1 => "arrowDOWN",
-        2 => "arrowUP",
-        _ => "arrowRIGHT",
     }
 }
 

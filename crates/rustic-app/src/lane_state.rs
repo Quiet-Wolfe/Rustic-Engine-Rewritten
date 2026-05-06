@@ -25,8 +25,7 @@ impl HeldLanes {
             .filter_map(|(idx, lane)| self.pressed[idx].then_some(lane))
     }
 
-    #[cfg(test)]
-    fn is_held(&self, lane: Lane) -> bool {
+    pub fn is_held(&self, lane: Lane) -> bool {
         self.pressed[lane_index(lane)]
     }
 }

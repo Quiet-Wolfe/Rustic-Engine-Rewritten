@@ -9,7 +9,9 @@ use crate::boot::{init_logging, install_panic_hook};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
-use crate::scene_assets::{load_default_scene, load_preview_play_state, NoteSkin, SAMPLE_RATE};
+use crate::scene_assets::{
+    load_default_scene, load_preview_play_state, NoteSkin, ReceptorState, SAMPLE_RATE,
+};
 use crate::screen::ScreenStack;
 use anyhow::Result;
 use rustic_audio::Mixer;
@@ -270,6 +272,16 @@ impl App {
         let (Some(play_state), Some(note_skin)) = (&self.play_state, &self.note_skin) else {
             return;
         };
+
+        for cmd in note_skin.receptor_commands(|lane| {
+            if self.held_lanes.is_held(lane) {
+                ReceptorState::Pressed
+            } else {
+                ReceptorState::Static
+            }
+        }) {
+            self.cmds.push(cmd);
+        }
 
         for view in play_state.note_views(cursor, SAMPLE_RATE) {
             let cmd = note_skin.command_for_view(&view);
