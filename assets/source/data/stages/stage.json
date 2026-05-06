@@ -1,6 +1,28 @@
 {
   "id": "stage",
   "cameraZoom": 0.9,
+  "boyfriend": {
+    "position": {
+      "x": 770.0,
+      "y": 450.0
+    }
+  },
+  "girlfriend": {
+    "position": {
+      "x": 400.0,
+      "y": 130.0
+    }
+  },
+  "opponent": {
+    "position": {
+      "x": 100.0,
+      "y": 100.0
+    },
+    "cameraOffset": {
+      "x": 400.0,
+      "y": 0.0
+    }
+  },
   "objects": [
     {
       "id": "stageback",
