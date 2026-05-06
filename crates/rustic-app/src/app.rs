@@ -19,7 +19,7 @@ use crate::scene_assets::{
 use crate::screen::ScreenStack;
 use crate::song_audio::load_bopeebo_stems;
 use anyhow::Result;
-use rustic_audio::{AudioOutput, Mixer, SharedMixer};
+use rustic_audio::{AudioOutput, Mixer, SharedMixer, Stem};
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::input::{InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
@@ -317,18 +317,26 @@ impl App {
         let sample_rate = self.play_sample_rate();
         let mut opponent_hits = Vec::new();
         let mut bpm = None;
+        let mut late_misses = 0;
         if let Some(play_state) = self.play_state.as_mut() {
             opponent_hits = play_state.resolve_opponent_notes(cursor);
             for lane in self.held_lanes.active_lanes() {
                 play_state.resolve_held_sustains_in_lane(cursor, lane, sample_rate);
             }
-            play_state.expire_late_notes(cursor, sample_rate);
+            late_misses = play_state.expire_late_notes(cursor, sample_rate);
             bpm = Some(play_state.bpm);
         }
+        if late_misses > 0 {
+            self.set_vocals_gain(0.0);
+        }
         if let Some(bpm) = bpm {
+            let had_opponent_hits = !opponent_hits.is_empty();
             for hit in opponent_hits {
                 self.character_anim
                     .opponent_note_hit(hit.lane, cursor, sample_rate, bpm);
+            }
+            if had_opponent_hits {
+                self.set_vocals_gain(1.0);
             }
             self.character_anim.update(
                 cursor,
@@ -397,12 +405,14 @@ impl App {
         let Some(play_state) = self.play_state.as_mut() else {
             return;
         };
+        let mut restore_vocals = false;
         if let Some(outcome) = play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate) {
             let confirm_samples = i64::from(sample_rate) / 6;
             self.held_lanes
                 .confirm_until(lane, Samples(cursor.0 + confirm_samples));
             self.character_anim
                 .player_note_hit(lane, cursor, sample_rate, play_state.bpm);
+            restore_vocals = true;
             if !outcome.is_sustain {
                 self.score_popups.push(
                     outcome.judgment,
@@ -413,6 +423,9 @@ impl App {
         } else {
             play_state.register_miss();
             self.character_anim.player_note_miss(lane);
+        }
+        if restore_vocals {
+            self.set_vocals_gain(1.0);
         }
     }
 
@@ -446,6 +459,15 @@ impl App {
 
     fn play_sample_rate(&self) -> u32 {
         self.mixer.sample_rate().max(1)
+    }
+
+    fn set_vocals_gain(&self, gain: f32) {
+        if let Err(e) = self.mixer.edit(|mixer| {
+            mixer.set_stem_gain(Stem::Vocals, gain);
+            Ok(())
+        }) {
+            tracing::warn!(target: "rustic.audio", "set vocals gain: {e:#}");
+        }
     }
 }
 
