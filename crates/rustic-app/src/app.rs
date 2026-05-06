@@ -6,6 +6,7 @@
 //! window is held in an `Arc`.
 
 use crate::boot::{init_logging, install_panic_hook};
+use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
 use crate::scene_assets::{load_default_scene, load_preview_play_state, NoteSkin, SAMPLE_RATE};
 use crate::screen::ScreenStack;
@@ -55,6 +56,7 @@ struct App {
     cmds: RenderCommandList,
     atlases: HashMap<AssetId, Texture>,
     note_skin: Option<NoteSkin>,
+    hud_skin: Option<HudSkin>,
     play_state: Option<PlayState>,
     song_start: Instant,
     song_start_cursor: Samples,
@@ -84,6 +86,7 @@ impl App {
             cmds: RenderCommandList::new(),
             atlases: HashMap::new(),
             note_skin: None,
+            hud_skin: None,
             play_state: None,
             song_start: now,
             song_start_cursor: Samples(0),
@@ -138,6 +141,7 @@ impl App {
                 self.static_cmds = self.cmds.clone();
                 self.atlases = scene.textures;
                 self.note_skin = scene.note_skin;
+                self.hud_skin = scene.hud_skin;
                 if let Some(camera) = self.cameras.get_mut(CameraId(0)) {
                     camera.zoom = scene.camera_zoom;
                 }
@@ -264,6 +268,11 @@ impl App {
         for view in play_state.note_views(cursor, SAMPLE_RATE) {
             let cmd = note_skin.command_for_view(&view);
             if cmd.world_pos.y + cmd.size.y >= -200.0 {
+                self.cmds.push(cmd);
+            }
+        }
+        if let Some(hud_skin) = &self.hud_skin {
+            for cmd in hud_skin.commands(play_state.health) {
                 self.cmds.push(cmd);
             }
         }

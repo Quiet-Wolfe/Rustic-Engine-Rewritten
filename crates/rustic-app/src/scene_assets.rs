@@ -3,7 +3,7 @@
 //! This module is intentionally app-owned: it resolves vanilla assets,
 //! uploads textures, and emits render commands, but gameplay and render
 //! crates remain free of filesystem and wgpu wiring.
-
+use crate::hud_assets::{load_hud_assets, HudSkin};
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_character, load_chart, load_png, load_sparrow, load_stage, AssetPath, CharacterAnimation,
@@ -15,20 +15,18 @@ use rustic_core::render::RenderLayer;
 use rustic_game::{Lane, NoteView, PlayState};
 use rustic_render::{DrawCommand, FilterMode, RenderCommandList, Texture};
 use std::collections::HashMap;
-
 pub const SAMPLE_RATE: u32 = 48_000;
 const NOTE_SWAG_WIDTH: f32 = 160.0 * 0.7;
 const STRUM_LINE_Y: f32 = 50.0;
 const FNF_WIDTH: f32 = 1280.0;
 const NOTE_ASSET_SCALE: f32 = 0.7;
-
 pub struct LoadedScene {
     pub camera_zoom: f32,
     pub commands: RenderCommandList,
     pub textures: HashMap<AssetId, Texture>,
     pub note_skin: Option<NoteSkin>,
+    pub hud_skin: Option<HudSkin>,
 }
-
 #[derive(Debug, Clone)]
 pub struct NoteSkin {
     texture_id: AssetId,
@@ -37,7 +35,6 @@ pub struct NoteSkin {
     tap_frames: [SparrowFrame; 4],
     hold_frames: [SparrowFrame; 4],
 }
-
 impl NoteSkin {
     pub fn command_for_view(&self, view: &NoteView) -> DrawCommand {
         let frame = self.frame_for_view(view);
@@ -73,7 +70,6 @@ impl NoteSkin {
         }
     }
 }
-
 pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<LoadedScene> {
     let resolver = OverlayResolver::new().with_baked_root("assets/baked");
     let stage_path = AssetPath::new("data/stages/stage.json")?;
@@ -84,6 +80,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         commands: RenderCommandList::new(),
         textures: HashMap::new(),
         note_skin: None,
+        hud_skin: None,
     };
 
     for object in &stage.objects {
@@ -91,6 +88,12 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
     }
     load_stage_characters(device, queue, &resolver, &stage, &mut scene)?;
     scene.note_skin = Some(load_static_receptors(device, queue, &resolver, &mut scene)?);
+    scene.hud_skin = Some(load_hud_assets(
+        device,
+        queue,
+        &resolver,
+        &mut scene.textures,
+    )?);
     Ok(scene)
 }
 
