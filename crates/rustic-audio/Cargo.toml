@@ -13,3 +13,4 @@ expect_used = "deny"
 rustic-core = { workspace = true }
 rustic-asset = { workspace = true }
 thiserror = { workspace = true }
+lewton = "0.10.2"

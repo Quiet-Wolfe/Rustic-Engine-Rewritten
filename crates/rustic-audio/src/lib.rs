@@ -10,8 +10,10 @@ pub mod conductor;
 pub mod error;
 pub mod mixer;
 pub mod source;
+pub mod vorbis;
 
 pub use conductor::{map_bpm_changes, BpmChangeEvent, Conductor, ConductorState};
 pub use error::{AudioError, AudioResult};
 pub use mixer::{MixStats, Mixer, Stem, VoiceId};
 pub use source::{Decoder, SoundSource};
+pub use vorbis::VorbisDecoder;
