@@ -16,4 +16,4 @@ pub use conductor::{map_bpm_changes, BpmChangeEvent, Conductor, ConductorState};
 pub use error::{AudioError, AudioResult};
 pub use mixer::{MixStats, Mixer, Stem, VoiceId};
 pub use source::{Decoder, SoundSource};
-pub use vorbis::VorbisDecoder;
+pub use vorbis::{streaming_vorbis_source, VorbisDecoder};

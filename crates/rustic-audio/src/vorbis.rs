@@ -1,7 +1,7 @@
 //! Ogg/Vorbis decoder backed by the asset resolver's byte buffers.
 
 use crate::error::{AudioError, AudioResult};
-use crate::source::Decoder;
+use crate::source::{Decoder, SoundSource};
 use lewton::inside_ogg::OggStreamReader;
 use rustic_core::time::Samples;
 use std::io::Cursor;
@@ -57,6 +57,10 @@ impl VorbisDecoder {
         self.pending_pos = 0;
         Ok(true)
     }
+}
+
+pub fn streaming_vorbis_source(bytes: Arc<[u8]>) -> AudioResult<SoundSource> {
+    Ok(SoundSource::Streaming(Box::new(VorbisDecoder::new(bytes)?)))
 }
 
 impl Decoder for VorbisDecoder {
@@ -118,6 +122,7 @@ fn open_reader(bytes: Arc<[u8]>) -> AudioResult<OggStreamReader<Cursor<Arc<[u8]>
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use crate::{Mixer, Stem};
     use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
 
     fn bopeebo_inst() -> Arc<[u8]> {
@@ -157,5 +162,23 @@ mod tests {
         decoder.read(&mut after_seek).unwrap();
 
         assert_eq!(first, after_seek);
+    }
+
+    #[test]
+    fn mixer_accepts_imported_vorbis_stem() {
+        let mut mixer = Mixer::new(48_000);
+        mixer
+            .add_source(
+                Stem::Instrumental,
+                streaming_vorbis_source(bopeebo_inst()).unwrap(),
+            )
+            .unwrap();
+        let mut out = vec![0.0; 4096 * 2];
+
+        let stats = mixer.mix_stereo(&mut out).unwrap();
+
+        assert_eq!(stats.frames, 4096);
+        assert_eq!(stats.sample_cursor, Samples(4096));
+        assert!(out.iter().any(|sample| *sample != 0.0));
     }
 }
