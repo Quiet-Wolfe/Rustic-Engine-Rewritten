@@ -10,10 +10,15 @@ use rustic_asset::{
     CharacterDefinition, OverlayResolver, SparrowAtlas, SparrowFrame, StageCharacterSlot,
     StageDefinition, StageObject,
 };
-use rustic_core::ids::AssetId;
+use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
 use rustic_render::{DrawCommand, FilterMode, RenderCommandList, Texture};
 use std::collections::HashMap;
+
+const NOTE_SWAG_WIDTH: f32 = 160.0 * 0.7;
+const STRUM_LINE_Y: f32 = 50.0;
+const FNF_WIDTH: f32 = 1280.0;
+const NOTE_ASSET_SCALE: f32 = 0.7;
 
 pub struct LoadedScene {
     pub camera_zoom: f32,
@@ -36,6 +41,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         load_stage_object(device, queue, &resolver, object, &mut scene)?;
     }
     load_stage_characters(device, queue, &resolver, &stage, &mut scene)?;
+    load_static_receptors(device, queue, &resolver, &mut scene)?;
     Ok(scene)
 }
 
@@ -108,6 +114,56 @@ fn load_stage_characters(
         2,
         scene,
     )
+}
+
+fn load_static_receptors(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    scene: &mut LoadedScene,
+) -> Result<()> {
+    let atlas_path = AssetPath::new("images/NOTE_assets.xml")?;
+    let atlas = load_sparrow(resolver, &atlas_path)
+        .with_context(|| format!("load {}", atlas_path.as_str()))?;
+    let texture_path = atlas_texture_path(&atlas_path, &atlas)?;
+    let image = load_png(resolver, &texture_path)
+        .with_context(|| format!("load {}", texture_path.as_str()))?;
+    let texture_id = asset_id_for_path(&texture_path);
+    let texture = Texture::from_png_image(
+        device,
+        queue,
+        &image,
+        FilterMode::Linear,
+        Some(texture_path.as_str()),
+    );
+    scene.textures.insert(texture_id, texture);
+
+    for player in 0..=1 {
+        for lane in 0..4 {
+            let prefix = receptor_prefix(lane);
+            let frame = atlas
+                .first_animation_frame(prefix, &[])
+                .with_context(|| format!("resolve receptor frame {prefix}"))?;
+            let mut cmd = DrawCommand::sprite(
+                texture_id,
+                glam::vec2(
+                    50.0 + lane as f32 * NOTE_SWAG_WIDTH + player as f32 * (FNF_WIDTH / 2.0),
+                    STRUM_LINE_Y,
+                ),
+                glam::vec2(
+                    frame.width as f32 * NOTE_ASSET_SCALE,
+                    frame.height as f32 * NOTE_ASSET_SCALE,
+                ),
+            );
+            cmd.camera = CameraId(1);
+            cmd.pivot = glam::Vec2::ZERO;
+            cmd.layer = RenderLayer::Notes;
+            cmd.filter = FilterMode::Linear;
+            (cmd.uv_min, cmd.uv_max) = frame_uv(frame, image.width, image.height);
+            scene.commands.push(cmd);
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -215,6 +271,15 @@ fn effective_flip_x(character: &CharacterDefinition, is_player: bool) -> bool {
         !character.flip_x
     } else {
         character.flip_x
+    }
+}
+
+fn receptor_prefix(lane: u8) -> &'static str {
+    match lane {
+        0 => "arrowLEFT",
+        1 => "arrowDOWN",
+        2 => "arrowUP",
+        _ => "arrowRIGHT",
     }
 }
 
