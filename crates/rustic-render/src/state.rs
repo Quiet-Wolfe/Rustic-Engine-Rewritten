@@ -43,12 +43,10 @@ pub struct RenderState {
 impl RenderState {
     /// Async-aware constructor. Callers wrap with `pollster::block_on`
     /// when they need a sync entry point.
-    pub async fn new_async(compatible_surface: Option<&wgpu::Surface<'_>>) -> RenderResult<Self> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        });
-
+    pub async fn new_async(
+        instance: wgpu::Instance,
+        compatible_surface: Option<&wgpu::Surface<'_>>,
+    ) -> RenderResult<Self> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -121,13 +119,20 @@ impl RenderState {
     }
 
     /// Sync helper for callers that don't want to manage an executor.
-    pub fn new_blocking(compatible_surface: Option<&wgpu::Surface<'_>>) -> RenderResult<Self> {
-        pollster::block_on(Self::new_async(compatible_surface))
+    pub fn new_blocking(
+        instance: wgpu::Instance,
+        compatible_surface: Option<&wgpu::Surface<'_>>,
+    ) -> RenderResult<Self> {
+        pollster::block_on(Self::new_async(instance, compatible_surface))
     }
 
     /// Headless variant for tests/regression. Uses no surface.
     pub async fn headless() -> RenderResult<Self> {
-        Self::new_async(None).await
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..Default::default()
+        });
+        Self::new_async(instance, None).await
     }
 
     /// Pick the matching pre-built sampler for the given filter metadata.

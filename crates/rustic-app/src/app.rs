@@ -96,7 +96,7 @@ impl App {
             .create_surface(window.clone())
             .map_err(|e| anyhow::anyhow!("create_surface: {e}"))?;
 
-        let rs = pollster::block_on(RenderState::new_async(Some(&surface)))?;
+        let rs = pollster::block_on(RenderState::new_async(instance, Some(&surface)))?;
         let inner = window.inner_size();
         let surface_cfg = rs.configure_surface(
             &surface,
@@ -106,10 +106,6 @@ impl App {
         )?;
         let pipeline = SpritePipeline::new(&rs.device, wgpu::TextureFormat::Rgba8UnormSrgb);
         let composite = Composite::new(&rs, surface_cfg.format);
-
-        // Discard the standalone instance — the adapter owns its own
-        // lineage through `RenderState`.
-        drop(instance);
 
         self.runtime = Some(Runtime {
             window,
