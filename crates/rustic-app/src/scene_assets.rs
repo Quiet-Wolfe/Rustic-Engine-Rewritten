@@ -170,12 +170,12 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
     Ok(scene)
 }
 
-pub fn load_preview_play_state() -> Result<PlayState> {
+pub fn load_preview_play_state(sample_rate: u32) -> Result<PlayState> {
     let resolver = OverlayResolver::new().with_baked_root("assets/baked");
     let chart_path = AssetPath::new("data/bopeebo/bopeebo.json")?;
     let chart =
         load_chart(&resolver, &chart_path).with_context(|| format!("load {}", chart_path))?;
-    Ok(PlayState::from_chart(SongId::new(0), &chart, SAMPLE_RATE))
+    Ok(PlayState::from_chart(SongId::new(0), &chart, sample_rate))
 }
 
 fn load_stage_object(

@@ -4,7 +4,7 @@
 //! receipt. Wall clock is from `std::time::Instant`; the audio cursor is
 //! sampled from the mixer (passed in by the caller, who owns it).
 
-use rustic_audio::Mixer;
+use rustic_audio::SharedMixer;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use winit::event::ElementState;
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -33,7 +33,7 @@ pub fn build_event(
     action: InputAction,
     state: ElementState,
     boot_instant: std::time::Instant,
-    mixer: &Mixer,
+    mixer: &SharedMixer,
 ) -> NormalizedInputEvent {
     let wall_clock_ns = boot_instant.elapsed().as_nanos() as u64;
     let state = match state {

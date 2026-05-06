@@ -12,5 +12,6 @@ pub mod popup_assets;
 pub mod scene_assets;
 pub mod screen;
 pub mod settings;
+pub mod song_audio;
 
 pub use app::{run, AppOptions};

@@ -15,8 +15,9 @@ use crate::scene_assets::{
     load_default_scene, load_preview_play_state, NoteSkin, ReceptorState, SAMPLE_RATE,
 };
 use crate::screen::ScreenStack;
+use crate::song_audio::load_bopeebo_stems;
 use anyhow::Result;
-use rustic_audio::Mixer;
+use rustic_audio::{AudioOutput, Mixer, SharedMixer};
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::input::{InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
@@ -33,7 +34,6 @@ use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowAttributes};
 
-const RECEPTOR_CONFIRM_SAMPLES: i64 = SAMPLE_RATE as i64 / 6;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct AppOptions {
@@ -56,7 +56,8 @@ impl Default for AppOptions {
 struct App {
     options: AppOptions,
     boot_instant: Instant,
-    mixer: Mixer,
+    mixer: SharedMixer,
+    audio_output: Option<AudioOutput>,
     cameras: CameraRegistry,
     static_cmds: RenderCommandList,
     cmds: RenderCommandList,
@@ -86,10 +87,31 @@ struct Runtime {
 impl App {
     fn new(options: AppOptions) -> Self {
         let now = Instant::now();
+        let (audio_output, mixer) = match AudioOutput::open_default() {
+            Ok(output) => {
+                tracing::info!(
+                    target: "rustic.audio",
+                    sample_rate = output.sample_rate(),
+                    channels = output.channels(),
+                    sample_format = ?output.sample_format(),
+                    "opened default output stream"
+                );
+                let mixer = output.mixer().clone();
+                (Some(output), mixer)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "rustic.audio",
+                    "audio output unavailable, using wall-clock preview cursor: {e:#}"
+                );
+                (None, SharedMixer::new(Mixer::new(SAMPLE_RATE)))
+            }
+        };
         Self {
             options,
             boot_instant: now,
-            mixer: Mixer::new(48_000),
+            mixer,
+            audio_output,
             cameras: CameraRegistry::with_default_fnf(),
             static_cmds: RenderCommandList::new(),
             cmds: RenderCommandList::new(),
@@ -158,10 +180,14 @@ impl App {
                 if let Some(camera) = self.cameras.get_mut(CameraId(0)) {
                     camera.zoom = scene.camera_zoom;
                 }
-                match load_preview_play_state() {
+                let sample_rate = self.play_sample_rate();
+                match load_preview_play_state(sample_rate) {
                     Ok(play_state) => {
-                        self.song_start_cursor = initial_preview_cursor(&play_state);
+                        self.song_start_cursor = initial_preview_cursor(&play_state, sample_rate);
                         self.song_start = Instant::now();
+                        if let Err(e) = load_bopeebo_stems(&self.mixer, self.song_start_cursor) {
+                            tracing::warn!(target: "rustic.audio", "preview stems unavailable: {e:#}");
+                        }
                         self.play_state = Some(play_state);
                         self.rebuild_frame_commands();
                     }
@@ -269,12 +295,13 @@ impl App {
 
     fn rebuild_frame_commands(&mut self) {
         let cursor = self.preview_cursor();
+        let sample_rate = self.play_sample_rate();
         if let Some(play_state) = self.play_state.as_mut() {
             play_state.resolve_opponent_notes(cursor);
             for lane in self.held_lanes.active_lanes() {
-                play_state.resolve_held_sustains_in_lane(cursor, lane, SAMPLE_RATE);
+                play_state.resolve_held_sustains_in_lane(cursor, lane, sample_rate);
             }
-            play_state.expire_late_notes(cursor, SAMPLE_RATE);
+            play_state.expire_late_notes(cursor, sample_rate);
         }
 
         self.cmds = self.static_cmds.clone();
@@ -294,7 +321,7 @@ impl App {
             self.cmds.push(cmd);
         }
 
-        for view in play_state.note_views(cursor, SAMPLE_RATE) {
+        for view in play_state.note_views(cursor, sample_rate) {
             let cmd = note_skin.command_for_view(&view);
             if cmd.world_pos.y + cmd.size.y >= -200.0 {
                 self.cmds.push(cmd);
@@ -306,7 +333,7 @@ impl App {
             }
         }
         if let Some(popup_skin) = &self.popup_skin {
-            for cmd in self.score_popups.commands(popup_skin, cursor, SAMPLE_RATE) {
+            for cmd in self.score_popups.commands(popup_skin, cursor, sample_rate) {
                 self.cmds.push(cmd);
             }
         }
@@ -320,14 +347,16 @@ impl App {
             return;
         };
         let cursor = self.preview_cursor();
+        let sample_rate = self.play_sample_rate();
         let gameplay_event =
             NormalizedInputEvent::new(event.action, event.state, event.wall_clock_ns, cursor);
         let Some(play_state) = self.play_state.as_mut() else {
             return;
         };
-        if let Some(outcome) = play_state.try_hit_in_lane(&gameplay_event, lane, SAMPLE_RATE) {
+        if let Some(outcome) = play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate) {
+            let confirm_samples = i64::from(sample_rate) / 6;
             self.held_lanes
-                .confirm_until(lane, Samples(cursor.0 + RECEPTOR_CONFIRM_SAMPLES));
+                .confirm_until(lane, Samples(cursor.0 + confirm_samples));
             if !outcome.is_sustain {
                 self.score_popups.push(
                     outcome.judgment,
@@ -341,20 +370,27 @@ impl App {
     }
 
     fn preview_cursor(&self) -> Samples {
+        if self.audio_output.is_some() {
+            return self.mixer.sample_cursor();
+        }
         let elapsed = self.song_start.elapsed().as_secs_f64();
-        let elapsed_samples = (elapsed * f64::from(SAMPLE_RATE)).round() as i64;
+        let elapsed_samples = (elapsed * f64::from(self.play_sample_rate())).round() as i64;
         Samples(self.song_start_cursor.0 + elapsed_samples)
+    }
+
+    fn play_sample_rate(&self) -> u32 {
+        self.mixer.sample_rate().max(1)
     }
 }
 
-fn initial_preview_cursor(play_state: &PlayState) -> Samples {
+fn initial_preview_cursor(play_state: &PlayState, sample_rate: u32) -> Samples {
     let first_note = play_state
         .notes
         .iter()
         .map(|note| note.hit_at.0)
         .min()
         .unwrap_or(0);
-    let preview_lead = i64::from(SAMPLE_RATE);
+    let preview_lead = i64::from(sample_rate);
     Samples(first_note.saturating_sub(preview_lead))
 }
 

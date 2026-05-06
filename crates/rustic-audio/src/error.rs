@@ -8,6 +8,9 @@ pub enum AudioError {
     #[error("audio device unavailable: {0}")]
     DeviceUnavailable(String),
 
+    #[error("audio stream failure: {0}")]
+    Stream(String),
+
     #[error("decode failure: {0}")]
     Decode(String),
 
