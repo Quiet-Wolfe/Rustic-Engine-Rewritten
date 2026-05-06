@@ -12,8 +12,9 @@ use crate::screen::ScreenStack;
 use anyhow::Result;
 use rustic_audio::Mixer;
 use rustic_core::ids::{AssetId, CameraId};
+use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
-use rustic_game::PlayState;
+use rustic_game::{Lane, PlayState};
 use rustic_render::{
     CameraRegistry, Composite, RenderCommandList, RenderState, SpriteBatcher, SpritePipeline,
     SurfaceConfig, Texture,
@@ -250,13 +251,15 @@ impl App {
     }
 
     fn rebuild_frame_commands(&mut self) {
+        let cursor = self.preview_cursor();
+        if let Some(play_state) = self.play_state.as_mut() {
+            play_state.expire_late_notes(cursor, SAMPLE_RATE);
+        }
+
         self.cmds = self.static_cmds.clone();
         let (Some(play_state), Some(note_skin)) = (&self.play_state, &self.note_skin) else {
             return;
         };
-        let elapsed = self.song_start.elapsed().as_secs_f64();
-        let elapsed_samples = (elapsed * f64::from(SAMPLE_RATE)).round() as i64;
-        let cursor = Samples(self.song_start_cursor.0 + elapsed_samples);
 
         for view in play_state.note_views(cursor, SAMPLE_RATE) {
             let cmd = note_skin.command_for_view(&view);
@@ -264,6 +267,33 @@ impl App {
                 self.cmds.push(cmd);
             }
         }
+    }
+
+    fn handle_gameplay_input(&mut self, event: &NormalizedInputEvent) {
+        if event.state != InputState::Pressed {
+            return;
+        }
+        let Some(lane) = lane_for_action(event.action) else {
+            return;
+        };
+        let cursor = self.preview_cursor();
+        let gameplay_event =
+            NormalizedInputEvent::new(event.action, event.state, event.wall_clock_ns, cursor);
+        let Some(play_state) = self.play_state.as_mut() else {
+            return;
+        };
+        if play_state
+            .try_hit_in_lane(&gameplay_event, lane, SAMPLE_RATE)
+            .is_none()
+        {
+            play_state.register_miss();
+        }
+    }
+
+    fn preview_cursor(&self) -> Samples {
+        let elapsed = self.song_start.elapsed().as_secs_f64();
+        let elapsed_samples = (elapsed * f64::from(SAMPLE_RATE)).round() as i64;
+        Samples(self.song_start_cursor.0 + elapsed_samples)
     }
 }
 
@@ -276,6 +306,16 @@ fn initial_preview_cursor(play_state: &PlayState) -> Samples {
         .unwrap_or(0);
     let preview_lead = i64::from(SAMPLE_RATE);
     Samples(first_note.saturating_sub(preview_lead))
+}
+
+fn lane_for_action(action: InputAction) -> Option<Lane> {
+    match action {
+        InputAction::LaneLeft => Some(Lane::Left),
+        InputAction::LaneDown => Some(Lane::Down),
+        InputAction::LaneUp => Some(Lane::Up),
+        InputAction::LaneRight => Some(Lane::Right),
+        _ => None,
+    }
 }
 
 impl ApplicationHandler for App {
@@ -302,6 +342,7 @@ impl ApplicationHandler for App {
                 if let Some(action) = map_key(event.physical_key) {
                     let evt = build_event(action, event.state, self.boot_instant, &self.mixer);
                     self.screens.input(&evt);
+                    self.handle_gameplay_input(&evt);
                     if event.state == ElementState::Pressed
                         && action == rustic_core::InputAction::Back
                     {
