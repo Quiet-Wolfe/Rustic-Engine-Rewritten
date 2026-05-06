@@ -170,6 +170,7 @@ pub struct NoteSkin {
     confirm_frames: [Vec<SparrowFrame>; 4],
     tap_frames: [SparrowFrame; 4],
     hold_frames: [SparrowFrame; 4],
+    hold_end_frames: [SparrowFrame; 4],
 }
 
 impl NoteSkin {
@@ -201,7 +202,11 @@ impl NoteSkin {
     fn frame_for_view(&self, view: &NoteView) -> &SparrowFrame {
         let index = lane_index(view.lane);
         if view.is_sustain {
-            &self.hold_frames[index]
+            if view.is_sustain_end {
+                &self.hold_end_frames[index]
+            } else {
+                &self.hold_frames[index]
+            }
         } else {
             &self.tap_frames[index]
         }
@@ -468,6 +473,12 @@ fn load_note_skin(
             cloned_first_frame(&atlas, "blue hold piece")?,
             cloned_first_frame(&atlas, "green hold piece")?,
             cloned_first_frame(&atlas, "red hold piece")?,
+        ],
+        hold_end_frames: [
+            cloned_first_frame(&atlas, "pruple end hold")?,
+            cloned_first_frame(&atlas, "blue hold end")?,
+            cloned_first_frame(&atlas, "green hold end")?,
+            cloned_first_frame(&atlas, "red hold end")?,
         ],
     };
 

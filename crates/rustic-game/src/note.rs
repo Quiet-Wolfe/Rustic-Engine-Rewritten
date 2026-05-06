@@ -6,6 +6,7 @@
 //! ref: 50fccded:source/PlayState.hx:1010-1018  // strumTime, lane mod 4, mustHit flip
 //! ref: 50fccded:source/PlayState.hx:1028        // sustainLength = songNotes[2]
 //! ref: 50fccded:source/PlayState.hx:1031-1042   // sustain child note expansion
+//! ref: 50fccded:source/Note.hx:121-164          // final sustain child keeps hold-end anim
 
 use rustic_asset::ChartNote;
 use rustic_core::ids::NoteId;
@@ -46,14 +47,15 @@ pub struct Note {
     pub sustain_samples: i64,
     /// True for generated sustain child notes.
     pub is_sustain: bool,
+    /// True for the final generated child in a sustain chain.
+    pub is_sustain_end: bool,
     /// Whose side the note belongs to. `false` = player, `true` = opponent.
     pub opponent: bool,
 }
 
 /// Convert a chart's notes into gameplay `Note`s, materialising sample
-/// positions from the chart's millisecond domain. Sustain segments are not
-/// expanded into per-step children — that's a render/scoring concern that
-/// lives outside the bare chart shape.
+/// positions from the chart's millisecond domain and expanding sustain
+/// segments into per-step children.
 pub fn notes_from_chart<'a>(
     chart_notes: impl IntoIterator<Item = &'a ChartNote>,
     sample_rate: u32,
@@ -71,6 +73,7 @@ pub fn notes_from_chart<'a>(
             lane,
             sustain_ms: n.sustain_ms,
             is_sustain: false,
+            is_sustain_end: false,
             opponent,
         });
 
@@ -84,6 +87,7 @@ pub fn notes_from_chart<'a>(
                 lane,
                 sustain_ms: 0.0,
                 is_sustain: true,
+                is_sustain_end: i + 1 == sustain_steps,
                 opponent,
             });
         }
@@ -104,6 +108,7 @@ pub fn notes_from_chart<'a>(
             hit_at: Samples((n.time_ms * scale).round() as i64),
             sustain_samples: (n.sustain_ms * scale).round() as i64,
             is_sustain: n.is_sustain,
+            is_sustain_end: n.is_sustain_end,
             opponent: n.opponent,
         })
         .collect()
@@ -115,6 +120,7 @@ struct ExpandedNote {
     lane: Lane,
     sustain_ms: f64,
     is_sustain: bool,
+    is_sustain_end: bool,
     opponent: bool,
 }
 
@@ -156,6 +162,7 @@ mod tests {
         assert_eq!(notes[0].hit_at, Samples(48_000));
         assert_eq!(notes[0].sustain_samples, 0);
         assert!(!notes[0].is_sustain);
+        assert!(!notes[0].is_sustain_end);
         assert!(!notes[0].opponent);
 
         // Second note: 2000ms, raw lane 5 → mod 4 = Down,
@@ -164,6 +171,7 @@ mod tests {
         assert_eq!(notes[1].hit_at, Samples(96_000));
         assert_eq!(notes[1].sustain_samples, 12_000);
         assert!(!notes[1].is_sustain);
+        assert!(!notes[1].is_sustain_end);
         assert!(notes[1].opponent);
 
         // 250ms sustain at 100 BPM produces one child at stepCrochet
@@ -171,6 +179,7 @@ mod tests {
         assert_eq!(notes[2].lane, Lane::Down);
         assert_eq!(notes[2].hit_at, Samples(103_200));
         assert!(notes[2].is_sustain);
+        assert!(notes[2].is_sustain_end);
         assert!(notes[2].opponent);
     }
 }

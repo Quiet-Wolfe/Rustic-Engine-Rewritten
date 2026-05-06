@@ -26,6 +26,7 @@ pub struct NoteView {
     pub lane: Lane,
     pub opponent: bool,
     pub is_sustain: bool,
+    pub is_sustain_end: bool,
     pub x: f32,
     pub y: f32,
 }
@@ -59,6 +60,7 @@ impl PlayState {
                 lane: note.lane,
                 opponent: note.opponent,
                 is_sustain: note.is_sustain,
+                is_sustain_end: note.is_sustain_end,
                 x: note_x(note.lane, !note.opponent),
                 y,
             });
@@ -90,6 +92,7 @@ mod tests {
             hit_at: Samples(hit_at),
             sustain_samples: 0,
             is_sustain: false,
+            is_sustain_end: false,
             opponent,
         }
     }
@@ -117,6 +120,21 @@ mod tests {
         assert_eq!(views[0].id, NoteId::new(0));
         assert_eq!(views[0].x, 50.0);
         assert!((views[0].y - 500.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn note_views_preserve_sustain_end_flag() {
+        let mut state = PlayState::new();
+        let mut sustain = note(0, Lane::Down, 48_000, false);
+        sustain.is_sustain = true;
+        sustain.is_sustain_end = true;
+        state.notes.push(sustain);
+
+        let views = state.note_views(Samples(48_000), 48_000);
+
+        assert_eq!(views.len(), 1);
+        assert!(views[0].is_sustain);
+        assert!(views[0].is_sustain_end);
     }
 
     #[test]

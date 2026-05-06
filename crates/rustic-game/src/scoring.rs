@@ -212,6 +212,7 @@ mod tests {
             hit_at: Samples(hit_at_samples),
             sustain_samples: 0,
             is_sustain: false,
+            is_sustain_end: false,
             opponent: false,
         });
     }
@@ -223,6 +224,7 @@ mod tests {
             hit_at: Samples(hit_at_samples),
             sustain_samples: 0,
             is_sustain: true,
+            is_sustain_end: true,
             opponent: false,
         });
     }
@@ -343,6 +345,7 @@ mod tests {
             hit_at: Samples(48_000),
             sustain_samples: 0,
             is_sustain: false,
+            is_sustain_end: false,
             opponent: false,
         });
         s.notes.push(Note {
@@ -351,6 +354,7 @@ mod tests {
             hit_at: Samples(48_000),
             sustain_samples: 0,
             is_sustain: false,
+            is_sustain_end: false,
             opponent: true,
         });
         let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);

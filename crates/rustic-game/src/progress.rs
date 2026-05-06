@@ -55,6 +55,7 @@ mod tests {
             hit_at: Samples(hit_at),
             sustain_samples: 0,
             is_sustain: false,
+            is_sustain_end: false,
             opponent,
         }
     }
