@@ -9,6 +9,7 @@
 //! ref: 50fccded:source/PlayState.hx:1961-1977   // held sustain goodNoteHit
 //! ref: 50fccded:source/PlayState.hx:2096-2139   // goodNoteHit
 //! ref: 50fccded:source/Note.hx:172-184          // canBeHit / tooLate
+// LINT-ALLOW: long-file scoring implementation plus focused unit tests
 
 use crate::judgment::{
     health_delta, late_note_health_delta, score_value, Judgment, JudgmentWindows,
@@ -17,6 +18,13 @@ use crate::note::Lane;
 use crate::state::{PlayState, MAX_HEALTH};
 use rustic_core::input::NormalizedInputEvent;
 use rustic_core::time::Samples;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct HitOutcome {
+    pub judgment: Judgment,
+    pub is_sustain: bool,
+}
 
 impl PlayState {
     /// Resolve a player-side note hit at a given absolute timing diff and
@@ -74,7 +82,7 @@ impl PlayState {
         event: &NormalizedInputEvent,
         lane: Lane,
         sample_rate: u32,
-    ) -> Option<Judgment> {
+    ) -> Option<HitOutcome> {
         let safe_zone = JudgmentWindows::from(self.windows).safe_zone_ms.0;
         let cursor = event.audio_sample_cursor_at_receive;
         let ms_per_sample = 1000.0 / sample_rate as f64;
@@ -102,9 +110,15 @@ impl PlayState {
         self.resolved_notes.push(id);
         if is_sustain {
             self.register_sustain_hit();
-            Some(Judgment::Sick)
+            Some(HitOutcome {
+                judgment: Judgment::Sick,
+                is_sustain,
+            })
         } else {
-            Some(self.register_hit(abs_diff_ms))
+            Some(HitOutcome {
+                judgment: self.register_hit(abs_diff_ms),
+                is_sustain,
+            })
         }
     }
 
@@ -288,7 +302,7 @@ mod tests {
         let mut s = PlayState::new();
         add_note(&mut s, 0, Lane::Left, 48_000);
         let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
-        assert_eq!(j, Some(Judgment::Sick));
+        assert_eq!(j.map(|outcome| outcome.judgment), Some(Judgment::Sick));
         assert_eq!(s.resolved_notes.len(), 1);
     }
 
@@ -298,7 +312,7 @@ mod tests {
         add_note(&mut s, 0, Lane::Left, 48_000);
         // 4800 samples late = 100ms @ 48kHz → Good.
         let j = s.try_hit_in_lane(&input_at(48_000 + 4_800), Lane::Left, 48_000);
-        assert_eq!(j, Some(Judgment::Good));
+        assert_eq!(j.map(|outcome| outcome.judgment), Some(Judgment::Good));
     }
 
     #[test]
@@ -350,7 +364,13 @@ mod tests {
 
         let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
 
-        assert_eq!(j, Some(Judgment::Sick));
+        assert_eq!(
+            j,
+            Some(HitOutcome {
+                judgment: Judgment::Sick,
+                is_sustain: true,
+            })
+        );
         assert_eq!(s.score, 0);
         assert_eq!(s.combo, 0);
         assert_eq!(s.sicks, 0);
