@@ -16,7 +16,9 @@ pub mod source;
 pub mod watcher;
 
 pub use error::{AssetError, AssetResult};
-pub use loaders::{load_character, load_chart, load_png, load_sparrow, load_stage, load_text_list};
+pub use loaders::{
+    load_bytes, load_character, load_chart, load_png, load_sparrow, load_stage, load_text_list,
+};
 pub use parsers::character::{CharacterAnimation, CharacterDefinition};
 pub use parsers::chart::{Chart, ChartNote, ChartSection, ParsedSong};
 pub use parsers::png::PngImage;

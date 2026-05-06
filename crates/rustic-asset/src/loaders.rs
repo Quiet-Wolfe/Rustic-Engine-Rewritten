@@ -49,6 +49,14 @@ pub fn load_text_list(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetRe
     TextList::parse(&bytes)
 }
 
+pub fn load_bytes(
+    resolver: &dyn AssetResolver,
+    path: &AssetPath,
+) -> AssetResult<std::sync::Arc<[u8]>> {
+    let src = resolver.resolve(path)?;
+    src.read_all()
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -181,6 +189,17 @@ mod tests {
     }
 
     #[test]
+    fn load_bytes_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(ap("music/test.ogg"), b"OggSxxxx".to_vec());
+        resolver.push_overlay(overlay);
+
+        let bytes = load_bytes(&resolver, &ap("music/test.ogg")).unwrap();
+        assert_eq!(&bytes[..4], b"OggS");
+    }
+
+    #[test]
     fn tracked_source_seed_definitions_parse() {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = manifest_dir.parent().unwrap().parent().unwrap();
@@ -287,6 +306,19 @@ mod tests {
         ] {
             let image = load_png(&resolver, &ap(path)).unwrap();
             assert_eq!((image.width, image.height), size, "{path}");
+        }
+
+        for path in [
+            "music/Bopeebo_Inst.ogg",
+            "music/Bopeebo_Voices.ogg",
+            "music/Fresh_Inst.ogg",
+            "music/Fresh_Voices.ogg",
+            "music/Dadbattle_Inst.ogg",
+            "music/Dadbattle_Voices.ogg",
+            "music/Tutorial_Inst.ogg",
+        ] {
+            let bytes = load_bytes(&resolver, &ap(path)).unwrap();
+            assert_eq!(&bytes[..4], b"OggS", "{path}");
         }
     }
 }
