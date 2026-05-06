@@ -7,19 +7,29 @@ on this file.
 
 ## Upstream source pin
 
-- Upstream repository: `https://github.com/FunkinCrew/Funkin` (the legacy
-  pre-Psych base FNF tree).
-- Pinned commit: `50fccded66742a8117c898deb59bb0c2f14fb22d`
-- Short SHA used in `// ref:` comments: `50fccded`
-- Tag at this commit: `v0.2.7.1`
-- Pin date: `2021-02-14`
-- Branch context: tag tip (no active branch — this is the public legacy
-  release before the Psych-era refactors).
+- Upstream repository: `https://github.com/FunkinCrew/Funkin`.
+- Pinned commit: `bdedc0aad2b93b3a7787357313ba662ba8d3173f`
+- Short SHA for new `// ref:` comments: `bdedc0aa`
+- Tag at this commit: `v0.8.5`
+- Pin date: `2026-04-05`
+- Branch context: `main` at release tag `v0.8.5`.
 - Local checkout: `references/Funkin/` (gitignored; not vendored).
+- Required submodules:
+  - `assets` at `d1d027d4747aaba151c6df121ea736c31d6aed38`
+  - `art` at `429ab728b19272dca834c83d97b1646455b22579`
 
-All `// ref: <fnf-commit>:<file>:<line>` comments in ported gameplay code
-resolve against this commit. Use the short SHA `50fccded`. Do not bump the
-pin without updating this file and re-running the regression suite.
+Initialize or refresh the local reference with:
+
+```sh
+git -C references/Funkin checkout main
+git -C references/Funkin pull --ff-only --recurse-submodules
+git -C references/Funkin submodule update --init --recursive
+```
+
+New ported behavior should cite this pin with
+`// ref: bdedc0aa:<path>:<line>`. Existing `50fccded` comments are legacy
+citations from the original prototype baseline and must be audited before they
+are treated as current-fidelity proof.
 
 ## Reference binary
 
@@ -61,6 +71,8 @@ When the source is ambiguous, observed behavior of this binary is the truth.
 - New gameplay port PRs:
   - Carry a `// ref:` comment for each ported function.
   - Cite the pinned commit above; never use `HEAD` or a branch name.
+  - Do not copy old `50fccded` citations forward without checking the matching
+    `v0.8.5` source path and line.
 - Visual regression PRs:
   - Reference frames are captured against the reference binary above, not a
     live FNF build.
