@@ -239,4 +239,28 @@ mod tests {
             assert!(!song.chart.notes.is_empty());
         }
     }
+
+    #[test]
+    fn tracked_source_week1_visual_assets_parse() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
+        let source_root = workspace.join("assets/source");
+        let resolver = OverlayResolver::new().with_baked_root(source_root);
+
+        for (path, frame_count) in [
+            ("images/BOYFRIEND.xml", 496),
+            ("images/DADDY_DEAREST.xml", 45),
+            ("images/GF_assets.xml", 252),
+            ("images/NOTE_assets.xml", 48),
+        ] {
+            let atlas = load_sparrow(&resolver, &ap(path)).unwrap();
+            assert_eq!(atlas.frames.len(), frame_count);
+        }
+
+        let notes = load_png(&resolver, &ap("images/NOTE_assets.png")).unwrap();
+        assert_eq!((notes.width, notes.height), (2048, 1024));
+
+        let stage_back = load_png(&resolver, &ap("images/stageback.png")).unwrap();
+        assert_eq!((stage_back.width, stage_back.height), (2560, 1400));
+    }
 }
