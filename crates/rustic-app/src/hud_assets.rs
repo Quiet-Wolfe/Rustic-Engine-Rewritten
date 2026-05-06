@@ -30,6 +30,10 @@ pub struct HudSkin {
 
 impl HudSkin {
     pub fn commands(&self, health: f32) -> Vec<DrawCommand> {
+        self.commands_with_icon_scale(health, 1.0)
+    }
+
+    pub fn commands_with_icon_scale(&self, health: f32, icon_scale: f32) -> Vec<DrawCommand> {
         let mut commands = Vec::with_capacity(5);
         let bar_x = (FNF_WIDTH - HEALTH_BAR_WIDTH) * 0.5;
         let bar_y = FNF_HEIGHT * 0.9;
@@ -66,15 +70,18 @@ impl HudSkin {
         let marker = fill_x + HEALTH_FILL_WIDTH * (1.0 - health / 2.0);
         let bf_frame = if health < 0.4 { 1 } else { 0 };
         let dad_frame = if health > 1.6 { 13 } else { 12 };
+        let icon_size = ICON_SIZE * icon_scale.max(0.01);
         commands.push(self.icon_command(
             bf_frame,
             true,
-            glam::vec2(marker - ICON_OFFSET, fill_y - 75.0),
+            glam::vec2(marker - ICON_OFFSET, fill_y - icon_size * 0.5),
+            icon_size,
         ));
         commands.push(self.icon_command(
             dad_frame,
             false,
-            glam::vec2(marker - (ICON_SIZE - ICON_OFFSET), fill_y - 75.0),
+            glam::vec2(marker - (icon_size - ICON_OFFSET), fill_y - icon_size * 0.5),
+            icon_size,
         ));
         commands
     }
@@ -96,11 +103,17 @@ impl HudSkin {
         cmd
     }
 
-    fn icon_command(&self, frame_index: u32, flip_x: bool, world_pos: glam::Vec2) -> DrawCommand {
+    fn icon_command(
+        &self,
+        frame_index: u32,
+        flip_x: bool,
+        world_pos: glam::Vec2,
+        icon_size: f32,
+    ) -> DrawCommand {
         let mut cmd = DrawCommand::sprite(
             self.icon_grid_texture,
             world_pos,
-            glam::vec2(ICON_SIZE, ICON_SIZE),
+            glam::vec2(icon_size, icon_size),
         );
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
@@ -247,5 +260,24 @@ mod tests {
 
         assert_eq!(high_health[4].uv_min, dad_frame_thirteen_min);
         assert_eq!(high_health[4].uv_max, dad_frame_thirteen_max);
+    }
+
+    #[test]
+    fn icon_bump_scales_size_and_dad_side_offset() {
+        let commands = skin().commands_with_icon_scale(1.0, 1.2);
+        let fill_x = (FNF_WIDTH - HEALTH_BAR_WIDTH) * 0.5 + HEALTH_FILL_INSET_X;
+        let fill_y = FNF_HEIGHT * 0.9 + HEALTH_FILL_INSET_Y;
+        let marker = fill_x + HEALTH_FILL_WIDTH * 0.5;
+        let icon_size = ICON_SIZE * 1.2;
+
+        assert_eq!(commands[3].size, glam::vec2(icon_size, icon_size));
+        assert_eq!(
+            commands[3].world_pos,
+            glam::vec2(marker - ICON_OFFSET, fill_y - icon_size * 0.5)
+        );
+        assert_eq!(
+            commands[4].world_pos,
+            glam::vec2(marker - (icon_size - ICON_OFFSET), fill_y - icon_size * 0.5)
+        );
     }
 }

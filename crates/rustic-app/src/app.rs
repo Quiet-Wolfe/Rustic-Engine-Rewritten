@@ -375,7 +375,10 @@ impl App {
             }
         }
         if let Some(hud_skin) = &self.hud_skin {
-            for cmd in hud_skin.commands(play_state.health) {
+            for cmd in hud_skin.commands_with_icon_scale(
+                play_state.health,
+                health_icon_scale(cursor, sample_rate, play_state.bpm),
+            ) {
                 self.cmds.push(cmd);
             }
         }
@@ -468,6 +471,20 @@ impl App {
         }) {
             tracing::warn!(target: "rustic.audio", "set vocals gain: {e:#}");
         }
+    }
+}
+
+fn health_icon_scale(cursor: Samples, sample_rate: u32, bpm: f64) -> f32 {
+    // ref: 50fccded:source/PlayState.hx:1286-1290,2289-2294
+    if cursor.0 < 0 {
+        return 1.0;
+    }
+    let beat_samples = (f64::from(sample_rate) * 60.0 / bpm.max(1.0)).round() as i64;
+    let phase = cursor.0.rem_euclid(beat_samples.max(1)) as f32 / beat_samples.max(1) as f32;
+    if phase >= 0.5 {
+        1.0
+    } else {
+        1.0 + 0.2 * (1.0 - phase / 0.5)
     }
 }
 
