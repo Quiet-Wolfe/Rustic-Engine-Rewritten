@@ -7,6 +7,7 @@
 use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
 use crate::hud_assets::{load_hud_assets, HudSkin};
+use crate::lane_state::ReceptorState;
 use crate::popup_assets::{load_popup_assets, PopupSkin};
 use anyhow::{Context, Result};
 use rustic_asset::{
@@ -25,6 +26,7 @@ const NOTE_SWAG_WIDTH: f32 = 160.0 * 0.7;
 const STRUM_LINE_Y: f32 = 50.0;
 const FNF_WIDTH: f32 = 1280.0;
 const NOTE_ASSET_SCALE: f32 = 0.7;
+const RECEPTOR_ANIMATION_FPS: u16 = 24;
 const LANES: [Lane; 4] = [Lane::Left, Lane::Down, Lane::Up, Lane::Right];
 pub struct LoadedScene {
     pub camera_zoom: f32,
@@ -164,17 +166,10 @@ pub struct NoteSkin {
     texture_width: u32,
     texture_height: u32,
     static_frames: [SparrowFrame; 4],
-    press_frames: [SparrowFrame; 4],
-    confirm_frames: [SparrowFrame; 4],
+    press_frames: [Vec<SparrowFrame>; 4],
+    confirm_frames: [Vec<SparrowFrame>; 4],
     tap_frames: [SparrowFrame; 4],
     hold_frames: [SparrowFrame; 4],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReceptorState {
-    Static,
-    Pressed,
-    Confirm,
 }
 
 impl NoteSkin {
@@ -212,7 +207,12 @@ impl NoteSkin {
         }
     }
 
-    pub fn receptor_commands<F>(&self, lane_state: F) -> Vec<DrawCommand>
+    pub fn receptor_commands<F>(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        lane_state: F,
+    ) -> Vec<DrawCommand>
     where
         F: Fn(Lane) -> ReceptorState,
     {
@@ -224,14 +224,21 @@ impl NoteSkin {
                 } else {
                     ReceptorState::Static
                 };
-                commands.push(self.receptor_command(player, lane, state));
+                commands.push(self.receptor_command(player, lane, state, cursor, sample_rate));
             }
         }
         commands
     }
 
-    fn receptor_command(&self, player: u8, lane: Lane, state: ReceptorState) -> DrawCommand {
-        let frame = self.receptor_frame(lane, state);
+    fn receptor_command(
+        &self,
+        player: u8,
+        lane: Lane,
+        state: ReceptorState,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> DrawCommand {
+        let frame = self.receptor_frame(lane, state, cursor, sample_rate);
         let lane = lane_index(lane);
         let base_x = 50.0 + lane as f32 * NOTE_SWAG_WIDTH + player as f32 * (FNF_WIDTH / 2.0);
         let base_y = STRUM_LINE_Y;
@@ -254,13 +261,28 @@ impl NoteSkin {
         cmd
     }
 
-    fn receptor_frame(&self, lane: Lane, state: ReceptorState) -> &SparrowFrame {
+    fn receptor_frame(
+        &self,
+        lane: Lane,
+        state: ReceptorState,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> &SparrowFrame {
         let index = lane_index(lane);
         match state {
             ReceptorState::Static => &self.static_frames[index],
-            ReceptorState::Pressed => &self.press_frames[index],
-            ReceptorState::Confirm => &self.confirm_frames[index],
+            ReceptorState::Pressed { started_at } => {
+                animated_note_frame(&self.press_frames[index], cursor, sample_rate, started_at)
+            }
+            ReceptorState::Confirm { started_at } => {
+                animated_note_frame(&self.confirm_frames[index], cursor, sample_rate, started_at)
+            }
         }
+    }
+
+    pub fn confirm_duration(&self, sample_rate: u32) -> Samples {
+        let frame_count = self.confirm_frames.iter().map(Vec::len).max().unwrap_or(1);
+        animation_duration_samples(sample_rate, RECEPTOR_ANIMATION_FPS, frame_count)
     }
 }
 pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<LoadedScene> {
@@ -424,16 +446,16 @@ fn load_note_skin(
             cloned_first_frame(&atlas, "arrowRIGHT")?,
         ],
         press_frames: [
-            cloned_first_frame(&atlas, "left press")?,
-            cloned_first_frame(&atlas, "down press")?,
-            cloned_first_frame(&atlas, "up press")?,
-            cloned_first_frame(&atlas, "right press")?,
+            cloned_animation_frames(&atlas, "left press")?,
+            cloned_animation_frames(&atlas, "down press")?,
+            cloned_animation_frames(&atlas, "up press")?,
+            cloned_animation_frames(&atlas, "right press")?,
         ],
         confirm_frames: [
-            cloned_first_frame(&atlas, "left confirm")?,
-            cloned_first_frame(&atlas, "down confirm")?,
-            cloned_first_frame(&atlas, "up confirm")?,
-            cloned_first_frame(&atlas, "right confirm")?,
+            cloned_animation_frames(&atlas, "left confirm")?,
+            cloned_animation_frames(&atlas, "down confirm")?,
+            cloned_animation_frames(&atlas, "up confirm")?,
+            cloned_animation_frames(&atlas, "right confirm")?,
         ],
         tap_frames: [
             cloned_first_frame(&atlas, "purple0")?,
@@ -613,6 +635,35 @@ fn cloned_first_frame(atlas: &SparrowAtlas, prefix: &str) -> Result<SparrowFrame
         .with_context(|| format!("resolve note frame {prefix}"))
 }
 
+fn cloned_animation_frames(atlas: &SparrowAtlas, prefix: &str) -> Result<Vec<SparrowFrame>> {
+    let frames: Vec<_> = atlas
+        .animation_frames(prefix, &[])
+        .into_iter()
+        .cloned()
+        .collect();
+    if frames.is_empty() {
+        anyhow::bail!("resolve note frame {prefix}");
+    }
+    Ok(frames)
+}
+
+fn animated_note_frame(
+    frames: &[SparrowFrame],
+    cursor: Samples,
+    sample_rate: u32,
+    started_at: Samples,
+) -> &SparrowFrame {
+    let index = animation_frame_index(
+        cursor,
+        sample_rate,
+        started_at,
+        RECEPTOR_ANIMATION_FPS,
+        frames.len(),
+        false,
+    );
+    &frames[index]
+}
+
 fn lane_index(lane: Lane) -> usize {
     match lane {
         Lane::Left => 0,
@@ -686,5 +737,34 @@ mod tests {
     fn animation_duration_uses_frame_count_and_fps() {
         assert_eq!(animation_duration_samples(48_000, 24, 12), Samples(24_000));
         assert_eq!(animation_duration_samples(48_000, 0, 0), Samples(48_000));
+    }
+
+    #[test]
+    fn animated_note_frame_uses_started_cursor_and_clamps() {
+        // ref: 50fccded:source/PlayState.hx:1137-1153
+        let atlas = SparrowAtlas::parse(
+            br#"
+            <TextureAtlas imagePath="NOTE_assets.png">
+                <SubTexture name="confirm0000" x="0" y="0" width="1" height="1"/>
+                <SubTexture name="confirm0001" x="1" y="0" width="1" height="1"/>
+                <SubTexture name="confirm0002" x="2" y="0" width="1" height="1"/>
+            </TextureAtlas>
+            "#,
+        )
+        .unwrap();
+        let frames: Vec<_> = atlas
+            .animation_frames("confirm", &[])
+            .into_iter()
+            .cloned()
+            .collect();
+
+        assert_eq!(
+            animated_note_frame(&frames, Samples(12_000), 48_000, Samples(10_000)).name,
+            "confirm0001"
+        );
+        assert_eq!(
+            animated_note_frame(&frames, Samples(96_000), 48_000, Samples(10_000)).name,
+            "confirm0002"
+        );
     }
 }

@@ -15,7 +15,7 @@ use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::scene_assets::{
-    load_default_scene, load_preview_play_state, CharacterSet, NoteSkin, ReceptorState, SAMPLE_RATE,
+    load_default_scene, load_preview_play_state, CharacterSet, NoteSkin, SAMPLE_RATE,
 };
 use crate::screen::ScreenStack;
 use crate::song_audio::load_bopeebo_stems;
@@ -382,14 +382,8 @@ impl App {
             return;
         };
 
-        for cmd in note_skin.receptor_commands(|lane| {
-            if self.held_lanes.is_confirming(lane, cursor) {
-                ReceptorState::Confirm
-            } else if self.held_lanes.is_held(lane) {
-                ReceptorState::Pressed
-            } else {
-                ReceptorState::Static
-            }
+        for cmd in note_skin.receptor_commands(cursor, sample_rate, |lane| {
+            self.held_lanes.receptor_state(lane, cursor)
         }) {
             self.cmds.push(cmd);
         }
@@ -448,9 +442,12 @@ impl App {
                 if let Some(outcome) =
                     play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate)
                 {
-                    let confirm_samples = i64::from(sample_rate) / 6;
-                    self.held_lanes
-                        .confirm_until(lane, Samples(cursor.0 + confirm_samples));
+                    let confirm_duration = self
+                        .note_skin
+                        .as_ref()
+                        .map(|note_skin| note_skin.confirm_duration(sample_rate))
+                        .unwrap_or(Samples(i64::from(sample_rate) / 6));
+                    self.held_lanes.confirm(lane, cursor, confirm_duration);
                     self.character_anim
                         .player_note_hit(lane, cursor, sample_rate, play_state.bpm);
                     restore_vocals = true;

@@ -9,13 +9,26 @@ const LANES: [Lane; 4] = [Lane::Left, Lane::Down, Lane::Up, Lane::Right];
 #[derive(Debug, Default, Clone)]
 pub struct HeldLanes {
     pressed: [bool; 4],
+    pressed_started: [Samples; 4],
+    confirm_started: [Samples; 4],
     confirm_until: [Samples; 4],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceptorState {
+    Static,
+    Pressed { started_at: Samples },
+    Confirm { started_at: Samples },
 }
 
 impl HeldLanes {
     pub fn apply(&mut self, event: &NormalizedInputEvent) -> Option<Lane> {
         let lane = lane_for_action(event.action)?;
-        self.pressed[lane_index(lane)] = event.state == InputState::Pressed;
+        let index = lane_index(lane);
+        self.pressed[index] = event.state == InputState::Pressed;
+        if event.state == InputState::Pressed {
+            self.pressed_started[index] = event.audio_sample_cursor_at_receive;
+        }
         Some(lane)
     }
 
@@ -31,13 +44,30 @@ impl HeldLanes {
         self.pressed[lane_index(lane)]
     }
 
-    pub fn confirm_until(&mut self, lane: Lane, until: Samples) {
-        self.confirm_until[lane_index(lane)] = until;
+    pub fn confirm(&mut self, lane: Lane, started_at: Samples, duration: Samples) {
+        let index = lane_index(lane);
+        self.confirm_started[index] = started_at;
+        self.confirm_until[index] = Samples(started_at.0 + duration.0.max(0));
     }
 
     pub fn is_confirming(&self, lane: Lane, cursor: Samples) -> bool {
         let until = self.confirm_until[lane_index(lane)];
         until.0 > 0 && until >= cursor
+    }
+
+    pub fn receptor_state(&self, lane: Lane, cursor: Samples) -> ReceptorState {
+        let index = lane_index(lane);
+        if self.is_confirming(lane, cursor) {
+            ReceptorState::Confirm {
+                started_at: self.confirm_started[index],
+            }
+        } else if self.pressed[index] {
+            ReceptorState::Pressed {
+                started_at: self.pressed_started[index],
+            }
+        } else {
+            ReceptorState::Static
+        }
     }
 }
 
@@ -65,8 +95,12 @@ fn lane_index(lane: Lane) -> usize {
 mod tests {
     use super::*;
 
+    fn event_at(action: InputAction, state: InputState, cursor: Samples) -> NormalizedInputEvent {
+        NormalizedInputEvent::new(action, state, 0, cursor)
+    }
+
     fn event(action: InputAction, state: InputState) -> NormalizedInputEvent {
-        NormalizedInputEvent::new(action, state, 0, Samples(0))
+        event_at(action, state, Samples(0))
     }
 
     #[test]
@@ -107,10 +141,40 @@ mod tests {
     #[test]
     fn confirm_window_is_sample_cursor_based() {
         let mut held = HeldLanes::default();
-        held.confirm_until(Lane::Up, Samples(200));
+        held.confirm(Lane::Up, Samples(100), Samples(100));
 
         assert!(held.is_confirming(Lane::Up, Samples(199)));
         assert!(held.is_confirming(Lane::Up, Samples(200)));
         assert!(!held.is_confirming(Lane::Up, Samples(201)));
+    }
+
+    #[test]
+    fn receptor_state_tracks_press_and_confirm_starts() {
+        let mut held = HeldLanes::default();
+        held.apply(&event_at(
+            InputAction::LaneLeft,
+            InputState::Pressed,
+            Samples(25),
+        ));
+        assert_eq!(
+            held.receptor_state(Lane::Left, Samples(30)),
+            ReceptorState::Pressed {
+                started_at: Samples(25)
+            }
+        );
+
+        held.confirm(Lane::Left, Samples(50), Samples(10));
+        assert_eq!(
+            held.receptor_state(Lane::Left, Samples(55)),
+            ReceptorState::Confirm {
+                started_at: Samples(50)
+            }
+        );
+        assert_eq!(
+            held.receptor_state(Lane::Left, Samples(61)),
+            ReceptorState::Pressed {
+                started_at: Samples(25)
+            }
+        );
     }
 }
