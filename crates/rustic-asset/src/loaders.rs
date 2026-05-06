@@ -262,5 +262,11 @@ mod tests {
 
         let stage_back = load_png(&resolver, &ap("images/stageback.png")).unwrap();
         assert_eq!((stage_back.width, stage_back.height), (2560, 1400));
+
+        let health_bar = load_png(&resolver, &ap("images/healthBar.png")).unwrap();
+        assert_eq!((health_bar.width, health_bar.height), (601, 19));
+
+        let icon_grid = load_png(&resolver, &ap("images/iconGrid.png")).unwrap();
+        assert_eq!((icon_grid.width, icon_grid.height), (1500, 900));
     }
 }
