@@ -263,10 +263,30 @@ mod tests {
         let stage_back = load_png(&resolver, &ap("images/stageback.png")).unwrap();
         assert_eq!((stage_back.width, stage_back.height), (2560, 1400));
 
-        let health_bar = load_png(&resolver, &ap("images/healthBar.png")).unwrap();
-        assert_eq!((health_bar.width, health_bar.height), (601, 19));
-
-        let icon_grid = load_png(&resolver, &ap("images/iconGrid.png")).unwrap();
-        assert_eq!((icon_grid.width, icon_grid.height), (1500, 900));
+        for (path, size) in [
+            ("images/healthBar.png", (601, 19)),
+            ("images/iconGrid.png", (1500, 900)),
+            ("images/sick.png", (403, 152)),
+            ("images/good.png", (317, 126)),
+            ("images/bad.png", (261, 131)),
+            ("images/shit.png", (285, 163)),
+            ("images/combo.png", (343, 138)),
+            ("images/num0.png", (94, 119)),
+            ("images/num1.png", (98, 120)),
+            ("images/num2.png", (105, 129)),
+            ("images/num3.png", (102, 134)),
+            ("images/num4.png", (98, 130)),
+            ("images/num5.png", (111, 135)),
+            ("images/num6.png", (108, 134)),
+            ("images/num7.png", (91, 111)),
+            ("images/num8.png", (90, 115)),
+            ("images/num9.png", (91, 124)),
+            ("images/ready.png", (757, 364)),
+            ("images/set.png", (702, 322)),
+            ("images/go.png", (558, 430)),
+        ] {
+            let image = load_png(&resolver, &ap(path)).unwrap();
+            assert_eq!((image.width, image.height), size, "{path}");
+        }
     }
 }
