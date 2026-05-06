@@ -13,6 +13,7 @@ use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
+use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::scene_assets::{
     load_default_scene, load_preview_play_state, CharacterSet, NoteSkin, SAMPLE_RATE,
@@ -24,7 +25,7 @@ use rustic_audio::{AudioOutput, Mixer, SharedMixer, Stem};
 use rustic_core::ids::AssetId;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
-use rustic_game::PlayState;
+use rustic_game::{Judgment, PlayState};
 use rustic_render::{
     CameraRegistry, Composite, RenderCommandList, RenderState, SpriteBatcher, SpritePipeline,
     SurfaceConfig, Texture,
@@ -76,10 +77,12 @@ struct App {
     characters: Option<CharacterSet>,
     character_anim: CharacterAnimState,
     note_skin: Option<NoteSkin>,
+    note_splash_skin: Option<NoteSplashSkin>,
     hud_skin: Option<HudSkin>,
     popup_skin: Option<PopupSkin>,
     countdown_skin: Option<CountdownSkin>,
     score_popups: ScorePopups,
+    note_splashes: NoteSplashes,
     held_lanes: HeldLanes,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -125,10 +128,12 @@ impl App {
             characters: None,
             character_anim: CharacterAnimState::default(),
             note_skin: None,
+            note_splash_skin: None,
             hud_skin: None,
             popup_skin: None,
             countdown_skin: None,
             score_popups: ScorePopups::default(),
+            note_splashes: NoteSplashes::default(),
             held_lanes: HeldLanes::default(),
             play_state: None,
             song_start: now,
@@ -187,6 +192,7 @@ impl App {
                 self.atlases = scene.textures;
                 self.characters = scene.characters;
                 self.note_skin = scene.note_skin;
+                self.note_splash_skin = scene.note_splash_skin;
                 self.hud_skin = scene.hud_skin;
                 self.popup_skin = scene.popup_skin;
                 self.countdown_skin = scene.countdown_skin;
@@ -394,6 +400,14 @@ impl App {
                 self.cmds.push(cmd);
             }
         }
+        if let Some(note_splash_skin) = &self.note_splash_skin {
+            for cmd in self
+                .note_splashes
+                .commands(note_splash_skin, cursor, sample_rate)
+            {
+                self.cmds.push(cmd);
+            }
+        }
         if let Some(hud_skin) = &self.hud_skin {
             for cmd in hud_skin.commands_with_icon_scale(
                 play_state.health,
@@ -454,6 +468,9 @@ impl App {
                     if !outcome.is_sustain {
                         self.score_popups
                             .push(outcome.judgment, outcome.combo_popup, cursor);
+                        if outcome.judgment == Judgment::Sick {
+                            self.note_splashes.push(lane, cursor);
+                        }
                     }
                 } else {
                     play_state.register_ghost_miss();

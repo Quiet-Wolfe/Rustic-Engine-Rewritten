@@ -11,6 +11,7 @@ pub mod countdown_assets;
 pub mod hud_assets;
 pub mod input_bridge;
 pub mod lane_state;
+pub mod note_splash_assets;
 pub mod popup_assets;
 pub mod scene_assets;
 pub mod screen;

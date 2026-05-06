@@ -8,6 +8,7 @@ use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
 use crate::hud_assets::{load_hud_assets, HudSkin};
 use crate::lane_state::ReceptorState;
+use crate::note_splash_assets::{load_note_splash_assets, NoteSplashSkin};
 use crate::popup_assets::{load_popup_assets, PopupSkin};
 use anyhow::{Context, Result};
 use rustic_asset::{
@@ -34,6 +35,7 @@ pub struct LoadedScene {
     pub textures: HashMap<AssetId, Texture>,
     pub characters: Option<CharacterSet>,
     pub note_skin: Option<NoteSkin>,
+    pub note_splash_skin: Option<NoteSplashSkin>,
     pub hud_skin: Option<HudSkin>,
     pub popup_skin: Option<PopupSkin>,
     pub countdown_skin: Option<CountdownSkin>,
@@ -301,6 +303,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         textures: HashMap::new(),
         characters: None,
         note_skin: None,
+        note_splash_skin: None,
         hud_skin: None,
         popup_skin: None,
         countdown_skin: None,
@@ -313,6 +316,12 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         device, queue, &resolver, &stage, &mut scene,
     )?);
     scene.note_skin = Some(load_note_skin(device, queue, &resolver, &mut scene)?);
+    scene.note_splash_skin = Some(load_note_splash_assets(
+        device,
+        queue,
+        &resolver,
+        &mut scene.textures,
+    )?);
     scene.hud_skin = Some(load_hud_assets(
         device,
         queue,
