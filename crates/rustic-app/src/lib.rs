@@ -6,6 +6,7 @@
 pub mod app;
 pub mod boot;
 pub mod input_bridge;
+pub mod scene_assets;
 pub mod screen;
 pub mod settings;
 

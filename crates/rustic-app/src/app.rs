@@ -7,14 +7,14 @@
 
 use crate::boot::{init_logging, install_panic_hook};
 use crate::input_bridge::{build_event, map_key};
+use crate::scene_assets::load_default_scene;
 use crate::screen::ScreenStack;
-use anyhow::{Context, Result};
-use rustic_asset::{load_png, load_stage, AssetPath, OverlayResolver, StageObject};
+use anyhow::Result;
 use rustic_audio::Mixer;
-use rustic_core::ids::AssetId;
+use rustic_core::ids::{AssetId, CameraId};
 use rustic_render::{
-    CameraRegistry, Composite, DrawCommand, FilterMode, RenderCommandList, RenderState,
-    SpriteBatcher, SpritePipeline, SurfaceConfig, Texture,
+    CameraRegistry, Composite, RenderCommandList, RenderState, SpriteBatcher, SpritePipeline,
+    SurfaceConfig, Texture,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -49,7 +49,7 @@ struct App {
     mixer: Mixer,
     cameras: CameraRegistry,
     cmds: RenderCommandList,
-    atlases: HashMap<rustic_core::ids::AssetId, Texture>,
+    atlases: HashMap<AssetId, Texture>,
     batcher: SpriteBatcher,
     screens: ScreenStack,
     runtime: Option<Runtime>,
@@ -118,64 +118,20 @@ impl App {
             composite,
         };
 
-        if let Err(e) = self.load_default_stage(&runtime) {
-            tracing::warn!(target: "rustic.asset", "default stage assets unavailable: {e:#}");
+        match load_default_scene(&runtime.rs.device, &runtime.rs.queue) {
+            Ok(scene) => {
+                self.cmds = scene.commands;
+                self.atlases = scene.textures;
+                if let Some(camera) = self.cameras.get_mut(CameraId(0)) {
+                    camera.zoom = scene.camera_zoom;
+                }
+            }
+            Err(e) => {
+                tracing::warn!(target: "rustic.asset", "default scene assets unavailable: {e:#}");
+            }
         }
 
         self.runtime = Some(runtime);
-        Ok(())
-    }
-
-    fn load_default_stage(&mut self, rt: &Runtime) -> Result<()> {
-        let resolver = OverlayResolver::new().with_baked_root("assets/baked");
-        let stage_path = AssetPath::new("data/stages/stage.json")?;
-        let stage = load_stage(&resolver, &stage_path).context("load default stage definition")?;
-
-        self.cmds.clear();
-        for object in &stage.objects {
-            self.load_stage_object(rt, &resolver, object)?;
-        }
-        Ok(())
-    }
-
-    fn load_stage_object(
-        &mut self,
-        rt: &Runtime,
-        resolver: &OverlayResolver,
-        object: &StageObject,
-    ) -> Result<()> {
-        let image = load_png(resolver, &object.image)
-            .with_context(|| format!("load {}", object.image.as_str()))?;
-        let texture_id = asset_id_for_path(&object.image);
-        let filter = if object.antialiasing {
-            FilterMode::Linear
-        } else {
-            FilterMode::Nearest
-        };
-        let texture = Texture::from_png_image(
-            &rt.rs.device,
-            &rt.rs.queue,
-            &image,
-            filter,
-            Some(object.image.as_str()),
-        );
-        let size = glam::vec2(
-            image.width as f32 * object.scale.x,
-            image.height as f32 * object.scale.y,
-        );
-        self.atlases.insert(texture_id, texture);
-
-        let mut cmd = DrawCommand::sprite(
-            texture_id,
-            glam::vec2(object.position.x, object.position.y),
-            size,
-        );
-        // FNF sprite positions are top-left coordinates.
-        cmd.pivot = glam::Vec2::ZERO;
-        cmd.layer = object.layer;
-        cmd.z = object.z;
-        cmd.filter = filter;
-        self.cmds.push(cmd);
         Ok(())
     }
 
@@ -307,15 +263,6 @@ impl ApplicationHandler for App {
             _ => {}
         }
     }
-}
-
-fn asset_id_for_path(path: &AssetPath) -> AssetId {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in path.as_str().as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    AssetId::new(hash)
 }
 
 /// Public entry point. Initializes logging + panic hook, builds the app
