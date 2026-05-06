@@ -4,10 +4,8 @@
 //! combo, health, judgment counters. Render/audio side-effects belong to
 //! `rustic-app`. Scoring math lives in `scoring.rs` next door.
 //!
-//! ref: 50fccded:source/PlayState.hx:78          // health=1, combo=0
-//! ref: 50fccded:source/PlayState.hx:113         // songScore=0
-//! ref: 50fccded:source/PlayState.hx:1297-1298   // health cap at 2.0
-//! ref: 50fccded:source/PlayState.hx:1462        // game over at health <= 0
+//! ref: bdedc0aa:source/funkin/util/Constants.hx:436-447
+//! ref: bdedc0aa:source/funkin/play/PlayState.hx:3292-3321
 
 use crate::judgment::JudgmentWindows;
 use crate::note::{notes_from_chart, Note};
@@ -16,13 +14,13 @@ use rustic_core::ids::{NoteId, SongId};
 use serde::{Deserialize, Serialize};
 
 /// Initial player health. Bar UI shows 50% at this value (range 0..2).
-/// ref: 50fccded:source/PlayState.hx:78
+/// ref: bdedc0aa:source/funkin/util/Constants.hx:441
 pub const INITIAL_HEALTH: f32 = 1.0;
 /// Max player health. Above this it clamps.
-/// ref: 50fccded:source/PlayState.hx:1297-1298
+/// ref: bdedc0aa:source/funkin/util/Constants.hx:436
 pub const MAX_HEALTH: f32 = 2.0;
 /// Game over when health reaches or drops below this.
-/// ref: 50fccded:source/PlayState.hx:1462
+/// ref: bdedc0aa:source/funkin/util/Constants.hx:447
 pub const DEATH_HEALTH: f32 = 0.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,11 +28,9 @@ pub const DEATH_HEALTH: f32 = 0.0;
 pub struct PlayState {
     pub song: Option<SongId>,
     /// Chart BPM, used by beat/hold-timer behavior.
-    /// ref: 50fccded:source/PlayState.hx:983
     #[serde(default = "default_bpm")]
     pub bpm: f64,
     /// Chart scroll speed (`SONG.speed`) used by the OG note-y formula.
-    /// ref: 50fccded:source/PlayState.hx:1512
     #[serde(default = "default_scroll_speed")]
     pub scroll_speed: f32,
     pub notes: Vec<Note>,
@@ -42,6 +38,8 @@ pub struct PlayState {
     /// separately from `notes` so the chart stays immutable and rewind
     /// only needs to replay the resolved set.
     pub resolved_notes: Vec<NoteId>,
+    /// Hit window in milliseconds. The serialized name stays generic so old
+    /// prototype saves can fall back cleanly.
     pub windows: JudgmentWindowsSerde,
     pub score: i64,
     pub combo: u32,
@@ -104,7 +102,6 @@ impl PlayState {
     }
 
     /// True when health has dropped to the death threshold.
-    /// ref: 50fccded:source/PlayState.hx:1462
     pub fn is_dead(&self) -> bool {
         self.health <= DEATH_HEALTH
     }
@@ -121,13 +118,14 @@ pub(crate) fn default_bpm() -> f64 {
 /// Serde-friendly wrapper because `JudgmentWindows` is `non_exhaustive`.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct JudgmentWindowsSerde {
-    pub safe_zone_ms: f64,
+    #[serde(alias = "safe_zone_ms")]
+    pub hit_window_ms: f64,
 }
 
 impl From<JudgmentWindows> for JudgmentWindowsSerde {
     fn from(w: JudgmentWindows) -> Self {
         Self {
-            safe_zone_ms: w.safe_zone_ms.0,
+            hit_window_ms: w.hit_window_ms.0,
         }
     }
 }
@@ -135,13 +133,13 @@ impl From<JudgmentWindows> for JudgmentWindowsSerde {
 impl From<JudgmentWindowsSerde> for JudgmentWindows {
     fn from(w: JudgmentWindowsSerde) -> Self {
         // Default to base FNF if the persisted value is zero (legacy save).
-        let z = if w.safe_zone_ms > 0.0 {
-            w.safe_zone_ms
+        let z = if w.hit_window_ms > 0.0 {
+            w.hit_window_ms
         } else {
-            JudgmentWindows::DEFAULT_SAFE_ZONE_MS
+            JudgmentWindows::DEFAULT_HIT_WINDOW_MS
         };
         let mut out = JudgmentWindows::base_fnf();
-        out.safe_zone_ms = rustic_core::time::Milliseconds(z);
+        out.hit_window_ms = rustic_core::time::Milliseconds(z);
         out
     }
 }
@@ -168,14 +166,14 @@ mod tests {
     fn windows_round_trip_through_serde_wrapper() {
         let serde: JudgmentWindowsSerde = JudgmentWindows::base_fnf().into();
         let back: JudgmentWindows = serde.into();
-        assert!((back.safe_zone_ms.0 - JudgmentWindows::DEFAULT_SAFE_ZONE_MS).abs() < 1e-9);
+        assert!((back.hit_window_ms.0 - JudgmentWindows::DEFAULT_HIT_WINDOW_MS).abs() < 1e-9);
     }
 
     #[test]
     fn windows_zero_falls_back_to_fnf_default() {
-        let zero = JudgmentWindowsSerde { safe_zone_ms: 0.0 };
+        let zero = JudgmentWindowsSerde { hit_window_ms: 0.0 };
         let back: JudgmentWindows = zero.into();
-        assert!((back.safe_zone_ms.0 - JudgmentWindows::DEFAULT_SAFE_ZONE_MS).abs() < 1e-9);
+        assert!((back.hit_window_ms.0 - JudgmentWindows::DEFAULT_HIT_WINDOW_MS).abs() < 1e-9);
     }
 
     #[test]

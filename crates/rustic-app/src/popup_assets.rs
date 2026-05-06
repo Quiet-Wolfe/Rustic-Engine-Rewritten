@@ -39,12 +39,12 @@ pub struct ScorePopups {
 #[derive(Debug, Clone, Copy)]
 struct ScorePopup {
     judgment: Judgment,
-    combo: u32,
+    combo: Option<u32>,
     started_at: Samples,
 }
 
 impl ScorePopups {
-    pub fn push(&mut self, judgment: Judgment, combo: u32, cursor: Samples) {
+    pub fn push(&mut self, judgment: Judgment, combo: Option<u32>, cursor: Samples) {
         if judgment == Judgment::Miss {
             return;
         }
@@ -85,8 +85,8 @@ impl ScorePopups {
                 ));
             }
 
-            if popup.combo >= 10 || popup.combo == 0 {
-                for (index, digit) in combo_digits(popup.combo).into_iter().enumerate() {
+            if let Some(combo) = popup.combo {
+                for (index, digit) in combo_digits(combo).into_iter().enumerate() {
                     let image = skin.digits[digit as usize];
                     commands.push(sprite_command(
                         image,
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn popup_renders_rating_and_three_digits_for_zero_combo() {
         let mut popups = ScorePopups::default();
-        popups.push(Judgment::Sick, 0, Samples(100));
+        popups.push(Judgment::Sick, Some(0), Samples(100));
 
         let commands = popups.commands(&skin(), Samples(100), 48_000);
 
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn single_digit_combo_only_renders_rating_like_og() {
         let mut popups = ScorePopups::default();
-        popups.push(Judgment::Good, 1, Samples(0));
+        popups.push(Judgment::Good, None, Samples(0));
 
         let commands = popups.commands(&skin(), Samples(0), 48_000);
 
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn expired_popups_are_removed() {
         let mut popups = ScorePopups::default();
-        popups.push(Judgment::Bad, 10, Samples(0));
+        popups.push(Judgment::Bad, Some(10), Samples(0));
 
         let commands = popups.commands(&skin(), Samples(48_000), 48_000);
 

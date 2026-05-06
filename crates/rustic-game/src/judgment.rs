@@ -1,17 +1,7 @@
 //! Judgment windows, ratings, and scoring math.
 //!
-//! Ported from base FNF. The window boundaries are derived from
-//! `Conductor.safeZoneOffset` so changes to the offset propagate the way
-//! they do upstream.
-//!
-//! ref: 50fccded:source/Conductor.hx:26-27       // safeFrames=10, safeZoneOffset=(10/60)*1000
-//! ref: 50fccded:source/PlayState.hx:1684-1714   // popUpScore thresholds (sick/good/bad/shit)
-//! ref: 50fccded:source/PlayState.hx:2028-2042   // noteMiss: -10 score, -0.04 health, combo=0
-//! ref: 50fccded:source/PlayState.hx:1574-1577   // late note: -0.0475 health, vocals=0
-//! ref: 50fccded:source/PlayState.hx:2096-2109   // goodNoteHit: +1 combo, +0.023 health (taps)
-//! ref: 50fccded:source/PlayState.hx:78          // health starts at 1.0
-//! ref: 50fccded:source/PlayState.hx:1297-1298   // health clamped to 2.0
-//! ref: 50fccded:source/PlayState.hx:1462        // game over at health <= 0
+//! ref: bdedc0aa:source/funkin/play/scoring/Scoring.hx:89-193
+//! ref: bdedc0aa:source/funkin/util/Constants.hx:352,436-488,531-535
 
 use rustic_core::time::Milliseconds;
 use serde::{Deserialize, Serialize};
@@ -29,35 +19,32 @@ pub enum Judgment {
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct JudgmentWindows {
-    /// Conductor.safeZoneOffset (ms). Base FNF: (safeFrames=10) / 60 * 1000.
-    /// Hit ratings are percentages of this offset.
-    pub safe_zone_ms: Milliseconds,
+    /// `Constants.HIT_WINDOW_MS` in v0.8.5.
+    pub hit_window_ms: Milliseconds,
 }
 
 impl JudgmentWindows {
-    pub const DEFAULT_SAFE_ZONE_MS: f64 = (10.0 / 60.0) * 1000.0;
+    pub const DEFAULT_HIT_WINDOW_MS: f64 = PBOT1_MISS_THRESHOLD;
 
     pub const fn base_fnf() -> Self {
         Self {
-            safe_zone_ms: Milliseconds(Self::DEFAULT_SAFE_ZONE_MS),
+            hit_window_ms: Milliseconds(Self::DEFAULT_HIT_WINDOW_MS),
         }
     }
 
-    /// Rating for an absolute timing delta in milliseconds. Outside the
-    /// safe zone the caller should record a miss instead of calling this;
-    /// values past `safe_zone` still classify as `Shit` to mirror the
-    /// `> 0.9 * safeZone → shit` branch.
-    /// ref: 50fccded:source/PlayState.hx:1700-1714
+    /// PBOT1 rating for an absolute timing delta in milliseconds.
     pub fn judge(&self, abs_diff_ms: f64) -> Judgment {
-        let z = self.safe_zone_ms.0;
-        if abs_diff_ms > z * 0.9 {
-            Judgment::Shit
-        } else if abs_diff_ms > z * 0.75 {
-            Judgment::Bad
-        } else if abs_diff_ms > z * 0.2 {
-            Judgment::Good
-        } else {
+        let abs = abs_diff_ms.abs();
+        if abs <= PBOT1_SICK_THRESHOLD {
             Judgment::Sick
+        } else if abs <= PBOT1_GOOD_THRESHOLD {
+            Judgment::Good
+        } else if abs <= PBOT1_BAD_THRESHOLD {
+            Judgment::Bad
+        } else if abs <= self.hit_window_ms.0 {
+            Judgment::Shit
+        } else {
+            Judgment::Miss
         }
     }
 }
@@ -68,38 +55,62 @@ impl Default for JudgmentWindows {
     }
 }
 
-/// Score delta for a judgment.
-/// ref: 50fccded:source/PlayState.hx:1696,1703,1708,1713 (350/50/100/200)
-/// ref: 50fccded:source/PlayState.hx:2039 (miss -10)
-pub fn score_value(j: Judgment) -> i64 {
-    match j {
-        Judgment::Sick => 350,
-        Judgment::Good => 200,
-        Judgment::Bad => 100,
-        Judgment::Shit => 50,
-        Judgment::Miss => -10,
+pub const PBOT1_MAX_SCORE: i64 = 500;
+pub const PBOT1_SCORING_OFFSET: f64 = 54.99;
+pub const PBOT1_SCORING_SLOPE: f64 = 0.080;
+pub const PBOT1_MIN_SCORE: f64 = 9.0;
+pub const PBOT1_MISS_SCORE: i64 = -100;
+pub const PBOT1_PERFECT_THRESHOLD: f64 = 5.0;
+pub const PBOT1_MISS_THRESHOLD: f64 = 160.0;
+pub const PBOT1_SICK_THRESHOLD: f64 = 45.0;
+pub const PBOT1_GOOD_THRESHOLD: f64 = 90.0;
+pub const PBOT1_BAD_THRESHOLD: f64 = 135.0;
+pub const GHOST_MISS_SCORE: i64 = -10;
+
+/// PBOT1 score delta for a note hit at `abs_diff_ms`.
+pub fn score_for_timing(abs_diff_ms: f64) -> i64 {
+    let abs = abs_diff_ms.abs();
+    if abs > PBOT1_MISS_THRESHOLD {
+        PBOT1_MISS_SCORE
+    } else if abs < PBOT1_PERFECT_THRESHOLD {
+        PBOT1_MAX_SCORE
+    } else {
+        let exponent = -PBOT1_SCORING_SLOPE * (abs - PBOT1_SCORING_OFFSET);
+        let factor = 1.0 - (1.0 / (1.0 + exponent.exp()));
+        (PBOT1_MAX_SCORE as f64 * factor + PBOT1_MIN_SCORE) as i64
     }
 }
 
-/// Health delta for a judgment. Upstream applies the same +0.023 hit
-/// health for normal note data, including sustain child notes. `Miss`
-/// here is the bad-press `noteMiss` path; late notes use
-/// `late_note_health_delta`.
-/// ref: 50fccded:source/PlayState.hx:2107 (+0.023 on hit)
-/// ref: 50fccded:source/PlayState.hx:2032 (-0.04 on bad press miss)
+pub fn note_miss_score_delta() -> i64 {
+    PBOT1_MISS_SCORE
+}
+
+pub fn ghost_miss_score_delta() -> i64 {
+    GHOST_MISS_SCORE
+}
+
+/// Health delta for PBOT1 judgments.
 pub fn health_delta(j: Judgment) -> f32 {
     match j {
-        Judgment::Sick | Judgment::Good | Judgment::Bad | Judgment::Shit => 0.023,
-        Judgment::Miss => -0.04,
+        Judgment::Sick => 0.03,
+        Judgment::Good => 0.015,
+        Judgment::Bad => 0.0,
+        Judgment::Shit => -0.02,
+        Judgment::Miss => -0.08,
     }
+}
+
+pub fn combo_breaks(j: Judgment) -> bool {
+    matches!(j, Judgment::Bad | Judgment::Shit | Judgment::Miss)
+}
+
+pub fn ghost_miss_health_delta() -> f32 {
+    -0.08
 }
 
 /// Health delta for an unhit player note that has gone late/offscreen.
-/// This is distinct from `noteMiss` in base FNF: it does not apply the
-/// -10 score or combo reset branch.
-/// ref: 50fccded:source/PlayState.hx:1574-1577
 pub fn late_note_health_delta() -> f32 {
-    -0.0475
+    health_delta(Judgment::Miss)
 }
 
 #[cfg(test)]
@@ -108,41 +119,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn safe_zone_matches_fnf_constant() {
+    fn hit_window_matches_fnf_constant() {
         let w = JudgmentWindows::base_fnf();
-        // safeFrames=10 / 60 * 1000 ≈ 166.6667ms
-        assert!((w.safe_zone_ms.0 - 166.666_666_666_666_67).abs() < 1e-9);
+        assert_eq!(w.hit_window_ms.0, 160.0);
     }
 
     #[test]
-    fn judge_thresholds_match_fnf() {
+    fn judge_thresholds_match_pbot1() {
         let w = JudgmentWindows::base_fnf();
-        // Per PlayState.hx:1700-1714, boundaries are at:
-        //   0.9   ≈ 150.000 ms
-        //   0.75  ≈ 125.000 ms
-        //   0.2   ≈ 33.333 ms
         assert_eq!(w.judge(0.0), Judgment::Sick);
-        assert_eq!(w.judge(33.0), Judgment::Sick);
-        assert_eq!(w.judge(34.0), Judgment::Good);
-        assert_eq!(w.judge(120.0), Judgment::Good);
-        assert_eq!(w.judge(126.0), Judgment::Bad);
-        assert_eq!(w.judge(149.0), Judgment::Bad);
-        assert_eq!(w.judge(151.0), Judgment::Shit);
+        assert_eq!(w.judge(45.0), Judgment::Sick);
+        assert_eq!(w.judge(46.0), Judgment::Good);
+        assert_eq!(w.judge(90.0), Judgment::Good);
+        assert_eq!(w.judge(91.0), Judgment::Bad);
+        assert_eq!(w.judge(135.0), Judgment::Bad);
+        assert_eq!(w.judge(136.0), Judgment::Shit);
+        assert_eq!(w.judge(160.0), Judgment::Shit);
+        assert_eq!(w.judge(161.0), Judgment::Miss);
     }
 
     #[test]
-    fn score_values_match_fnf() {
-        assert_eq!(score_value(Judgment::Sick), 350);
-        assert_eq!(score_value(Judgment::Good), 200);
-        assert_eq!(score_value(Judgment::Bad), 100);
-        assert_eq!(score_value(Judgment::Shit), 50);
-        assert_eq!(score_value(Judgment::Miss), -10);
+    fn timing_scores_match_pbot1_shape() {
+        assert_eq!(score_for_timing(0.0), 500);
+        assert_eq!(score_for_timing(4.999), 500);
+        assert_eq!(score_for_timing(200.0), -100);
+        assert!(score_for_timing(45.0) > score_for_timing(90.0));
+        assert!(score_for_timing(90.0) > score_for_timing(135.0));
     }
 
     #[test]
-    fn health_deltas_match_fnf() {
-        assert!((health_delta(Judgment::Sick) - 0.023).abs() < 1e-6);
-        assert!((health_delta(Judgment::Miss) - -0.04).abs() < 1e-6);
-        assert!((late_note_health_delta() - -0.0475).abs() < 1e-6);
+    fn health_deltas_match_pbot1_constants() {
+        assert!((health_delta(Judgment::Sick) - 0.03).abs() < 1e-6);
+        assert!((health_delta(Judgment::Good) - 0.015).abs() < 1e-6);
+        assert!((health_delta(Judgment::Bad) - 0.0).abs() < 1e-6);
+        assert!((health_delta(Judgment::Shit) - -0.02).abs() < 1e-6);
+        assert!((health_delta(Judgment::Miss) - -0.08).abs() < 1e-6);
+        assert!((late_note_health_delta() - -0.08).abs() < 1e-6);
+        assert_eq!(note_miss_score_delta(), -100);
+        assert_eq!(ghost_miss_score_delta(), -10);
     }
 }

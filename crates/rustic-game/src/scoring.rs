@@ -3,16 +3,16 @@
 //! Lives next to `state.rs` to keep the data definition file lean while
 //! still centralising the FNF gameplay math under one type.
 //!
-//! ref: 50fccded:source/PlayState.hx:1684-1716   // popUpScore
-//! ref: 50fccded:source/PlayState.hx:1574-1577   // late note health penalty
-//! ref: 50fccded:source/PlayState.hx:2028-2042   // noteMiss
-//! ref: 50fccded:source/PlayState.hx:1961-1977   // held sustain goodNoteHit
-//! ref: 50fccded:source/PlayState.hx:2096-2139   // goodNoteHit
-//! ref: 50fccded:source/Note.hx:172-184          // canBeHit / tooLate
+//! ref: bdedc0aa:source/funkin/play/PlayState.hx:2990-3048
+//! ref: bdedc0aa:source/funkin/play/PlayState.hx:3065-3128
+//! ref: bdedc0aa:source/funkin/play/PlayState.hx:3135-3198
+//! ref: bdedc0aa:source/funkin/play/PlayState.hx:3292-3351
+//! ref: bdedc0aa:source/funkin/util/GRhythmUtil.hx:54-111
 // LINT-ALLOW: long-file scoring implementation plus focused unit tests
 
 use crate::judgment::{
-    health_delta, late_note_health_delta, score_value, Judgment, JudgmentWindows,
+    combo_breaks, ghost_miss_health_delta, ghost_miss_score_delta, health_delta,
+    note_miss_score_delta, score_for_timing, Judgment, JudgmentWindows,
 };
 use crate::note::Lane;
 use crate::state::{PlayState, MAX_HEALTH};
@@ -24,54 +24,93 @@ use rustic_core::time::Samples;
 pub struct HitOutcome {
     pub judgment: Judgment,
     pub is_sustain: bool,
+    pub combo_break: bool,
+    pub combo_popup: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TimedHitRegistration {
+    judgment: Judgment,
+    combo_break: bool,
+    combo_popup: Option<u32>,
 }
 
 impl PlayState {
     /// Resolve a player-side note hit at a given absolute timing diff and
     /// fold the result into the gameplay counters.
     pub fn register_hit(&mut self, abs_diff_ms: f64) -> Judgment {
+        self.register_timed_hit(abs_diff_ms).judgment
+    }
+
+    fn register_timed_hit(&mut self, abs_diff_ms: f64) -> TimedHitRegistration {
         let windows: JudgmentWindows = self.windows.into();
-        let j = windows.judge(abs_diff_ms);
-        self.score += score_value(j);
-        self.combo += 1;
-        if self.combo > self.max_combo {
-            self.max_combo = self.combo;
+        let judgment = windows.judge(abs_diff_ms);
+        if judgment == Judgment::Miss {
+            self.register_note_miss();
+            return TimedHitRegistration {
+                judgment,
+                combo_break: true,
+                combo_popup: None,
+            };
         }
-        match j {
+
+        let previous_combo = self.combo;
+        self.score += score_for_timing(abs_diff_ms);
+        self.add_judgment_tally(judgment);
+        self.apply_health(health_delta(judgment));
+
+        let combo_break = combo_breaks(judgment);
+        if combo_break {
+            self.combo = 0;
+        } else {
+            self.combo += 1;
+            if self.combo > self.max_combo {
+                self.max_combo = self.combo;
+            }
+        }
+
+        let combo_popup = if combo_break {
+            (previous_combo >= 10).then_some(0)
+        } else {
+            (self.combo >= 10).then_some(self.combo)
+        };
+
+        TimedHitRegistration {
+            judgment,
+            combo_break,
+            combo_popup,
+        }
+    }
+
+    fn add_judgment_tally(&mut self, judgment: Judgment) {
+        match judgment {
             Judgment::Sick => self.sicks += 1,
             Judgment::Good => self.goods += 1,
             Judgment::Bad => self.bads += 1,
             Judgment::Shit => self.shits += 1,
             Judgment::Miss => self.misses += 1,
         }
-        self.apply_health(health_delta(j));
-        j
     }
 
-    /// Sustain child notes do not call `popUpScore` and do not increment
-    /// combo in base FNF, but they do receive the normal hit health.
-    /// ref: 50fccded:source/PlayState.hx:2098-2139
+    /// Sustain child notes are still represented by the prototype's expanded
+    /// chart model. The v0.8.5 hold trail score/health pass is separate.
     pub fn register_sustain_hit(&mut self) {
         self.apply_health(health_delta(Judgment::Sick));
     }
 
-    /// Player pressed an empty lane or the wrong lane. This mirrors
-    /// `noteMiss`; late unhit notes use `register_late_note_miss`.
-    /// ref: 50fccded:source/PlayState.hx:2028-2042
-    pub fn register_miss(&mut self) {
-        self.score += score_value(Judgment::Miss);
+    /// Player pressed an empty lane or the wrong lane. v0.8.5 treats this as
+    /// a ghost miss: score/health penalty, no combo break and no miss tally.
+    pub fn register_ghost_miss(&mut self) {
+        self.score += ghost_miss_score_delta();
+        self.apply_health(ghost_miss_health_delta());
+    }
+
+    /// Player-side scoreable note left the hit window unhit.
+    pub fn register_note_miss(&mut self) {
+        self.score += note_miss_score_delta();
         self.combo = 0;
         self.misses += 1;
         self.apply_health(health_delta(Judgment::Miss));
-    }
-
-    /// Player-side note became too late/unhit. Base FNF's offscreen note
-    /// path only reduces health and mutes vocals; score/combo are not
-    /// touched by this branch.
-    /// ref: 50fccded:source/PlayState.hx:1574-1577
-    pub fn register_late_note_miss(&mut self) {
-        self.misses += 1;
-        self.apply_health(late_note_health_delta());
     }
 
     /// Try to consume a player keypress against the closest unresolved
@@ -83,7 +122,7 @@ impl PlayState {
         lane: Lane,
         sample_rate: u32,
     ) -> Option<HitOutcome> {
-        let safe_zone = JudgmentWindows::from(self.windows).safe_zone_ms.0;
+        let hit_window = JudgmentWindows::from(self.windows).hit_window_ms.0;
         let cursor = event.audio_sample_cursor_at_receive;
         let ms_per_sample = 1000.0 / sample_rate as f64;
 
@@ -96,7 +135,7 @@ impl PlayState {
                 continue;
             }
             let abs = ((n.hit_at.0 - cursor.0) as f64 * ms_per_sample).abs();
-            if abs > safe_zone {
+            if abs > hit_window {
                 continue;
             }
             if best.map(|(_, b)| abs < b).unwrap_or(true) {
@@ -108,30 +147,36 @@ impl PlayState {
         let id = self.notes[idx].id;
         let is_sustain = self.notes[idx].is_sustain;
         self.resolved_notes.push(id);
+
         if is_sustain {
             self.register_sustain_hit();
             Some(HitOutcome {
                 judgment: Judgment::Sick,
                 is_sustain,
+                combo_break: false,
+                combo_popup: None,
             })
         } else {
+            let hit = self.register_timed_hit(abs_diff_ms);
             Some(HitOutcome {
-                judgment: self.register_hit(abs_diff_ms),
+                judgment: hit.judgment,
                 is_sustain,
+                combo_break: hit.combo_break,
+                combo_popup: hit.combo_popup,
             })
         }
     }
 
     /// Resolve player-side sustain child notes while a lane is held. This
-    /// mirrors the per-frame held-input path in `PlayState.update`.
-    /// ref: 50fccded:source/PlayState.hx:1961-1977
+    /// mirrors the prototype's expanded sustain-child path; v0.8.5 hold
+    /// trails need a separate per-second scoring pass.
     pub fn resolve_held_sustains_in_lane(
         &mut self,
         cursor: Samples,
         lane: Lane,
         sample_rate: u32,
     ) -> u32 {
-        let safe_zone = JudgmentWindows::from(self.windows).safe_zone_ms.0;
+        let hit_window = JudgmentWindows::from(self.windows).hit_window_ms.0;
         let ms_per_sample = 1000.0 / sample_rate as f64;
         let mut hits = Vec::new();
 
@@ -143,7 +188,7 @@ impl PlayState {
                 continue;
             }
             let diff_ms = (n.hit_at.0 - cursor.0) as f64 * ms_per_sample;
-            if diff_ms > -safe_zone && diff_ms < safe_zone * 0.5 {
+            if diff_ms > -hit_window && diff_ms < hit_window * 0.5 {
                 hits.push(n.id);
             }
         }
@@ -156,10 +201,10 @@ impl PlayState {
         count
     }
 
-    /// Mark every player-side note whose hit_at is more than `safe_zone_ms`
+    /// Mark every player-side note whose hit_at is more than the hit window
     /// behind `cursor` as a miss. Returns the count of newly missed notes.
     pub fn expire_late_notes(&mut self, cursor: Samples, sample_rate: u32) -> u32 {
-        let safe_zone = JudgmentWindows::from(self.windows).safe_zone_ms.0;
+        let hit_window = JudgmentWindows::from(self.windows).hit_window_ms.0;
         let ms_per_sample = 1000.0 / sample_rate as f64;
         let mut newly_missed = Vec::new();
         for n in &self.notes {
@@ -167,22 +212,22 @@ impl PlayState {
                 continue;
             }
             let diff_ms = (n.hit_at.0 - cursor.0) as f64 * ms_per_sample;
-            if diff_ms < -safe_zone {
+            if diff_ms < -hit_window {
                 newly_missed.push(n.id);
             }
         }
         let count = newly_missed.len() as u32;
         for id in newly_missed {
             self.resolved_notes.push(id);
-            self.register_late_note_miss();
+            self.register_note_miss();
         }
         count
     }
 
     pub(crate) fn apply_health(&mut self, delta: f32) {
         let next = self.health + delta;
-        // Upstream caps at 2.0 from above; below 0 is allowed and triggers
-        // game over via `is_dead`.
+        // Upstream caps at max health from above; below min health is allowed
+        // and triggers game over via `is_dead`.
         self.health = if next > MAX_HEALTH { MAX_HEALTH } else { next };
     }
 }
@@ -191,6 +236,7 @@ impl PlayState {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use crate::judgment::score_for_timing;
     use crate::note::Note;
     use crate::state::INITIAL_HEALTH;
     use rustic_core::ids::NoteId;
@@ -230,27 +276,38 @@ mod tests {
     }
 
     #[test]
-    fn perfect_hit_awards_sick_and_350() {
+    fn perfect_hit_awards_sick_and_max_score() {
         let mut s = PlayState::new();
         let j = s.register_hit(0.0);
         assert_eq!(j, Judgment::Sick);
-        assert_eq!(s.score, 350);
+        assert_eq!(s.score, 500);
         assert_eq!(s.combo, 1);
         assert_eq!(s.sicks, 1);
-        assert!((s.health - (INITIAL_HEALTH + 0.023)).abs() < 1e-5);
+        assert!((s.health - (INITIAL_HEALTH + 0.03)).abs() < 1e-5);
     }
 
     #[test]
-    fn miss_resets_combo_and_takes_health() {
+    fn note_miss_resets_combo_and_takes_health() {
         let mut s = PlayState::new();
         s.register_hit(0.0);
         s.register_hit(0.0);
         assert_eq!(s.combo, 2);
-        s.register_miss();
+        s.register_note_miss();
         assert_eq!(s.combo, 0);
         assert_eq!(s.max_combo, 2);
         assert_eq!(s.misses, 1);
-        assert_eq!(s.score, 690);
+        assert_eq!(s.score, 900);
+    }
+
+    #[test]
+    fn ghost_miss_does_not_break_combo_or_increment_misses() {
+        let mut s = PlayState::new();
+        s.register_hit(0.0);
+        s.register_ghost_miss();
+        assert_eq!(s.combo, 1);
+        assert_eq!(s.misses, 0);
+        assert_eq!(s.score, 490);
+        assert!((s.health - (INITIAL_HEALTH + 0.03 - 0.08)).abs() < 1e-6);
     }
 
     #[test]
@@ -262,41 +319,41 @@ mod tests {
     }
 
     #[test]
-    fn enough_misses_kill_player() {
+    fn enough_note_misses_kill_player() {
         let mut s = PlayState::new();
-        // INITIAL_HEALTH=1.0, miss = -0.04 → 25 misses to reach 0.0.
-        for _ in 0..25 {
-            s.register_miss();
+        for _ in 0..13 {
+            s.register_note_miss();
         }
         assert!(s.is_dead());
     }
 
     #[test]
-    fn late_note_miss_uses_og_health_penalty_without_score_or_combo_reset() {
+    fn late_note_miss_uses_note_miss_score_health_and_combo_break() {
         let mut s = PlayState::new();
         s.score = 1_000;
         s.combo = 7;
 
-        s.register_late_note_miss();
+        s.register_note_miss();
 
-        assert_eq!(s.score, 1_000);
-        assert_eq!(s.combo, 7);
+        assert_eq!(s.score, 900);
+        assert_eq!(s.combo, 0);
         assert_eq!(s.misses, 1);
-        assert!((s.health - (INITIAL_HEALTH - 0.0475)).abs() < 1e-6);
+        assert!((s.health - (INITIAL_HEALTH - 0.08)).abs() < 1e-6);
     }
 
     #[test]
-    fn ratings_match_fnf_thresholds() {
+    fn ratings_and_score_match_pbot1_thresholds() {
         let mut s = PlayState::new();
-        // 0.2 * 166.667 ≈ 33.333; just over → Good (200).
-        assert_eq!(s.register_hit(34.0), Judgment::Good);
-        assert_eq!(s.score, 200);
-        // 0.75 * 166.667 ≈ 125; just over → Bad (100).
-        assert_eq!(s.register_hit(126.0), Judgment::Bad);
-        assert_eq!(s.score, 300);
-        // 0.9 * 166.667 = 150; just over → Shit (50).
-        assert_eq!(s.register_hit(151.0), Judgment::Shit);
-        assert_eq!(s.score, 350);
+        assert_eq!(s.register_hit(46.0), Judgment::Good);
+        assert_eq!(s.score, score_for_timing(46.0));
+        assert_eq!(s.register_hit(91.0), Judgment::Bad);
+        assert_eq!(s.score, score_for_timing(46.0) + score_for_timing(91.0));
+        assert_eq!(s.combo, 0);
+        assert_eq!(s.register_hit(136.0), Judgment::Shit);
+        assert_eq!(
+            s.score,
+            score_for_timing(46.0) + score_for_timing(91.0) + score_for_timing(136.0)
+        );
     }
 
     #[test]
@@ -312,13 +369,13 @@ mod tests {
     fn input_offset_in_samples_resolves_to_correct_rating() {
         let mut s = PlayState::new();
         add_note(&mut s, 0, Lane::Left, 48_000);
-        // 4800 samples late = 100ms @ 48kHz → Good.
+        // 4800 samples late = 100ms @ 48kHz -> Bad in PBOT1.
         let j = s.try_hit_in_lane(&input_at(48_000 + 4_800), Lane::Left, 48_000);
-        assert_eq!(j.map(|outcome| outcome.judgment), Some(Judgment::Good));
+        assert_eq!(j.map(|outcome| outcome.judgment), Some(Judgment::Bad));
     }
 
     #[test]
-    fn input_outside_safe_zone_is_no_hit() {
+    fn input_outside_hit_window_is_no_hit() {
         let mut s = PlayState::new();
         add_note(&mut s, 0, Lane::Left, 48_000);
         let j = s.try_hit_in_lane(&input_at(48_000 - 9_600), Lane::Left, 48_000);
@@ -362,7 +419,7 @@ mod tests {
     }
 
     #[test]
-    fn sustain_hit_adds_health_without_score_or_combo() {
+    fn sustain_hit_adds_prototype_health_without_score_or_combo() {
         let mut s = PlayState::new();
         add_sustain(&mut s, 0, Lane::Left, 48_000);
 
@@ -373,17 +430,19 @@ mod tests {
             Some(HitOutcome {
                 judgment: Judgment::Sick,
                 is_sustain: true,
+                combo_break: false,
+                combo_popup: None,
             })
         );
         assert_eq!(s.score, 0);
         assert_eq!(s.combo, 0);
         assert_eq!(s.sicks, 0);
         assert!(s.resolved_notes.contains(&NoteId::new(0)));
-        assert!((s.health - (INITIAL_HEALTH + 0.023)).abs() < 1e-5);
+        assert!((s.health - (INITIAL_HEALTH + 0.03)).abs() < 1e-5);
     }
 
     #[test]
-    fn held_lane_resolves_sustain_children_in_fnf_window() {
+    fn held_lane_resolves_sustain_children_in_hit_window() {
         let mut s = PlayState::new();
         add_sustain(&mut s, 0, Lane::Left, 48_000);
         add_sustain(&mut s, 1, Lane::Left, 62_400);
@@ -400,19 +459,19 @@ mod tests {
     }
 
     #[test]
-    fn expire_late_notes_misses_unhit_player_notes_past_safe_zone() {
+    fn expire_late_notes_misses_unhit_player_notes_past_hit_window() {
         let mut s = PlayState::new();
         add_note(&mut s, 0, Lane::Left, 48_000);
         add_note(&mut s, 1, Lane::Left, 48_000 + 96_000);
         s.score = 500;
         s.combo = 3;
-        let cursor = Samples(48_000 + 9_000);
+        let cursor = Samples(48_000 + 8_000);
         let missed = s.expire_late_notes(cursor, 48_000);
         assert_eq!(missed, 1);
         assert!(s.resolved_notes.contains(&NoteId::new(0)));
         assert_eq!(s.misses, 1);
-        assert_eq!(s.score, 500);
-        assert_eq!(s.combo, 3);
-        assert!((s.health - (INITIAL_HEALTH - 0.0475)).abs() < 1e-6);
+        assert_eq!(s.score, 400);
+        assert_eq!(s.combo, 0);
+        assert!((s.health - (INITIAL_HEALTH - 0.08)).abs() < 1e-6);
     }
 }

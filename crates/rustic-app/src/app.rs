@@ -432,7 +432,7 @@ impl App {
                 return;
             };
             if event.action == InputAction::Reset {
-                // ref: 50fccded:source/PlayState.hx:1450-1454
+                // ref: bdedc0aa:source/funkin/play/PlayState.hx:1243-1258
                 play_state.health = 0.0;
                 should_enter_game_over = true;
             } else {
@@ -452,14 +452,11 @@ impl App {
                         .player_note_hit(lane, cursor, sample_rate, play_state.bpm);
                     restore_vocals = true;
                     if !outcome.is_sustain {
-                        self.score_popups.push(
-                            outcome.judgment,
-                            play_state.combo.saturating_sub(1),
-                            cursor,
-                        );
+                        self.score_popups
+                            .push(outcome.judgment, outcome.combo_popup, cursor);
                     }
                 } else {
-                    play_state.register_miss();
+                    play_state.register_ghost_miss();
                     self.character_anim.player_note_miss(lane, cursor);
                 }
                 should_enter_game_over = play_state.is_dead();
@@ -515,7 +512,7 @@ impl App {
     }
 
     fn enter_game_over(&mut self, cursor: Samples) {
-        // ref: 50fccded:source/PlayState.hx:1462-1480
+        // ref: bdedc0aa:source/funkin/play/PlayState.hx:1441-1472
         if self.game_over.is_some() {
             return;
         }
@@ -649,7 +646,8 @@ fn game_over_cursor(game_over: GameOverState, sample_rate: u32) -> Samples {
 }
 
 fn health_icon_scale(cursor: Samples, sample_rate: u32, bpm: f64) -> f32 {
-    // ref: 50fccded:source/PlayState.hx:1286-1290,2289-2294
+    // Legacy prototype pulse. v0.8.5 moves this into HealthIcon's own bop tween.
+    // ref: bdedc0aa:source/funkin/play/components/HealthIcon.hx:227-242,296-315
     if cursor.0 < 0 {
         return 1.0;
     }
