@@ -270,6 +270,7 @@ impl App {
     fn rebuild_frame_commands(&mut self) {
         let cursor = self.preview_cursor();
         if let Some(play_state) = self.play_state.as_mut() {
+            play_state.resolve_opponent_notes(cursor);
             for lane in self.held_lanes.active_lanes() {
                 play_state.resolve_held_sustains_in_lane(cursor, lane, SAMPLE_RATE);
             }
