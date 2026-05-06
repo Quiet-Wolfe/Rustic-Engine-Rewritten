@@ -30,12 +30,19 @@ use rustic_render::{
     SurfaceConfig, Texture,
 };
 use std::collections::HashMap;
+use std::env;
+use std::sync::mpsc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::{Window, WindowAttributes};
+
+const AUDIO_OPEN_TIMEOUT_MS: u64 = 750;
+const AUDIO_OPEN_TIMEOUT_ENV: &str = "RUSTIC_AUDIO_OPEN_TIMEOUT_MS";
+const AUDIO_DISABLE_ENV: &str = "RUSTIC_AUDIO";
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -104,26 +111,7 @@ struct Runtime {
 impl App {
     fn new(options: AppOptions) -> Self {
         let now = Instant::now();
-        let (audio_output, mixer) = match AudioOutput::open_default() {
-            Ok(output) => {
-                tracing::info!(
-                    target: "rustic.audio",
-                    sample_rate = output.sample_rate(),
-                    channels = output.channels(),
-                    sample_format = ?output.sample_format(),
-                    "opened default output stream"
-                );
-                let mixer = output.mixer().clone();
-                (Some(output), mixer)
-            }
-            Err(e) => {
-                tracing::warn!(
-                    target: "rustic.audio",
-                    "audio output unavailable, using wall-clock preview cursor: {e:#}"
-                );
-                (None, SharedMixer::new(Mixer::new(SAMPLE_RATE)))
-            }
-        };
+        let (audio_output, mixer) = open_audio_output_or_fallback();
         Self {
             options,
             boot_instant: now,
@@ -211,13 +199,20 @@ impl App {
                         self.song_start = Instant::now();
                         self.song_started = false;
                         self.game_over = None;
-                        if let Err(e) = load_bopeebo_stems(&self.mixer, Samples(0)) {
-                            tracing::warn!(target: "rustic.audio", "preview stems unavailable: {e:#}");
-                        } else if let Err(e) = self.mixer.edit(|mixer| {
-                            mixer.pause();
-                            Ok(())
-                        }) {
-                            tracing::warn!(target: "rustic.audio", "pause countdown audio: {e:#}");
+                        if self.audio_output.is_some() {
+                            if let Err(e) = load_bopeebo_stems(&self.mixer, Samples(0)) {
+                                tracing::warn!(target: "rustic.audio", "preview stems unavailable: {e:#}");
+                            } else if let Err(e) = self.mixer.edit(|mixer| {
+                                mixer.pause();
+                                Ok(())
+                            }) {
+                                tracing::warn!(target: "rustic.audio", "pause countdown audio: {e:#}");
+                            }
+                        } else {
+                            tracing::warn!(
+                                target: "rustic.audio",
+                                "preview stems skipped because audio output is unavailable"
+                            );
                         }
                         self.play_state = Some(play_state);
                         self.rebuild_frame_commands();
@@ -570,6 +565,86 @@ impl App {
     }
 }
 
+fn open_audio_output_or_fallback() -> (Option<AudioOutput>, SharedMixer) {
+    if audio_disabled() {
+        tracing::warn!(
+            target: "rustic.audio",
+            "{AUDIO_DISABLE_ENV}=off, using wall-clock preview cursor"
+        );
+        return fallback_audio();
+    }
+
+    let timeout = audio_open_timeout(env::var(AUDIO_OPEN_TIMEOUT_ENV).ok().as_deref());
+    let (tx, rx) = mpsc::channel();
+    let spawn = thread::Builder::new()
+        .name("rustic.audio.open".to_string())
+        .spawn(move || {
+            let _ = tx.send(AudioOutput::open_default());
+        });
+
+    if let Err(e) = spawn {
+        tracing::warn!(
+            target: "rustic.audio",
+            "audio output thread unavailable, using wall-clock preview cursor: {e}"
+        );
+        return fallback_audio();
+    }
+
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(output)) => {
+            tracing::info!(
+                target: "rustic.audio",
+                sample_rate = output.sample_rate(),
+                channels = output.channels(),
+                sample_format = ?output.sample_format(),
+                "opened default output stream"
+            );
+            let mixer = output.mixer().clone();
+            (Some(output), mixer)
+        }
+        Ok(Err(e)) => {
+            tracing::warn!(
+                target: "rustic.audio",
+                "audio output unavailable, using wall-clock preview cursor: {e:#}"
+            );
+            fallback_audio()
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            tracing::warn!(
+                target: "rustic.audio",
+                timeout_ms = timeout.as_millis(),
+                "audio output open timed out, using wall-clock preview cursor"
+            );
+            fallback_audio()
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            tracing::warn!(
+                target: "rustic.audio",
+                "audio output open thread exited, using wall-clock preview cursor"
+            );
+            fallback_audio()
+        }
+    }
+}
+
+fn fallback_audio() -> (Option<AudioOutput>, SharedMixer) {
+    (None, SharedMixer::new(Mixer::new(SAMPLE_RATE)))
+}
+
+fn audio_disabled() -> bool {
+    env::var(AUDIO_DISABLE_ENV)
+        .map(|value| matches!(value.trim(), "0" | "off" | "false" | "none"))
+        .unwrap_or(false)
+}
+
+fn audio_open_timeout(value: Option<&str>) -> Duration {
+    let millis = value
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .filter(|millis| *millis > 0)
+        .unwrap_or(AUDIO_OPEN_TIMEOUT_MS);
+    Duration::from_millis(millis)
+}
+
 fn game_over_cursor(game_over: GameOverState, sample_rate: u32) -> Samples {
     let elapsed = game_over.animation_started.elapsed().as_secs_f64();
     let elapsed_samples = (elapsed * f64::from(sample_rate.max(1))).round() as i64;
@@ -647,4 +722,26 @@ pub fn run(options: AppOptions) -> Result<()> {
     let mut app = App::new(options);
     event_loop.run_app(&mut app)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_open_timeout_uses_env_milliseconds() {
+        assert_eq!(audio_open_timeout(Some("125")), Duration::from_millis(125));
+    }
+
+    #[test]
+    fn audio_open_timeout_rejects_zero_and_invalid_values() {
+        assert_eq!(
+            audio_open_timeout(Some("0")),
+            Duration::from_millis(AUDIO_OPEN_TIMEOUT_MS)
+        );
+        assert_eq!(
+            audio_open_timeout(Some("nope")),
+            Duration::from_millis(AUDIO_OPEN_TIMEOUT_MS)
+        );
+    }
 }
