@@ -7,6 +7,9 @@
 use glam::{Mat4, Vec2};
 use rustic_core::ids::CameraId;
 
+const FNF_WIDTH: f32 = 1280.0;
+const FNF_HEIGHT: f32 = 720.0;
+
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Camera {
@@ -62,9 +65,9 @@ impl CameraRegistry {
     /// Initialize the base-FNF camera set: `camGame`, `camHUD`, `camOther`.
     pub fn with_default_fnf() -> Self {
         let mut r = Self::new();
-        r.add(Camera::new(CameraId(0), "camGame", 0));
-        r.add(Camera::new(CameraId(1), "camHUD", 1));
-        r.add(Camera::new(CameraId(2), "camOther", 2));
+        r.add(default_fnf_camera(CameraId(0), "camGame", 0));
+        r.add(default_fnf_camera(CameraId(1), "camHUD", 1));
+        r.add(default_fnf_camera(CameraId(2), "camOther", 2));
         r
     }
 
@@ -98,6 +101,12 @@ impl CameraRegistry {
     }
 }
 
+fn default_fnf_camera(id: CameraId, name: &'static str, order: i32) -> Camera {
+    let mut camera = Camera::new(id, name, order);
+    camera.position = Vec2::new(FNF_WIDTH * 0.5, FNF_HEIGHT * 0.5);
+    camera
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -108,6 +117,21 @@ mod tests {
         let r = CameraRegistry::with_default_fnf();
         let names: Vec<_> = r.iter().map(|c| c.name).collect();
         assert_eq!(names, vec!["camGame", "camHUD", "camOther"]);
+    }
+
+    #[test]
+    fn default_fnf_cameras_start_unscrolled() {
+        let r = CameraRegistry::with_default_fnf();
+        let cam = r.get(CameraId(0)).unwrap();
+        let m = cam.view_proj(1280.0, 720.0);
+
+        let top_left = m * glam::Vec4::new(0.0, 0.0, 0.0, 1.0);
+        assert!((top_left.x + 1.0).abs() < 1e-4);
+        assert!((top_left.y - 1.0).abs() < 1e-4);
+
+        let center = m * glam::Vec4::new(640.0, 360.0, 0.0, 1.0);
+        assert!(center.x.abs() < 1e-4);
+        assert!(center.y.abs() < 1e-4);
     }
 
     #[test]
