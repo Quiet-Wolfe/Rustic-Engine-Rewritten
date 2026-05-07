@@ -415,15 +415,22 @@ mod tests {
         }
     }
 
-    fn source_atlas(path: &str) -> SparrowAtlas {
+    fn source_resolver() -> OverlayResolver {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = manifest_dir.parent().unwrap().parent().unwrap();
-        let bytes = std::fs::read(workspace.join("assets/source").join(path)).unwrap();
-        SparrowAtlas::parse(&bytes).unwrap()
+        OverlayResolver::new().with_baked_root(workspace.join("assets/source"))
     }
 
-    fn source_lane_skin(asset_name: &str, color_name: &str) -> LaneHoldCoverSkin {
-        let atlas = source_atlas(&format!("images/{asset_name}.xml"));
+    fn source_atlas(resolver: &OverlayResolver, path: &str) -> SparrowAtlas {
+        load_sparrow(resolver, &AssetPath::new(path).unwrap()).unwrap()
+    }
+
+    fn source_lane_skin(
+        resolver: &OverlayResolver,
+        asset_name: &str,
+        color_name: &str,
+    ) -> LaneHoldCoverSkin {
+        let atlas = source_atlas(resolver, &format!("images/{asset_name}.xml"));
         LaneHoldCoverSkin {
             texture_id: AssetId::new(7),
             texture_width: 599,
@@ -438,12 +445,13 @@ mod tests {
     }
 
     fn source_skin() -> HoldCoverSkin {
+        let resolver = source_resolver();
         HoldCoverSkin {
             lanes: [
-                source_lane_skin("holdCoverPurple", "Purple"),
-                source_lane_skin("holdCoverBlue", "Blue"),
-                source_lane_skin("holdCoverGreen", "Green"),
-                source_lane_skin("holdCoverRed", "Red"),
+                source_lane_skin(&resolver, "holdCoverPurple", "Purple"),
+                source_lane_skin(&resolver, "holdCoverBlue", "Blue"),
+                source_lane_skin(&resolver, "holdCoverGreen", "Green"),
+                source_lane_skin(&resolver, "holdCoverRed", "Red"),
             ],
         }
     }

@@ -287,15 +287,19 @@ mod tests {
         }
     }
 
-    fn source_atlas(path: &str) -> SparrowAtlas {
+    fn source_resolver() -> OverlayResolver {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = manifest_dir.parent().unwrap().parent().unwrap();
-        let bytes = std::fs::read(workspace.join("assets/source").join(path)).unwrap();
-        SparrowAtlas::parse(&bytes).unwrap()
+        OverlayResolver::new().with_baked_root(workspace.join("assets/source"))
+    }
+
+    fn source_atlas(resolver: &OverlayResolver, path: &str) -> SparrowAtlas {
+        load_sparrow(resolver, &AssetPath::new(path).unwrap()).unwrap()
     }
 
     fn source_skin() -> NoteSplashSkin {
-        let atlas = source_atlas("images/noteSplashes.xml");
+        let resolver = source_resolver();
+        let atlas = source_atlas(&resolver, "images/noteSplashes.xml");
         NoteSplashSkin {
             texture_id: AssetId::new(7),
             texture_width: 2048,
