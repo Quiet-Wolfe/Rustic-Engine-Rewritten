@@ -5,8 +5,9 @@
 //!     a manifest. Source assets are copied byte-for-byte for now; later
 //!     phases can replace individual extensions with real transforms while
 //!     preserving the manifest contract.
-//!   - `import-week1` — import normalized Week 1 chart/list data from the
-//!     pinned local `references/Funkin` checkout.
+//!   - `import-week1` — import normalized Tutorial/Week 1 v-slice chart,
+//!     metadata, level, and compatibility list data from the pinned local
+//!     `references/Funkin` checkout.
 //!   - `regression` — placeholder for the visual regression runner.
 
 use anyhow::{Context, Result};
@@ -42,7 +43,7 @@ fn print_help() {
     println!("Commands:");
     println!("  bake [--check]   Bake assets/source/ into assets/baked/.");
     println!("                   --check fails if the manifest would change.");
-    println!("  import-week1     Import OG Week 1 charts from references/Funkin.");
+    println!("  import-week1     Import OG Tutorial/Week 1 data from references/Funkin.");
     println!("  regression       Run the visual regression suite (TODO).");
     println!("  help             Show this message.");
 }
@@ -172,45 +173,86 @@ fn check_baked_files(source: &Path, baked: &Path, manifest: &BakeManifest) -> Re
 
 fn cmd_import_week1() -> Result<()> {
     let root = workspace_root()?;
-    let reference_data = root.join("references/Funkin/assets/data");
-    if !reference_data.exists() {
+    let reference_data = root.join("references/Funkin/assets/preload/data");
+    let reference_songs = reference_data.join("songs");
+    if !reference_songs.exists() {
         anyhow::bail!(
-            "missing pinned reference data at {}",
-            reference_data.display()
+            "missing pinned v-slice song data at {}",
+            reference_songs.display()
         );
     }
 
     let source_data = root.join("assets/source/data");
     let mut written = 0usize;
-    for relative in WEEK1_CHARTS {
-        let src = reference_data.join(relative);
-        let dst = source_data.join(relative);
-        import_text_asset(&src, &dst)?;
+    for song in WEEK1_SONGS {
+        written += import_song_json_dir(
+            &reference_songs.join(song),
+            &source_data.join("songs").join(song),
+        )?;
+    }
+
+    for relative in WEEK1_LEVELS {
+        import_text_asset(&reference_data.join(relative), &source_data.join(relative))?;
         written += 1;
     }
 
-    import_text_asset(
-        &reference_data.join("freeplaySonglist.txt"),
-        &source_data.join("freeplaySonglist.txt"),
-    )?;
+    write_freeplay_songlist(&reference_songs, &source_data.join("freeplaySonglist.txt"))?;
     written += 1;
 
     println!("import-week1: wrote {written} source assets from references/Funkin");
     Ok(())
 }
 
-const WEEK1_CHARTS: &[&str] = &[
-    "tutorial/tutorial-easy.json",
-    "tutorial/tutorial.json",
-    "tutorial/tutorial-hard.json",
-    "bopeebo/bopeebo.json",
-    "fresh/fresh-easy.json",
-    "fresh/fresh.json",
-    "fresh/fresh-hard.json",
-    "dadbattle/dadbattle-easy.json",
-    "dadbattle/dadbattle.json",
-    "dadbattle/dadbattle-hard.json",
-];
+const WEEK1_SONGS: &[&str] = &["tutorial", "bopeebo", "fresh", "dadbattle"];
+const WEEK1_LEVELS: &[&str] = &["levels/tutorial.json", "levels/week1.json"];
+
+fn import_song_json_dir(src_dir: &Path, dst_dir: &Path) -> Result<usize> {
+    let mut files = Vec::new();
+    for entry in fs::read_dir(src_dir).with_context(|| format!("read {}", src_dir.display()))? {
+        let entry = entry.with_context(|| format!("read entry in {}", src_dir.display()))?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+            files.push(path);
+        }
+    }
+    files.sort();
+
+    let mut written = 0usize;
+    for src in files {
+        let file_name = src
+            .file_name()
+            .context("song json path has no file name")?
+            .to_owned();
+        import_text_asset(&src, &dst_dir.join(file_name))?;
+        written += 1;
+    }
+    Ok(written)
+}
+
+fn write_freeplay_songlist(reference_songs: &Path, dst: &Path) -> Result<()> {
+    let mut text = String::new();
+    for song in WEEK1_SONGS {
+        let metadata_path = reference_songs
+            .join(song)
+            .join(format!("{song}-metadata.json"));
+        let bytes = fs::read(&metadata_path)
+            .with_context(|| format!("read {}", metadata_path.display()))?;
+        let value: serde_json::Value = serde_json::from_slice(trim_reference_text(&bytes))
+            .with_context(|| format!("parse {}", metadata_path.display()))?;
+        let name = value
+            .get("songName")
+            .and_then(serde_json::Value::as_str)
+            .with_context(|| format!("missing songName in {}", metadata_path.display()))?;
+        text.push_str(name);
+        text.push('\n');
+    }
+
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    fs::write(dst, text).with_context(|| format!("write {}", dst.display()))?;
+    Ok(())
+}
 
 fn import_text_asset(src: &Path, dst: &Path) -> Result<()> {
     let bytes = fs::read(src).with_context(|| format!("read {}", src.display()))?;

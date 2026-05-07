@@ -80,6 +80,12 @@ mod tests {
         AssetPath::new(s).unwrap()
     }
 
+    fn source_resolver() -> OverlayResolver {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
+        OverlayResolver::new().with_baked_root(workspace.join("assets/source"))
+    }
+
     const CHART_JSON: &str = r#"{
         "song": {
             "song": "Test",
@@ -251,10 +257,7 @@ mod tests {
 
     #[test]
     fn tracked_source_seed_definitions_parse() {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
-        let source_root = workspace.join("assets/source");
-        let resolver = OverlayResolver::new().with_baked_root(source_root);
+        let resolver = source_resolver();
 
         let bf = load_character(&resolver, &ap("data/characters/bf.json")).unwrap();
         assert_eq!(bf.id, "bf");
@@ -279,16 +282,13 @@ mod tests {
         let songs = load_text_list(&resolver, &ap("data/freeplaySonglist.txt")).unwrap();
         assert_eq!(
             songs.items,
-            vec!["Tutorial", "Bopeebo", "Fresh", "Dadbattle"]
+            vec!["Tutorial", "Bopeebo", "Fresh", "DadBattle"]
         );
     }
 
     #[test]
     fn tracked_source_week1_charts_parse() {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
-        let source_root = workspace.join("assets/source");
-        let resolver = OverlayResolver::new().with_baked_root(source_root);
+        let resolver = source_resolver();
 
         for (path, name) in [
             ("data/tutorial/tutorial-easy.json", "Tutorial"),
@@ -310,34 +310,33 @@ mod tests {
     }
 
     #[test]
-    fn tracked_source_bopeebo_vslice_chart_parse() {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
-        let source_root = workspace.join("assets/source");
-        let resolver = OverlayResolver::new().with_baked_root(source_root);
+    fn tracked_source_week1_vslice_charts_parse() {
+        let resolver = source_resolver();
 
-        let song = load_vslice_chart(
-            &resolver,
-            &ap("data/songs/bopeebo/bopeebo-chart.json"),
-            &ap("data/songs/bopeebo/bopeebo-metadata.json"),
-            "normal",
-        )
-        .unwrap();
-
-        assert_eq!(song.name, "Bopeebo");
-        assert_eq!(song.chart.bpm, 100.0);
-        assert_eq!(song.chart.speed, 1.3);
-        assert_eq!(song.chart.player1, "bf");
-        assert_eq!(song.chart.player2, "dad");
-        assert!(!song.chart.notes.is_empty());
+        for (song_id, name, speed, player, opponent) in [
+            ("tutorial", "Tutorial", 1.0, "bf", "gf"),
+            ("bopeebo", "Bopeebo", 1.3, "bf", "dad"),
+            ("fresh", "Fresh", 1.6, "bf", "dad"),
+            ("dadbattle", "DadBattle", 1.8, "bf", "dad"),
+        ] {
+            let song = load_vslice_chart(
+                &resolver,
+                &ap(&format!("data/songs/{song_id}/{song_id}-chart.json")),
+                &ap(&format!("data/songs/{song_id}/{song_id}-metadata.json")),
+                "normal",
+            )
+            .unwrap();
+            assert_eq!(song.name, name);
+            assert_eq!(song.chart.speed, speed);
+            assert_eq!(song.chart.player1, player);
+            assert_eq!(song.chart.player2, opponent);
+            assert!(!song.chart.notes.is_empty());
+        }
     }
 
     #[test]
     fn tracked_source_week1_visual_assets_parse() {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
-        let source_root = workspace.join("assets/source");
-        let resolver = OverlayResolver::new().with_baked_root(source_root);
+        let resolver = source_resolver();
 
         for (path, frame_count) in [
             ("images/BOYFRIEND.xml", 496),
