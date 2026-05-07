@@ -445,9 +445,7 @@ fn receptor_sprite_pos(player: u8, lane: Lane, frame: &SparrowFrame) -> glam::Ve
         strumline_x(player) + lane_index(lane) as f32 * NOTE_SPACING + STRUMLINE_SIZE * 0.5,
         STRUMLINE_Y_OFFSET + STRUMLINE_SIZE * 0.5,
     );
-    let source_size = frame_source_size(frame) * NOTE_ASSET_SCALE;
-    let trimmed = frame_trim_offset(frame) * NOTE_ASSET_SCALE;
-    center - source_size * 0.5 - trimmed
+    center - frame_draw_size(frame) * NOTE_ASSET_SCALE * 0.5
 }
 
 fn strumline_x(player: u8) -> f32 {
@@ -675,7 +673,7 @@ mod tests {
     }
 
     #[test]
-    fn receptor_frames_share_the_same_untrimmed_lane_center() {
+    fn receptor_frames_center_the_visible_frame_on_the_lane_slot() {
         let skin = test_note_skin();
         let static_cmd =
             skin.receptor_command(1, Lane::Left, ReceptorState::Static, Samples(0), 48_000);
@@ -689,8 +687,8 @@ mod tests {
             48_000,
         );
 
-        let static_center = frame_source_center(&static_cmd, &skin.static_frames[0]);
-        let press_center = frame_source_center(&press_cmd, &skin.press_frames[0][0]);
+        let static_center = command_center(&static_cmd);
+        let press_center = command_center(&press_cmd);
 
         assert_eq!(static_cmd.texture, AssetId::new(2));
         assert_eq!(press_cmd.texture, AssetId::new(2));
@@ -700,10 +698,8 @@ mod tests {
         assert!((press_center.y - static_center.y).abs() < 1e-5);
     }
 
-    fn frame_source_center(cmd: &DrawCommand, frame: &SparrowFrame) -> glam::Vec2 {
-        cmd.world_pos
-            + frame_trim_offset(frame) * NOTE_ASSET_SCALE
-            + frame_source_size(frame) * NOTE_ASSET_SCALE * 0.5
+    fn command_center(cmd: &DrawCommand) -> glam::Vec2 {
+        cmd.world_pos + cmd.size * 0.5
     }
 
     #[test]
