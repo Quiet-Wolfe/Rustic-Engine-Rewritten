@@ -7,21 +7,35 @@
 use crate::error::{AssetError, AssetResult};
 use crate::parsers::types::AssetVec2;
 use crate::path::AssetPath;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct CharacterDefinition {
+    #[serde(default, alias = "name")]
     pub id: String,
-    pub atlas: AssetPath,
+    #[serde(default)]
+    pub render_type: CharacterRenderType,
+    #[serde(default)]
+    pub atlas: Option<AssetPath>,
+    #[serde(default)]
+    pub asset_path: Option<AssetPath>,
     #[serde(default)]
     pub icon: Option<AssetPath>,
     #[serde(default, alias = "startingAnimation")]
     pub initial_animation: Option<String>,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "offsets",
+        deserialize_with = "deserialize_asset_vec2"
+    )]
     pub position: AssetVec2,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "cameraOffsets",
+        deserialize_with = "deserialize_asset_vec2"
+    )]
     pub camera_offset: AssetVec2,
     #[serde(default = "default_sing_time")]
     pub sing_time: f64,
@@ -37,19 +51,40 @@ pub struct CharacterDefinition {
     pub animations: Vec<CharacterAnimation>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum CharacterRenderType {
+    #[default]
+    Sparrow,
+    AnimateAtlas,
+    MultiSparrow,
+    MultiAnimateAtlas,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct CharacterAnimation {
     pub name: String,
     pub prefix: String,
-    #[serde(default = "default_fps")]
+    #[serde(default)]
+    pub asset_path: Option<AssetPath>,
+    #[serde(default)]
+    pub render_type: Option<CharacterRenderType>,
+    #[serde(default)]
+    pub anim_type: Option<String>,
+    #[serde(default = "default_fps", alias = "frameRate")]
     pub fps: u16,
     #[serde(default)]
     pub looped: bool,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "offsets",
+        deserialize_with = "deserialize_asset_vec2"
+    )]
     pub offset: AssetVec2,
-    #[serde(default)]
+    #[serde(default, alias = "frameIndices")]
     pub indices: Vec<u16>,
 }
 
@@ -87,6 +122,12 @@ impl CharacterDefinition {
     fn validate(&self) -> AssetResult<()> {
         if self.id.trim().is_empty() {
             return Err(invalid("character id is empty"));
+        }
+        if self.atlas.is_none() && self.asset_path.is_none() {
+            return Err(invalid(&format!(
+                "character {} has no atlas or assetPath",
+                self.id
+            )));
         }
         if self.animations.is_empty() {
             return Err(invalid(&format!("character {} has no animations", self.id)));
@@ -145,6 +186,29 @@ fn invalid(msg: &str) -> AssetError {
     AssetError::InvalidData(format!("character: {msg}"))
 }
 
+fn deserialize_asset_vec2<'de, D>(deserializer: D) -> Result<AssetVec2, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<RawVec2>::deserialize(deserializer).map(|raw| raw.map(Into::into).unwrap_or_default())
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawVec2 {
+    Object(AssetVec2),
+    Array([f32; 2]),
+}
+
+impl From<RawVec2> for AssetVec2 {
+    fn from(raw: RawVec2) -> Self {
+        match raw {
+            RawVec2::Object(value) => value,
+            RawVec2::Array([x, y]) => Self::new(x, y),
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -179,7 +243,12 @@ mod tests {
         // animation prefixes, offsets, and flipX.
         let character = CharacterDefinition::parse(BF.as_bytes()).unwrap();
         assert_eq!(character.id, "bf");
-        assert_eq!(character.atlas.as_str(), "images/BOYFRIEND.xml");
+        assert_eq!(
+            character.atlas.as_ref().unwrap().as_str(),
+            "images/BOYFRIEND.xml"
+        );
+        assert_eq!(character.render_type, CharacterRenderType::Sparrow);
+        assert_eq!(character.asset_path, None);
         assert_eq!(character.initial_animation.as_deref(), Some("idle"));
         assert_eq!(character.position, AssetVec2::ZERO);
         assert_eq!(character.sing_time, 8.0);
@@ -192,6 +261,46 @@ mod tests {
         assert_eq!(character.animations[0].offset, AssetVec2::new(-5.0, 0.0));
         assert_eq!(character.animations[1].prefix, "BF NOTE UP0");
         assert_eq!(character.animations[1].offset, AssetVec2::new(-29.0, 27.0));
+    }
+
+    #[test]
+    fn parses_vslice_animate_character_shape() {
+        let json = r#"{
+            "version": "1.0.0",
+            "name": "Daddy Dearest",
+            "renderType": "animateatlas",
+            "assetPath": "shared:characters/dad",
+            "offsets": [13, 3],
+            "cameraOffsets": [11, 6],
+            "animations": [
+                {
+                    "name": "idle",
+                    "prefix": "Idle"
+                },
+                {
+                    "name": "idle-hold",
+                    "prefix": "Idle",
+                    "frameRate": 12,
+                    "frameIndices": [11, 12, 0, 1],
+                    "looped": true,
+                    "offsets": [1, -2]
+                }
+            ]
+        }"#;
+        let character = CharacterDefinition::parse(json.as_bytes()).unwrap();
+
+        assert_eq!(character.id, "Daddy Dearest");
+        assert_eq!(character.render_type, CharacterRenderType::AnimateAtlas);
+        assert_eq!(character.atlas, None);
+        assert_eq!(
+            character.asset_path.as_ref().unwrap().as_str(),
+            "shared:characters/dad"
+        );
+        assert_eq!(character.position, AssetVec2::new(13.0, 3.0));
+        assert_eq!(character.camera_offset, AssetVec2::new(11.0, 6.0));
+        assert_eq!(character.animations[1].fps, 12);
+        assert_eq!(character.animations[1].indices, vec![11, 12, 0, 1]);
+        assert_eq!(character.animations[1].offset, AssetVec2::new(1.0, -2.0));
     }
 
     #[test]

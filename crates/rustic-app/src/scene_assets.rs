@@ -385,9 +385,15 @@ fn load_character_slot(
     let character_path = AssetPath::new(character_path)?;
     let character = load_character(resolver, &character_path)
         .with_context(|| format!("load {}", character_path.as_str()))?;
-    let atlas = load_sparrow(resolver, &character.atlas)
-        .with_context(|| format!("load {}", character.atlas.as_str()))?;
-    let texture_path = atlas_texture_path(&character.atlas, &atlas)?;
+    let atlas_path = character.atlas.as_ref().with_context(|| {
+        format!(
+            "character {} uses {:?}; Sparrow renderer needs atlas",
+            character.id, character.render_type
+        )
+    })?;
+    let atlas = load_sparrow(resolver, atlas_path)
+        .with_context(|| format!("load {}", atlas_path.as_str()))?;
+    let texture_path = atlas_texture_path(atlas_path, &atlas)?;
     let image = load_png(resolver, &texture_path)
         .with_context(|| format!("load {}", texture_path.as_str()))?;
     let texture_id = asset_id_for_path(&texture_path);
