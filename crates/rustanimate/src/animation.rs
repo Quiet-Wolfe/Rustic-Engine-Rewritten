@@ -11,6 +11,7 @@ pub struct Animation {
     pub name: String,
     pub symbol_name: String,
     pub labels: Vec<AnimationLabel>,
+    pub layers: Vec<TimelineLayer>,
     pub symbols: Vec<Symbol>,
 }
 
@@ -73,12 +74,20 @@ pub struct AtlasInstance {
     pub frame_name: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct DrawPart {
+    pub frame_name: String,
+    pub matrix: [f32; 6],
+}
+
 impl Animation {
     pub fn parse(bytes: &[u8]) -> AnimateResult<Self> {
         let raw: RawAnimationFile = serde_json::from_slice(bytes)?;
         let name = raw.animation.name.unwrap_or_default();
         let symbol_name = raw.animation.symbol_name.unwrap_or_default();
-        let labels = timeline_labels(raw.animation.timeline)?;
+        let labels = timeline_labels(&raw.animation.timeline)?;
+        let layers = timeline_layers(raw.animation.timeline)?;
         let symbols = raw
             .animation
             .symbol_dictionary
@@ -100,6 +109,7 @@ impl Animation {
             name,
             symbol_name,
             labels,
+            layers,
             symbols,
         })
     }
@@ -115,13 +125,129 @@ impl Animation {
     pub fn symbol(&self, name: &str) -> Option<&Symbol> {
         self.symbols.iter().find(|symbol| symbol.name == name)
     }
+
+    pub fn flatten_label_frame(
+        &self,
+        label_name: &str,
+        frame_offset: u32,
+    ) -> AnimateResult<Vec<DrawPart>> {
+        let label = self.label(label_name).ok_or_else(|| {
+            AnimateError::Atlas(format!("animation label {label_name} was not found"))
+        })?;
+        let frame_offset = frame_offset.min(label.duration.saturating_sub(1));
+        let mut parts = Vec::new();
+        self.flatten_layers(
+            &self.layers,
+            label.index.saturating_add(frame_offset),
+            identity_matrix(),
+            &mut Vec::new(),
+            &mut parts,
+        )?;
+        Ok(parts)
+    }
+
+    pub fn flatten_symbol_frame(
+        &self,
+        symbol_name: &str,
+        frame_index: u32,
+    ) -> AnimateResult<Vec<DrawPart>> {
+        let symbol = self.symbol(symbol_name).ok_or_else(|| {
+            AnimateError::Atlas(format!("animation symbol {symbol_name} was not found"))
+        })?;
+        let mut parts = Vec::new();
+        self.flatten_symbol(
+            symbol,
+            frame_index,
+            identity_matrix(),
+            &mut Vec::new(),
+            &mut parts,
+        )?;
+        Ok(parts)
+    }
+
+    fn flatten_symbol(
+        &self,
+        symbol: &Symbol,
+        frame_index: u32,
+        parent_matrix: [f32; 6],
+        stack: &mut Vec<String>,
+        parts: &mut Vec<DrawPart>,
+    ) -> AnimateResult<()> {
+        if stack.iter().any(|name| name == &symbol.name) {
+            return Err(AnimateError::Atlas(format!(
+                "animation symbol recursion includes {}",
+                symbol.name
+            )));
+        }
+        stack.push(symbol.name.clone());
+        let frame_index = frame_index.min(symbol.duration().saturating_sub(1));
+        let result = self.flatten_layers(&symbol.layers, frame_index, parent_matrix, stack, parts);
+        stack.pop();
+        result
+    }
+
+    fn flatten_layers(
+        &self,
+        layers: &[TimelineLayer],
+        frame_index: u32,
+        parent_matrix: [f32; 6],
+        stack: &mut Vec<String>,
+        parts: &mut Vec<DrawPart>,
+    ) -> AnimateResult<()> {
+        for layer in layers.iter().rev() {
+            let Some(frame) = active_frame(&layer.frames, frame_index) else {
+                continue;
+            };
+            let frame_offset = frame_index.saturating_sub(frame.index);
+            for element in &frame.elements {
+                self.flatten_element(element, frame_offset, parent_matrix, stack, parts)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn flatten_element(
+        &self,
+        element: &Element,
+        frame_offset: u32,
+        parent_matrix: [f32; 6],
+        stack: &mut Vec<String>,
+        parts: &mut Vec<DrawPart>,
+    ) -> AnimateResult<()> {
+        let matrix = compose_affine(parent_matrix, element.matrix);
+        match &element.kind {
+            ElementKind::Atlas(instance) => {
+                parts.push(DrawPart {
+                    frame_name: instance.frame_name.clone(),
+                    matrix,
+                });
+                Ok(())
+            }
+            ElementKind::Symbol(instance) => {
+                let symbol = self.symbol(&instance.symbol_name).ok_or_else(|| {
+                    AnimateError::Atlas(format!(
+                        "animation symbol {} was not found",
+                        instance.symbol_name
+                    ))
+                })?;
+                let frame_index = symbol_frame_index(instance, symbol.duration(), frame_offset);
+                self.flatten_symbol(symbol, frame_index, matrix, stack, parts)
+            }
+        }
+    }
 }
 
-fn timeline_labels(timeline: RawTimeline) -> AnimateResult<Vec<AnimationLabel>> {
+impl Symbol {
+    pub fn duration(&self) -> u32 {
+        timeline_duration(&self.layers)
+    }
+}
+
+fn timeline_labels(timeline: &RawTimeline) -> AnimateResult<Vec<AnimationLabel>> {
     let mut labels = Vec::new();
-    for layer in timeline.layers {
-        for frame in layer.frames {
-            let Some(name) = frame.name else {
+    for layer in &timeline.layers {
+        for frame in &layer.frames {
+            let Some(name) = &frame.name else {
                 continue;
             };
             if name.trim().is_empty() {
@@ -133,7 +259,7 @@ fn timeline_labels(timeline: RawTimeline) -> AnimateResult<Vec<AnimationLabel>> 
                 )));
             }
             labels.push(AnimationLabel {
-                name,
+                name: name.clone(),
                 index: frame.index,
                 duration: frame.duration,
             });
@@ -172,6 +298,43 @@ fn timeline_layers(timeline: RawTimeline) -> AnimateResult<Vec<TimelineLayer>> {
             })
         })
         .collect()
+}
+
+fn timeline_duration(layers: &[TimelineLayer]) -> u32 {
+    layers
+        .iter()
+        .flat_map(|layer| layer.frames.iter())
+        .map(|frame| frame.index.saturating_add(frame.duration))
+        .max()
+        .unwrap_or(0)
+}
+
+fn active_frame(frames: &[TimelineFrame], frame_index: u32) -> Option<&TimelineFrame> {
+    frames.iter().find(|frame| {
+        frame_index >= frame.index && frame_index < frame.index.saturating_add(frame.duration)
+    })
+}
+
+fn symbol_frame_index(instance: &SymbolInstance, symbol_duration: u32, frame_offset: u32) -> u32 {
+    if symbol_duration == 0 {
+        return 0;
+    }
+    let frame_index = instance.first_frame.saturating_add(frame_offset);
+    match instance.loop_mode.as_deref() {
+        Some("LP") => frame_index % symbol_duration,
+        _ => frame_index.min(symbol_duration - 1),
+    }
+}
+
+fn compose_affine(parent: [f32; 6], child: [f32; 6]) -> [f32; 6] {
+    [
+        parent[0] * child[0] + parent[2] * child[1],
+        parent[1] * child[0] + parent[3] * child[1],
+        parent[0] * child[2] + parent[2] * child[3],
+        parent[1] * child[2] + parent[3] * child[3],
+        parent[0] * child[4] + parent[2] * child[5] + parent[4],
+        parent[1] * child[4] + parent[3] * child[5] + parent[5],
+    ]
 }
 
 fn frame_elements(elements: Vec<RawElement>) -> AnimateResult<Vec<Element>> {
@@ -398,12 +561,71 @@ mod tests {
       }
     }"#;
 
+    const FLATTEN_ANIMATION: &[u8] = br#"{
+      "AN": {
+        "N": "flatten-test", "SN": "root", "TL": { "L": [
+            {
+              "LN": "Labels",
+              "FR": [{ "N": "Idle", "I": 0, "DU": 4, "E": [] }]
+            },
+            {
+              "LN": "Art",
+              "FR": [{
+                "I": 0,
+                "DU": 4,
+                "E": [{
+                  "SI": {
+                    "SN": "body",
+                    "FF": 0,
+                    "LP": "LP",
+                    "MX": [1, 0, 0, 1, 10, 20]
+                  }
+                }]
+              }]
+            }
+          ] },
+        "SD": { "S": [
+            {
+              "SN": "body",
+              "TL": {
+                "L": [
+                  {
+                    "LN": "front",
+                    "FR": [
+                      {
+                        "I": 0,
+                        "DU": 1,
+                        "E": [{ "ASI": { "N": "front0", "MX": [1, 0, 0, 1, 3, 4] } }]
+                      },
+                      {
+                        "I": 1,
+                        "DU": 1,
+                        "E": [{ "ASI": { "N": "front1", "MX": [1, 0, 0, 1, 5, 6] } }]
+                      }
+                    ]
+                  },
+                  {
+                    "LN": "back",
+                    "FR": [{
+                      "I": 0,
+                      "DU": 2,
+                      "E": [{ "ASI": { "N": "back", "MX": [2, 0, 0, 2, 0, 1] } }]
+                    }]
+                  }
+                ]
+              }
+            }
+          ] }
+      }
+    }"#;
+
     #[test]
     fn parses_animation_labels_and_symbols() {
         let animation = Animation::parse(ANIMATION).unwrap();
 
         assert_eq!(animation.name, "BoyFriend Assets_TA-Export");
         assert_eq!(animation.symbol_name, "BF ALL ANIMS");
+        assert_eq!(animation.layers.len(), 1);
         assert_eq!(
             animation.labels,
             vec![
@@ -446,6 +668,31 @@ mod tests {
             panic!("expected atlas instance");
         };
         assert_eq!(instance.frame_name, "0");
+    }
+
+    #[test]
+    fn flattens_label_frames_in_draw_order() {
+        let animation = Animation::parse(FLATTEN_ANIMATION).unwrap();
+
+        let parts = animation.flatten_label_frame("Idle", 0).unwrap();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].frame_name, "back");
+        assert_eq!(parts[0].matrix, [2.0, 0.0, 0.0, 2.0, 10.0, 21.0]);
+        assert_eq!(parts[1].frame_name, "front0");
+        assert_eq!(parts[1].matrix, [1.0, 0.0, 0.0, 1.0, 13.0, 24.0]);
+    }
+
+    #[test]
+    fn flattens_looping_symbol_frames() {
+        let animation = Animation::parse(FLATTEN_ANIMATION).unwrap();
+
+        let parts = animation.flatten_label_frame("Idle", 1).unwrap();
+        assert_eq!(parts[0].frame_name, "back");
+        assert_eq!(parts[1].frame_name, "front1");
+
+        let parts = animation.flatten_label_frame("Idle", 3).unwrap();
+        assert_eq!(parts[0].frame_name, "back");
+        assert_eq!(parts[1].frame_name, "front1");
     }
 
     #[test]
