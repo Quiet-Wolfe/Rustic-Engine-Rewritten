@@ -187,9 +187,8 @@ impl PlayState {
         })
     }
 
-    /// Resolve player-side sustain child notes while a lane is held. This
-    /// mirrors the prototype's expanded sustain-child path; v0.8.5 hold
-    /// trails need a separate per-second scoring pass.
+    /// Resolve generated player-side sustain children while a hit hold lane is
+    /// held. They are bookkeeping only; active hold ticks own score/health.
     pub fn resolve_held_sustains_in_lane(
         &mut self,
         cursor: Samples,
@@ -226,8 +225,8 @@ impl PlayState {
 
     /// Mark every player-side tap note whose hit_at is more than the hit
     /// window behind `cursor` as a miss. Sustain children are an internal
-    /// trail approximation in this prototype; v0.8.5 scores dropped holds
-    /// once by remaining duration, not as a miss per child.
+    /// trail approximation in this prototype; dropped holds are scored once
+    /// by remaining duration, not as a miss per child.
     pub fn expire_late_notes(&mut self, cursor: Samples, sample_rate: u32) -> u32 {
         let hit_window = JudgmentWindows::from(self.windows).hit_window_ms.0;
         let ms_per_sample = 1000.0 / sample_rate as f64;
