@@ -69,14 +69,15 @@ impl HoldCovers {
         });
     }
 
-    pub fn end(&mut self, lane: Lane, cursor: Samples) {
-        let Some(active) = self.active[lane_index(lane)].as_mut() else {
-            return;
-        };
+    pub fn end(&mut self, lane: Lane, cursor: Samples) -> Option<Samples> {
+        let active = self.active[lane_index(lane)].as_mut()?;
+        let hold_end_at = (active.phase != HoldCoverPhase::End && active.hold_end_at > cursor)
+            .then_some(active.hold_end_at);
         if active.phase != HoldCoverPhase::End {
             active.phase = HoldCoverPhase::End;
             active.phase_started_at = cursor;
         }
+        hold_end_at
     }
 
     pub fn commands(
@@ -387,7 +388,10 @@ mod tests {
         assert_eq!(hold.len(), 1);
         assert!(hold[0].uv_rotated);
 
-        covers.end(Lane::Down, Samples(3_000));
+        assert_eq!(
+            covers.end(Lane::Down, Samples(3_000)),
+            Some(Samples(48_000))
+        );
         let end = covers.commands(&skin(), Samples(3_000), 48_000);
         assert_eq!(end.len(), 1);
         assert!(end[0].uv_rotated);

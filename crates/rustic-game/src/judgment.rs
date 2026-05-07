@@ -1,7 +1,7 @@
 //! Judgment windows, ratings, and scoring math.
 //!
 //! ref: bdedc0aa:source/funkin/play/scoring/Scoring.hx:89-193
-//! ref: bdedc0aa:source/funkin/util/Constants.hx:352,436-488,531-535
+//! ref: bdedc0aa:source/funkin/util/Constants.hx:352,436-529,531-535
 
 use rustic_core::time::Milliseconds;
 use serde::{Deserialize, Serialize};
@@ -66,6 +66,8 @@ pub const PBOT1_SICK_THRESHOLD: f64 = 45.0;
 pub const PBOT1_GOOD_THRESHOLD: f64 = 90.0;
 pub const PBOT1_BAD_THRESHOLD: f64 = 135.0;
 pub const GHOST_MISS_SCORE: i64 = -10;
+pub const SCORE_HOLD_DROP_PENALTY_PER_SECOND: f64 = -125.0;
+pub const HOLD_DROP_PENALTY_THRESHOLD_MS: f64 = 160.0;
 
 /// PBOT1 score delta for a note hit at `abs_diff_ms`.
 pub fn score_for_timing(abs_diff_ms: f64) -> i64 {
@@ -87,6 +89,11 @@ pub fn note_miss_score_delta() -> i64 {
 
 pub fn ghost_miss_score_delta() -> i64 {
     GHOST_MISS_SCORE
+}
+
+pub fn hold_drop_score_delta(remaining_ms: f64) -> Option<i64> {
+    (remaining_ms > HOLD_DROP_PENALTY_THRESHOLD_MS)
+        .then(|| (remaining_ms / 1000.0 * SCORE_HOLD_DROP_PENALTY_PER_SECOND).round() as i64)
 }
 
 /// Health delta for PBOT1 judgments.
@@ -157,5 +164,7 @@ mod tests {
         assert!((late_note_health_delta() - -0.08).abs() < 1e-6);
         assert_eq!(note_miss_score_delta(), -100);
         assert_eq!(ghost_miss_score_delta(), -10);
+        assert_eq!(hold_drop_score_delta(160.0), None);
+        assert_eq!(hold_drop_score_delta(1000.0), Some(-125));
     }
 }

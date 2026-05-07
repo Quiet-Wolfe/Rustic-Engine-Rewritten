@@ -12,7 +12,7 @@
 
 use crate::judgment::{
     combo_breaks, ghost_miss_health_delta, ghost_miss_score_delta, health_delta,
-    note_miss_score_delta, score_for_timing, Judgment, JudgmentWindows,
+    hold_drop_score_delta, note_miss_score_delta, score_for_timing, Judgment, JudgmentWindows,
 };
 use crate::note::Lane;
 use crate::state::{PlayState, MAX_HEALTH};
@@ -112,6 +112,17 @@ impl PlayState {
         self.combo = 0;
         self.misses += 1;
         self.apply_health(health_delta(Judgment::Miss));
+    }
+
+    /// Player released an already-hit hold before completion. v0.8.5 applies
+    /// one remaining-duration score penalty and breaks combo without adding a
+    /// miss tally.
+    pub fn register_hold_drop(&mut self, remaining_samples: i64, sample_rate: u32) -> Option<i64> {
+        let remaining_ms = remaining_samples.max(0) as f64 * 1000.0 / f64::from(sample_rate.max(1));
+        let delta = hold_drop_score_delta(remaining_ms)?;
+        self.score += delta;
+        self.combo = 0;
+        Some(delta)
     }
 
     /// Try to consume a player keypress against the closest unresolved
@@ -335,6 +346,33 @@ mod tests {
         assert_eq!(s.max_combo, 2);
         assert_eq!(s.misses, 1);
         assert_eq!(s.score, 900);
+    }
+
+    #[test]
+    fn hold_drop_penalty_breaks_combo_without_miss_tally() {
+        let mut s = PlayState::new();
+        s.combo = 7;
+        s.score = 500;
+
+        let delta = s.register_hold_drop(48_000, 48_000);
+
+        assert_eq!(delta, Some(-125));
+        assert_eq!(s.score, 375);
+        assert_eq!(s.combo, 0);
+        assert_eq!(s.misses, 0);
+    }
+
+    #[test]
+    fn tiny_hold_drop_has_no_penalty() {
+        let mut s = PlayState::new();
+        s.combo = 7;
+        s.score = 500;
+
+        let delta = s.register_hold_drop(7_680, 48_000);
+
+        assert_eq!(delta, None);
+        assert_eq!(s.score, 500);
+        assert_eq!(s.combo, 7);
     }
 
     #[test]

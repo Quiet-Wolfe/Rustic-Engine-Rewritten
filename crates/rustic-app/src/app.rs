@@ -514,6 +514,19 @@ impl App {
         }
     }
 
+    fn register_hold_drop(&mut self, cursor: Samples, hold_end_at: Samples) {
+        let sample_rate = self.play_sample_rate();
+        let remaining_samples = hold_end_at.0.saturating_sub(cursor.0);
+        let dropped = self
+            .play_state
+            .as_mut()
+            .and_then(|play_state| play_state.register_hold_drop(remaining_samples, sample_rate))
+            .is_some();
+        if dropped {
+            self.set_vocals_gain(0.0);
+        }
+    }
+
     fn advance_song_clock(&mut self) -> Samples {
         if !self.song_started {
             let elapsed = self.song_start.elapsed().as_secs_f64();
@@ -656,7 +669,9 @@ impl ApplicationHandler for App {
                     self.held_lanes.apply(&evt);
                     if event.state == ElementState::Released {
                         if let Some(lane) = lane_for_action(action) {
-                            self.hold_covers.end(lane, song_cursor);
+                            if let Some(hold_end_at) = self.hold_covers.end(lane, song_cursor) {
+                                self.register_hold_drop(song_cursor, hold_end_at);
+                            }
                         }
                     }
                     self.screens.input(&evt);
