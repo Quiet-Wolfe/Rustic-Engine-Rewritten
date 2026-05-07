@@ -25,6 +25,7 @@ const HOLD_TRAIL_END_OFFSET: f32 = 0.5;
 const HOLD_TRAIL_BOTTOM_CLIP: f32 = 0.9;
 const RECEPTOR_ANIMATION_FPS: u16 = 24;
 const CONFIRM_HOLD_TIME_SECS: f64 = 0.15;
+const CONFIRM_OFFSET: f32 = 13.0;
 const LANES: [Lane; 4] = [Lane::Left, Lane::Down, Lane::Up, Lane::Right];
 
 #[derive(Debug, Clone)]
@@ -200,9 +201,16 @@ impl NoteSkin {
     ) -> DrawCommand {
         let frame = self.receptor_frame(lane, state, cursor, sample_rate);
         let size = frame_draw_size(frame) * NOTE_ASSET_SCALE;
+        let confirm = matches!(
+            state,
+            ReceptorState::Confirm { started_at, hold }
+                if !hold
+                    || cursor.0.saturating_sub(started_at.0)
+                        < self.confirm_animation_duration(sample_rate).0
+        );
         let mut cmd = DrawCommand::sprite(
             self.strumline_texture_id,
-            receptor_sprite_pos(player, lane, frame),
+            receptor_sprite_pos(player, lane, frame, confirm),
             size,
         );
         cmd.camera = CameraId(1);
@@ -436,12 +444,13 @@ fn note_sprite_x(slot_x: f32, sprite_width: f32) -> f32 {
     slot_x - (sprite_width - STRUMLINE_SIZE) * 0.5 - NOTE_NUDGE
 }
 
-fn receptor_sprite_pos(player: u8, lane: Lane, frame: &SparrowFrame) -> glam::Vec2 {
+fn receptor_sprite_pos(player: u8, lane: Lane, frame: &SparrowFrame, confirm: bool) -> glam::Vec2 {
     let center = glam::vec2(
         strumline_x(player) + lane_index(lane) as f32 * NOTE_SPACING + STRUMLINE_SIZE * 0.5,
         STRUMLINE_Y_OFFSET + STRUMLINE_SIZE * 0.5,
     );
-    center - frame_draw_size(frame) * NOTE_ASSET_SCALE * 0.5
+    let offset = glam::Vec2::splat(if confirm { CONFIRM_OFFSET } else { 0.0 });
+    center - frame_draw_size(frame) * NOTE_ASSET_SCALE * 0.5 + offset
 }
 
 fn strumline_x(player: u8) -> f32 {
@@ -685,13 +694,23 @@ mod tests {
 
         let static_center = command_center(&static_cmd);
         let press_center = command_center(&press_cmd);
+        let confirm_center = command_center(&skin.receptor_command(
+            1,
+            Lane::Left,
+            ReceptorState::Confirm {
+                started_at: Samples(0),
+                hold: false,
+            },
+            Samples(0),
+            48_000,
+        ));
 
         assert_eq!(static_cmd.texture, AssetId::new(2));
         assert_eq!(press_cmd.texture, AssetId::new(2));
-        assert!((static_center.x - 740.0).abs() < 1e-5);
-        assert!((static_center.y - 76.0).abs() < 1e-5);
         assert!((press_center.x - static_center.x).abs() < 1e-5);
         assert!((press_center.y - static_center.y).abs() < 1e-5);
+        assert!((confirm_center.x - static_center.x - CONFIRM_OFFSET).abs() < 1e-5);
+        assert!((confirm_center.y - static_center.y - CONFIRM_OFFSET).abs() < 1e-5);
     }
 
     fn command_center(cmd: &DrawCommand) -> glam::Vec2 {
