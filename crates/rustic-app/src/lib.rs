@@ -4,6 +4,7 @@
 //! game, settings, and assets together. Other crates stay headless.
 
 pub mod active_holds;
+pub mod animate_character_assets;
 pub mod app;
 pub mod audio_fallback;
 pub mod bitmap_text_assets;

@@ -695,11 +695,11 @@ impl App {
 
         self.cmds.clear();
         if let Some(characters) = &self.characters {
-            self.cmds.push(characters.player_command(
-                self.character_anim.poses().player,
-                cursor,
-                sample_rate,
-            ));
+            for cmd in
+                characters.player_commands(self.character_anim.poses().player, cursor, sample_rate)
+            {
+                self.cmds.push(cmd);
+            }
         }
     }
 }

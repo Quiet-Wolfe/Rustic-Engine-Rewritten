@@ -4,6 +4,7 @@
 //! uploads textures, and emits render commands, but gameplay and render
 //! crates remain free of filesystem and wgpu wiring.
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
+use crate::animate_character_assets::{load_animate_character_sprite, AnimateCharacterSprite};
 use crate::bitmap_text_assets::{load_bitmap_text_assets, BitmapTextSkin};
 use crate::character_anim::{CharacterAnimTimings, CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
@@ -16,8 +17,8 @@ use crate::preview_song::PreviewSong;
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_character, load_png, load_sparrow, load_stage, load_vslice_chart, AssetPath,
-    CharacterAnimation, CharacterDefinition, OverlayResolver, SparrowAtlas, SparrowFrame,
-    StageCharacterSlot, StageDefinition, StageObject,
+    CharacterAnimation, CharacterDefinition, CharacterRenderType, OverlayResolver, SparrowAtlas,
+    SparrowFrame, StageCharacterSlot, StageDefinition, StageObject,
 };
 use rustic_core::ids::{AssetId, SongId};
 use rustic_core::render::RenderLayer;
@@ -73,21 +74,23 @@ impl CharacterSet {
         cursor: Samples,
         sample_rate: u32,
     ) -> Vec<DrawCommand> {
-        vec![
+        let mut commands = Vec::new();
+        commands.extend(
             self.girlfriend
-                .command(poses.girlfriend, cursor, sample_rate),
-            self.opponent.command(poses.opponent, cursor, sample_rate),
-            self.player.command(poses.player, cursor, sample_rate),
-        ]
+                .commands(poses.girlfriend, cursor, sample_rate),
+        );
+        commands.extend(self.opponent.commands(poses.opponent, cursor, sample_rate));
+        commands.extend(self.player.commands(poses.player, cursor, sample_rate));
+        commands
     }
 
-    pub fn player_command(
+    pub fn player_commands(
         &self,
         request: CharacterPoseRequest,
         cursor: Samples,
         sample_rate: u32,
-    ) -> DrawCommand {
-        self.player.command(request, cursor, sample_rate)
+    ) -> Vec<DrawCommand> {
+        self.player.commands(request, cursor, sample_rate)
     }
 
     pub fn player_animation_duration(
@@ -108,14 +111,55 @@ impl CharacterSet {
 
     pub fn anim_timings(&self) -> CharacterAnimTimings {
         CharacterAnimTimings {
-            player_sing_steps: self.player.character.sing_time,
-            opponent_sing_steps: self.opponent.character.sing_time,
+            player_sing_steps: self.player.definition().sing_time,
+            opponent_sing_steps: self.opponent.definition().sing_time,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-struct CharacterSprite {
+enum CharacterSprite {
+    Sparrow(SparrowCharacterSprite),
+    Animate(AnimateCharacterSprite),
+}
+
+impl CharacterSprite {
+    fn commands(
+        &self,
+        request: CharacterPoseRequest,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> Vec<DrawCommand> {
+        match self {
+            Self::Sparrow(sprite) => vec![sprite.command(request, cursor, sample_rate)],
+            Self::Animate(sprite) => sprite.commands(request, cursor, sample_rate),
+        }
+    }
+
+    fn animation_duration(&self, animation_name: &str, sample_rate: u32) -> Option<Samples> {
+        match self {
+            Self::Sparrow(sprite) => sprite.animation_duration(animation_name, sample_rate),
+            Self::Animate(sprite) => sprite.animation_duration(animation_name, sample_rate),
+        }
+    }
+
+    fn camera_focus_point(&self) -> glam::Vec2 {
+        match self {
+            Self::Sparrow(sprite) => sprite.camera_focus_point(),
+            Self::Animate(sprite) => sprite.camera_focus_point(),
+        }
+    }
+
+    fn definition(&self) -> &CharacterDefinition {
+        match self {
+            Self::Sparrow(sprite) => &sprite.character,
+            Self::Animate(sprite) => sprite.definition(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SparrowCharacterSprite {
     texture_id: AssetId,
     texture_width: u32,
     texture_height: u32,
@@ -128,7 +172,7 @@ struct CharacterSprite {
     initial_pose: usize,
 }
 
-impl CharacterSprite {
+impl SparrowCharacterSprite {
     fn command(
         &self,
         request: CharacterPoseRequest,
@@ -210,6 +254,7 @@ impl CharacterPose {
         &self.frames[index]
     }
 }
+
 pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<LoadedScene> {
     let resolver = OverlayResolver::new().with_baked_root("assets/baked");
     let stage_path = AssetPath::new("data/stages/stage.json")?;
@@ -385,6 +430,43 @@ fn load_character_slot(
     let character_path = AssetPath::new(character_path)?;
     let character = load_character(resolver, &character_path)
         .with_context(|| format!("load {}", character_path.as_str()))?;
+    match character.render_type {
+        CharacterRenderType::Sparrow | CharacterRenderType::MultiSparrow => {
+            load_sparrow_character_slot(
+                device, queue, resolver, character, slot, is_player, z, scene,
+            )
+        }
+        CharacterRenderType::AnimateAtlas | CharacterRenderType::MultiAnimateAtlas => {
+            Ok(CharacterSprite::Animate(load_animate_character_sprite(
+                device,
+                queue,
+                resolver,
+                character,
+                slot,
+                is_player,
+                z,
+                &mut scene.textures,
+            )?))
+        }
+        _ => anyhow::bail!(
+            "character {} uses unsupported renderType {:?}",
+            character.id,
+            character.render_type
+        ),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn load_sparrow_character_slot(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    character: CharacterDefinition,
+    slot: StageCharacterSlot,
+    is_player: bool,
+    z: i32,
+    scene: &mut LoadedScene,
+) -> Result<CharacterSprite> {
     let atlas_path = character.atlas.as_ref().with_context(|| {
         format!(
             "character {} uses {:?}; Sparrow renderer needs atlas",
@@ -409,7 +491,7 @@ fn load_character_slot(
         Texture::from_png_image(device, queue, &image, filter, Some(texture_path.as_str()));
     scene.textures.insert(texture_id, texture);
 
-    Ok(CharacterSprite {
+    Ok(CharacterSprite::Sparrow(SparrowCharacterSprite {
         texture_id,
         texture_width: image.width,
         texture_height: image.height,
@@ -420,7 +502,7 @@ fn load_character_slot(
         filter,
         poses,
         initial_pose,
-    })
+    }))
 }
 
 fn character_poses(
