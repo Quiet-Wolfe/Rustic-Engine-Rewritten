@@ -26,8 +26,9 @@ impl HeldLanes {
     pub fn apply(&mut self, event: &NormalizedInputEvent) -> Option<Lane> {
         let lane = lane_for_action(event.action)?;
         let index = lane_index(lane);
+        let was_pressed = self.pressed[index];
         self.pressed[index] = event.state == InputState::Pressed;
-        if event.state == InputState::Pressed {
+        if event.state == InputState::Pressed && !was_pressed {
             self.pressed_started[index] = event.audio_sample_cursor_at_receive;
         }
         Some(lane)
@@ -261,6 +262,28 @@ mod tests {
             held.receptor_state(Lane::Left, Samples(81)),
             ReceptorState::Pressed {
                 started_at: Samples(80)
+            }
+        );
+    }
+
+    #[test]
+    fn repeated_press_does_not_restart_pressed_animation() {
+        let mut held = HeldLanes::default();
+        held.apply(&event_at(
+            InputAction::LaneLeft,
+            InputState::Pressed,
+            Samples(25),
+        ));
+        held.apply(&event_at(
+            InputAction::LaneLeft,
+            InputState::Pressed,
+            Samples(80),
+        ));
+
+        assert_eq!(
+            held.receptor_state(Lane::Left, Samples(81)),
+            ReceptorState::Pressed {
+                started_at: Samples(25)
             }
         );
     }
