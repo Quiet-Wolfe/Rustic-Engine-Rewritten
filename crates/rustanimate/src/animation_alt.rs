@@ -10,9 +10,10 @@ use serde::Deserialize;
 
 pub(crate) fn parse(bytes: &[u8]) -> AnimateResult<Animation> {
     let raw: RawFile = serde_json::from_slice(bytes)?;
+    let symbol_name = raw.animation.symbol_name.unwrap_or_default();
     let labels = timeline_labels(&raw.animation.timeline)?;
     let layers = timeline_layers(raw.animation.timeline)?;
-    let symbols = raw
+    let mut symbols = raw
         .symbol_dictionary
         .map(|dictionary| dictionary.symbols)
         .unwrap_or_default()
@@ -27,10 +28,16 @@ pub(crate) fn parse(bytes: &[u8]) -> AnimateResult<Animation> {
             })
         })
         .collect::<AnimateResult<Vec<_>>>()?;
+    if !symbol_name.trim().is_empty() && !symbols.iter().any(|symbol| symbol.name == symbol_name) {
+        symbols.push(Symbol {
+            name: symbol_name.clone(),
+            layers: layers.clone(),
+        });
+    }
 
     Ok(Animation {
         name: raw.animation.name.unwrap_or_default(),
-        symbol_name: raw.animation.symbol_name.unwrap_or_default(),
+        symbol_name,
         labels,
         layers,
         symbols,
@@ -277,7 +284,26 @@ mod tests {
       "ANIMATION": {
         "name": "verbose",
         "SYMBOL_name": "root",
-        "TIMELINE": { "LAYERS": [] }
+        "TIMELINE": {
+          "LAYERS": [{
+            "Layer_name": "root-art",
+            "Frames": [{
+              "index": 0,
+              "duration": 1,
+              "elements": [{
+                "ATLAS_SPRITE_instance": {
+                  "name": "root0",
+                  "Matrix3D": {
+                    "m00": 1, "m01": 0, "m02": 0, "m03": 0,
+                    "m10": 0, "m11": 1, "m12": 0, "m13": 0,
+                    "m20": 0, "m21": 0, "m22": 1, "m23": 0,
+                    "m30": 3, "m31": 4, "m32": 0, "m33": 1
+                  }
+                }
+              }]
+            }]
+          }]
+        }
       },
       "SYMBOL_DICTIONARY": {
         "Symbols": [{
@@ -352,6 +378,7 @@ mod tests {
         let animation = Animation::parse(VERBOSE_ANIMATION).unwrap();
         assert_eq!(animation.name, "verbose");
         assert_eq!(animation.symbol_name, "root");
+        assert!(animation.has_symbol("root"));
         assert!(animation.has_symbol("container"));
 
         let element = &animation.symbol("container").unwrap().layers[0].frames[0].elements[0];
@@ -365,5 +392,9 @@ mod tests {
         let parts = animation.flatten_symbol_frame("container", 1).unwrap();
         assert_eq!(parts[0].frame_name, "hand1");
         assert_eq!(parts[0].matrix, [2.0, 0.5, -0.25, 3.0, 12.0, 21.5]);
+
+        let parts = animation.flatten_symbol_frame("root", 0).unwrap();
+        assert_eq!(parts[0].frame_name, "root0");
+        assert_eq!(parts[0].matrix, [1.0, 0.0, 0.0, 1.0, 3.0, 4.0]);
     }
 }
