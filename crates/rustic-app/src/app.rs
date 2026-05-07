@@ -198,10 +198,16 @@ impl App {
 
         match load_default_scene(&runtime.rs.device, &runtime.rs.queue) {
             Ok(scene) => {
+                let anim_timings = scene
+                    .characters
+                    .as_ref()
+                    .map(CharacterSet::anim_timings)
+                    .unwrap_or_default();
                 self.cmds = scene.commands;
                 self.static_cmds = self.cmds.clone();
                 self.atlases = scene.textures;
                 self.characters = scene.characters;
+                self.character_anim.set_timings(anim_timings);
                 self.bitmap_text_skin = scene.bitmap_text_skin;
                 self.note_skin = scene.note_skin;
                 self.note_splash_skin = scene.note_splash_skin;

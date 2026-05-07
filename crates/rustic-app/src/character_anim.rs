@@ -1,17 +1,28 @@
 //! Runtime character pose state driven by OG note-hit rules.
+// LINT-ALLOW: long-file character pose state plus v0.8.5 timing tests
 
 use rustic_core::time::Samples;
 use rustic_game::Lane;
 
-// ref: 50fccded:source/PlayState.hx:1551          // dad.holdTimer = 0 on note
-// ref: 50fccded:source/Character.hx:531-540       // dad holdTimer threshold
-const DAD_HOLD_STEPS: f64 = 6.1;
-// ref: 50fccded:source/PlayState.hx:1983          // BF returns after 4 steps
-const BF_HOLD_STEPS: f64 = 4.0;
-// ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:414
-const MISS_HOLD_STEPS: f64 = BF_HOLD_STEPS * 2.0;
 // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:389-399,457-473
 const CHART_ANIM_HOLD_STEPS: f64 = 4.0;
+const MISS_SING_TIME_MULTIPLIER: f64 = 2.0;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CharacterAnimTimings {
+    pub player_sing_steps: f64,
+    pub opponent_sing_steps: f64,
+}
+
+impl Default for CharacterAnimTimings {
+    fn default() -> Self {
+        // ref: bdedc0aa:source/funkin/data/character/CharacterData.hx:452
+        Self {
+            player_sing_steps: 8.0,
+            opponent_sing_steps: 8.0,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CharacterPoseRequest {
@@ -36,6 +47,7 @@ pub struct CharacterAnimState {
     player_started: Samples,
     opponent_until: Samples,
     player_until: Samples,
+    timings: CharacterAnimTimings,
     last_beat: i64,
     gf_danced: bool,
 }
@@ -51,6 +63,7 @@ impl Default for CharacterAnimState {
             player_started: Samples(0),
             opponent_until: Samples(0),
             player_until: Samples(0),
+            timings: CharacterAnimTimings::default(),
             last_beat: -1,
             gf_danced: false,
         }
@@ -73,6 +86,10 @@ impl CharacterAnimState {
                 started_at: self.player_started,
             },
         }
+    }
+
+    pub fn set_timings(&mut self, timings: CharacterAnimTimings) {
+        self.timings = timings;
     }
 
     pub fn update(&mut self, cursor: Samples, sample_rate: u32, bpm: f64, player_holding: bool) {
@@ -150,24 +167,33 @@ impl CharacterAnimState {
     }
 
     pub fn opponent_note_hit(&mut self, lane: Lane, cursor: Samples, sample_rate: u32, bpm: f64) {
-        // ref: 50fccded:source/PlayState.hx:1538-1549
+        // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:551-565
         self.opponent_pose = sing_pose(lane);
         self.opponent_started = cursor;
-        self.opponent_until = Samples(cursor.0 + hold_samples(sample_rate, bpm, DAD_HOLD_STEPS));
+        self.opponent_until =
+            Samples(cursor.0 + hold_samples(sample_rate, bpm, self.timings.opponent_sing_steps));
     }
 
     pub fn player_note_hit(&mut self, lane: Lane, cursor: Samples, sample_rate: u32, bpm: f64) {
-        // ref: 50fccded:source/PlayState.hx:2111-2122
+        // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:535-549
         self.player_pose = sing_pose(lane);
         self.player_started = cursor;
-        self.player_until = Samples(cursor.0 + hold_samples(sample_rate, bpm, BF_HOLD_STEPS));
+        self.player_until =
+            Samples(cursor.0 + hold_samples(sample_rate, bpm, self.timings.player_sing_steps));
     }
 
     pub fn player_note_miss(&mut self, lane: Lane, cursor: Samples, sample_rate: u32, bpm: f64) {
-        // ref: 50fccded:source/PlayState.hx:2056-2066
+        // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:590-601
         self.player_pose = miss_pose(lane);
         self.player_started = cursor;
-        self.player_until = Samples(cursor.0 + hold_samples(sample_rate, bpm, MISS_HOLD_STEPS));
+        self.player_until = Samples(
+            cursor.0
+                + hold_samples(
+                    sample_rate,
+                    bpm,
+                    self.timings.player_sing_steps * MISS_SING_TIME_MULTIPLIER,
+                ),
+        );
     }
 
     pub fn player_first_death(&mut self, cursor: Samples) {
@@ -266,22 +292,45 @@ mod tests {
 
         assert_eq!(state.poses().opponent.name, "singLEFT");
         assert_eq!(state.poses().opponent.started_at, Samples(1_000));
-        state.update(Samples(44_919), 48_000, 100.0, false);
+        state.update(Samples(58_599), 48_000, 100.0, false);
         assert_eq!(state.poses().opponent.name, "singLEFT");
-        state.update(Samples(44_920), 48_000, 100.0, false);
+        state.update(Samples(58_600), 48_000, 100.0, false);
         assert_eq!(state.poses().opponent.name, "idle");
-        assert_eq!(state.poses().opponent.started_at, Samples(44_920));
+        assert_eq!(state.poses().opponent.started_at, Samples(58_600));
     }
 
     #[test]
-    fn player_hold_keeps_sing_pose_until_released() {
+    fn player_hold_keeps_sing_pose_until_sing_time_after_release() {
         let mut state = CharacterAnimState::default();
         state.player_note_hit(Lane::Down, Samples(0), 48_000, 100.0);
 
         state.update(Samples(30_000), 48_000, 100.0, true);
         assert_eq!(state.poses().player.name, "singDOWN");
         state.update(Samples(30_000), 48_000, 100.0, false);
+        assert_eq!(state.poses().player.name, "singDOWN");
+        state.update(Samples(57_600), 48_000, 100.0, false);
         assert_eq!(state.poses().player.name, "idle");
+    }
+
+    #[test]
+    fn character_sing_timing_uses_loaded_vslice_steps() {
+        let mut state = CharacterAnimState::default();
+        state.set_timings(CharacterAnimTimings {
+            player_sing_steps: 5.0,
+            opponent_sing_steps: 6.5,
+        });
+
+        state.player_note_hit(Lane::Down, Samples(0), 48_000, 100.0);
+        state.update(Samples(35_999), 48_000, 100.0, false);
+        assert_eq!(state.poses().player.name, "singDOWN");
+        state.update(Samples(36_000), 48_000, 100.0, false);
+        assert_eq!(state.poses().player.name, "idle");
+
+        state.opponent_note_hit(Lane::Up, Samples(0), 48_000, 100.0);
+        state.update(Samples(46_799), 48_000, 100.0, false);
+        assert_eq!(state.poses().opponent.name, "singUP");
+        state.update(Samples(46_800), 48_000, 100.0, false);
+        assert_eq!(state.poses().opponent.name, "idle");
     }
 
     #[test]
@@ -368,11 +417,11 @@ mod tests {
         let mut state = CharacterAnimState::default();
         state.player_note_miss(Lane::Right, Samples(0), 48_000, 100.0);
 
-        state.update(Samples(57_599), 48_000, 100.0, true);
+        state.update(Samples(115_199), 48_000, 100.0, true);
         assert_eq!(state.poses().player.name, "singRIGHTmiss");
-        state.update(Samples(57_600), 48_000, 100.0, true);
+        state.update(Samples(115_200), 48_000, 100.0, true);
         assert_eq!(state.poses().player.name, "idle");
-        assert_eq!(state.poses().player.started_at, Samples(57_600));
+        assert_eq!(state.poses().player.started_at, Samples(115_200));
     }
 
     #[test]

@@ -17,12 +17,16 @@ pub struct CharacterDefinition {
     pub atlas: AssetPath,
     #[serde(default)]
     pub icon: Option<AssetPath>,
-    #[serde(default)]
+    #[serde(default, alias = "startingAnimation")]
     pub initial_animation: Option<String>,
     #[serde(default)]
     pub position: AssetVec2,
     #[serde(default)]
     pub camera_offset: AssetVec2,
+    #[serde(default = "default_sing_time")]
+    pub sing_time: f64,
+    #[serde(default = "default_dance_every")]
+    pub dance_every: f64,
     #[serde(default = "default_scale")]
     pub scale: f32,
     #[serde(default)]
@@ -54,8 +58,18 @@ fn default_scale() -> f32 {
 }
 
 fn default_antialiasing() -> bool {
-    // ref: 50fccded:source/Character.hx:28
+    // ref: bdedc0aa:source/funkin/data/character/CharacterData.hx:456
     true
+}
+
+fn default_sing_time() -> f64 {
+    // ref: bdedc0aa:source/funkin/data/character/CharacterData.hx:452
+    8.0
+}
+
+fn default_dance_every() -> f64 {
+    // ref: bdedc0aa:source/funkin/data/character/CharacterData.hx:454
+    1.0
 }
 
 fn default_fps() -> u16 {
@@ -76,6 +90,18 @@ impl CharacterDefinition {
         }
         if self.animations.is_empty() {
             return Err(invalid(&format!("character {} has no animations", self.id)));
+        }
+        if self.sing_time <= 0.0 {
+            return Err(invalid(&format!(
+                "character {} has non-positive singTime",
+                self.id
+            )));
+        }
+        if self.dance_every < 0.0 {
+            return Err(invalid(&format!(
+                "character {} has negative danceEvery",
+                self.id
+            )));
         }
         if let Some(initial) = &self.initial_animation {
             if initial.trim().is_empty() {
@@ -156,6 +182,8 @@ mod tests {
         assert_eq!(character.atlas.as_str(), "images/BOYFRIEND.xml");
         assert_eq!(character.initial_animation.as_deref(), Some("idle"));
         assert_eq!(character.position, AssetVec2::ZERO);
+        assert_eq!(character.sing_time, 8.0);
+        assert_eq!(character.dance_every, 1.0);
         assert_eq!(character.scale, 1.0);
         assert!(character.flip_x);
         assert!(character.antialiasing);
@@ -188,6 +216,33 @@ mod tests {
             "id":"dad",
             "atlas":"images/dad.xml",
             "initialAnimation":"danceRight",
+            "animations":[{"name":"idle","prefix":"Dad idle dance"}]
+        }"#;
+        assert!(CharacterDefinition::parse(json.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn accepts_vslice_starting_animation_alias_and_sing_time() {
+        let json = r#"{
+            "id":"dad",
+            "atlas":"images/dad.xml",
+            "startingAnimation":"idle",
+            "singTime":6.5,
+            "danceEvery":2,
+            "animations":[{"name":"idle","prefix":"Dad idle dance"}]
+        }"#;
+        let character = CharacterDefinition::parse(json.as_bytes()).unwrap();
+        assert_eq!(character.initial_animation.as_deref(), Some("idle"));
+        assert_eq!(character.sing_time, 6.5);
+        assert_eq!(character.dance_every, 2.0);
+    }
+
+    #[test]
+    fn rejects_non_positive_sing_time() {
+        let json = r#"{
+            "id":"dad",
+            "atlas":"images/dad.xml",
+            "singTime":0,
             "animations":[{"name":"idle","prefix":"Dad idle dance"}]
         }"#;
         assert!(CharacterDefinition::parse(json.as_bytes()).is_err());

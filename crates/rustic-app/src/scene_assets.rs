@@ -5,7 +5,7 @@
 //! crates remain free of filesystem and wgpu wiring.
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
 use crate::bitmap_text_assets::{load_bitmap_text_assets, BitmapTextSkin};
-use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
+use crate::character_anim::{CharacterAnimTimings, CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
 use crate::hold_cover_assets::{load_hold_cover_assets, HoldCoverSkin};
 use crate::hud_assets::{load_hud_assets, HudSkin};
@@ -103,6 +103,13 @@ impl CharacterSet {
             player: self.player.camera_focus_point(),
             opponent: self.opponent.camera_focus_point(),
             girlfriend: self.girlfriend.camera_focus_point(),
+        }
+    }
+
+    pub fn anim_timings(&self) -> CharacterAnimTimings {
+        CharacterAnimTimings {
+            player_sing_steps: self.player.character.sing_time,
+            opponent_sing_steps: self.opponent.character.sing_time,
         }
     }
 }
