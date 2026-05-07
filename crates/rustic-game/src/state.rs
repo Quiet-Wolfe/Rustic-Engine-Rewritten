@@ -245,10 +245,10 @@ mod tests {
         assert_eq!(state.song, Some(SongId::new(7)));
         assert_eq!(state.bpm, 100.0);
         assert_eq!(state.scroll_speed, 1.4);
-        assert_eq!(state.notes.len(), 3);
+        assert_eq!(state.notes.len(), 2);
         assert_eq!(state.notes[0].hit_at, Samples(48_000));
         assert_eq!(state.notes[1].sustain_samples, 12_000);
-        assert!(state.notes[2].is_sustain);
+        assert!(!state.notes.iter().any(|note| note.is_sustain));
         assert!(state.events.is_empty());
         assert_eq!(state.score, 0);
         assert_eq!(state.combo, 0);
