@@ -78,7 +78,11 @@ fn fallback_audio() -> (Option<AudioOutput>, SharedMixer) {
 }
 
 fn audio_disabled() -> bool {
-    env::var(AUDIO_DISABLE_ENV)
+    audio_disabled_value(env::var(AUDIO_DISABLE_ENV).ok().as_deref())
+}
+
+fn audio_disabled_value(value: Option<&str>) -> bool {
+    value
         .map(|value| matches!(value.trim(), "0" | "off" | "false" | "none"))
         .unwrap_or(false)
 }
@@ -110,5 +114,15 @@ mod tests {
             audio_open_timeout(Some("nope")),
             Duration::from_millis(AUDIO_OPEN_TIMEOUT_MS)
         );
+    }
+
+    #[test]
+    fn audio_disable_env_accepts_off_values() {
+        assert!(audio_disabled_value(Some("off")));
+        assert!(audio_disabled_value(Some("0")));
+        assert!(audio_disabled_value(Some("false")));
+        assert!(audio_disabled_value(Some("none")));
+        assert!(!audio_disabled_value(Some("on")));
+        assert!(!audio_disabled_value(None));
     }
 }
