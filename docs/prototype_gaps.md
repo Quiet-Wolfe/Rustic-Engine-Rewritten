@@ -18,10 +18,9 @@ behavior on purpose.
 
 ## Known Visual/Timing Gaps
 
-- Conductor/receptor confirm timing is still approximate. The app currently
-  holds confirm state for a fixed sample window, while base FNF plays
-  lane-specific confirm animations from `NOTE_assets`
-  (`PlayState.hx:1138-1153,2127`).
-- Note splashes and hold/sustain splashes are not implemented yet. No splash
-  atlas is present in the pinned base asset checkout, so any implementation
-  needs an explicit asset source decision before it can be fidelity-tested.
+- Receptor hold-confirm behavior now extends while sustain ticks resolve, but
+  it is still a simplified state model compared to v0.8.5's
+  `StrumlineNote.holdConfirm()` transition into `confirm-hold`.
+- Hold trails, hold covers, and note splashes use the v0.8.5 assets. Dropped
+  and missed hold trails are still visually simplified; v0.8.5 hides or
+  clips them based on `SustainTrail.missedNote`.
