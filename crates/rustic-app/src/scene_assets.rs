@@ -13,9 +13,9 @@ use crate::note_splash_assets::{load_note_splash_assets, NoteSplashSkin};
 use crate::popup_assets::{load_popup_assets, PopupSkin};
 use anyhow::{Context, Result};
 use rustic_asset::{
-    load_character, load_chart, load_png, load_sparrow, load_stage, AssetPath, CharacterAnimation,
-    CharacterDefinition, OverlayResolver, SparrowAtlas, SparrowFrame, StageCharacterSlot,
-    StageDefinition, StageObject,
+    load_character, load_png, load_sparrow, load_stage, load_vslice_chart, AssetPath,
+    CharacterAnimation, CharacterDefinition, OverlayResolver, SparrowAtlas, SparrowFrame,
+    StageCharacterSlot, StageDefinition, StageObject,
 };
 use rustic_core::ids::{AssetId, SongId};
 use rustic_core::render::RenderLayer;
@@ -224,9 +224,10 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
 
 pub fn load_preview_play_state(sample_rate: u32) -> Result<PlayState> {
     let resolver = OverlayResolver::new().with_baked_root("assets/baked");
-    let chart_path = AssetPath::new("data/bopeebo/bopeebo.json")?;
-    let chart =
-        load_chart(&resolver, &chart_path).with_context(|| format!("load {}", chart_path))?;
+    let chart_path = AssetPath::new("data/songs/bopeebo/bopeebo-chart.json")?;
+    let metadata_path = AssetPath::new("data/songs/bopeebo/bopeebo-metadata.json")?;
+    let chart = load_vslice_chart(&resolver, &chart_path, &metadata_path, "normal")
+        .with_context(|| format!("load {} + {}", chart_path, metadata_path))?;
     Ok(PlayState::from_chart(SongId::new(0), &chart, sample_rate))
 }
 

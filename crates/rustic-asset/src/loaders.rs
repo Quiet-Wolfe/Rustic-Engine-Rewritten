@@ -16,6 +16,19 @@ pub fn load_chart(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult
     ParsedSong::parse(&bytes)
 }
 
+pub fn load_vslice_chart(
+    resolver: &dyn AssetResolver,
+    chart_path: &AssetPath,
+    metadata_path: &AssetPath,
+    difficulty: &str,
+) -> AssetResult<ParsedSong> {
+    let chart_src = resolver.resolve(chart_path)?;
+    let chart_bytes = chart_src.read_all()?;
+    let metadata_src = resolver.resolve(metadata_path)?;
+    let metadata_bytes = metadata_src.read_all()?;
+    ParsedSong::parse_vslice(&chart_bytes, &metadata_bytes, difficulty)
+}
+
 pub fn load_sparrow(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult<SparrowAtlas> {
     let src = resolver.resolve(path)?;
     let bytes = src.read_all()?;
@@ -75,6 +88,17 @@ mod tests {
         }
     }"#;
 
+    const VSLICE_CHART_JSON: &str = r#"{
+        "scrollSpeed": { "normal": 1.3 },
+        "notes": { "normal": [{ "t": 100.0, "d": 0 }] }
+    }"#;
+
+    const VSLICE_METADATA_JSON: &str = r#"{
+        "songName": "Bopeebo",
+        "playData": { "characters": { "player": "bf", "opponent": "dad" } },
+        "timeChanges": [{ "bpm": 100 }]
+    }"#;
+
     const SPARROW_XML: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 <TextureAtlas imagePath="bf.png">
   <SubTexture name="bf idle0000" x="0" y="0" width="100" height="100"
@@ -118,6 +142,32 @@ mod tests {
         let song = load_chart(&resolver, &ap("songs/test/test.json")).unwrap();
         assert_eq!(song.name, "Test");
         assert_eq!(song.chart.bpm, 100.0);
+    }
+
+    #[test]
+    fn load_vslice_chart_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(
+            ap("data/songs/bopeebo/bopeebo-chart.json"),
+            VSLICE_CHART_JSON.as_bytes().to_vec(),
+        );
+        overlay.insert(
+            ap("data/songs/bopeebo/bopeebo-metadata.json"),
+            VSLICE_METADATA_JSON.as_bytes().to_vec(),
+        );
+        resolver.push_overlay(overlay);
+
+        let song = load_vslice_chart(
+            &resolver,
+            &ap("data/songs/bopeebo/bopeebo-chart.json"),
+            &ap("data/songs/bopeebo/bopeebo-metadata.json"),
+            "normal",
+        )
+        .unwrap();
+        assert_eq!(song.name, "Bopeebo");
+        assert_eq!(song.chart.speed, 1.3);
+        assert_eq!(song.chart.notes.len(), 1);
     }
 
     #[test]
@@ -257,6 +307,29 @@ mod tests {
             assert!(song.chart.valid_score);
             assert!(!song.chart.notes.is_empty());
         }
+    }
+
+    #[test]
+    fn tracked_source_bopeebo_vslice_chart_parse() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
+        let source_root = workspace.join("assets/source");
+        let resolver = OverlayResolver::new().with_baked_root(source_root);
+
+        let song = load_vslice_chart(
+            &resolver,
+            &ap("data/songs/bopeebo/bopeebo-chart.json"),
+            &ap("data/songs/bopeebo/bopeebo-metadata.json"),
+            "normal",
+        )
+        .unwrap();
+
+        assert_eq!(song.name, "Bopeebo");
+        assert_eq!(song.chart.bpm, 100.0);
+        assert_eq!(song.chart.speed, 1.3);
+        assert_eq!(song.chart.player1, "bf");
+        assert_eq!(song.chart.player2, "dad");
+        assert!(!song.chart.notes.is_empty());
     }
 
     #[test]

@@ -48,6 +48,7 @@
 
 use crate::error::{AssetError, AssetResult};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OuterSong {
@@ -72,6 +73,69 @@ struct RawSong {
     notes: Vec<RawSection>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VSliceChart {
+    // ref: bdedc0aa:source/funkin/data/song/SongData.hx:615-619
+    #[serde(default)]
+    scroll_speed: HashMap<String, f64>,
+    #[serde(default)]
+    notes: HashMap<String, Vec<VSliceNote>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct VSliceNote {
+    // ref: bdedc0aa:source/funkin/data/song/SongData.hx:1093-1123
+    #[serde(rename = "t")]
+    time_ms: f64,
+    #[serde(rename = "d")]
+    data: i32,
+    #[serde(default, rename = "l")]
+    length_ms: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VSliceMetadata {
+    // ref: bdedc0aa:source/funkin/data/song/SongData.hx:19-64
+    #[serde(default = "default_unknown")]
+    song_name: String,
+    #[serde(default)]
+    play_data: VSlicePlayData,
+    #[serde(default)]
+    time_changes: Vec<VSliceTimeChange>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct VSlicePlayData {
+    // ref: bdedc0aa:source/funkin/data/song/SongData.hx:457-465
+    #[serde(default)]
+    characters: VSliceCharacters,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct VSliceCharacters {
+    // ref: bdedc0aa:source/funkin/data/song/SongData.hx:548-560
+    #[serde(default = "default_player1")]
+    player: String,
+    #[serde(default = "default_player2")]
+    opponent: String,
+}
+
+impl Default for VSliceCharacters {
+    fn default() -> Self {
+        Self {
+            player: default_player1(),
+            opponent: default_player2(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct VSliceTimeChange {
+    bpm: f64,
+}
+
 fn default_speed() -> f64 {
     1.0
 }
@@ -88,6 +152,10 @@ fn default_player1() -> String {
 
 fn default_player2() -> String {
     "dad".to_string()
+}
+
+fn default_unknown() -> String {
+    "Unknown".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,6 +292,47 @@ impl ParsedSong {
             chart,
         })
     }
+
+    pub fn parse_vslice(
+        chart_bytes: &[u8],
+        metadata_bytes: &[u8],
+        difficulty: &str,
+    ) -> AssetResult<Self> {
+        let raw_chart: VSliceChart = serde_json::from_slice(trim_chart_bytes(chart_bytes))
+            .map_err(|e| AssetError::InvalidData(format!("v-slice chart json: {e}")))?;
+        let metadata: VSliceMetadata = serde_json::from_slice(trim_chart_bytes(metadata_bytes))
+            .map_err(|e| AssetError::InvalidData(format!("v-slice metadata json: {e}")))?;
+
+        let mut chart = Chart {
+            bpm: v_slice_bpm(&metadata),
+            speed: v_slice_scroll_speed(&raw_chart, difficulty),
+            needs_voices: true,
+            player1: metadata.play_data.characters.player,
+            player2: metadata.play_data.characters.opponent,
+            valid_score: true,
+            sections: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        // ref: bdedc0aa:source/funkin/data/song/SongData.hx:655-662
+        if let Some(notes) = v_slice_notes_for(&raw_chart, difficulty) {
+            chart.notes.reserve(notes.len());
+            for note in notes {
+                chart.notes.push(parse_vslice_note(note)?);
+            }
+        }
+
+        chart.notes.sort_by(|a, b| {
+            a.time_ms
+                .partial_cmp(&b.time_ms)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Ok(Self {
+            name: metadata.song_name,
+            chart,
+        })
+    }
 }
 
 fn trim_chart_bytes(mut bytes: &[u8]) -> &[u8] {
@@ -270,6 +379,64 @@ fn parse_note(section_index: u32, must_hit: bool, n: &RawNote) -> AssetResult<Ch
     })
 }
 
+fn parse_vslice_note(note: &VSliceNote) -> AssetResult<ChartNote> {
+    if !(0..=7).contains(&note.data) {
+        return Err(invalid(&format!("v-slice lane {} out of 0..=7", note.data)));
+    }
+    let raw_lane = note.data as u8;
+
+    // ref: bdedc0aa:source/funkin/data/song/SongData.hx:1107-1112
+    // ref: bdedc0aa:source/funkin/play/PlayState.hx:2499-2512
+    Ok(ChartNote {
+        time_ms: note.time_ms,
+        sustain_ms: note.length_ms.max(0.0),
+        raw_lane,
+        is_player: raw_lane < 4,
+        section_index: 0,
+    })
+}
+
+fn v_slice_notes_for<'a>(chart: &'a VSliceChart, difficulty: &str) -> Option<&'a Vec<VSliceNote>> {
+    chart.notes.get(difficulty).or_else(|| {
+        if difficulty != "normal" {
+            chart.notes.get("normal")
+        } else {
+            None
+        }
+    })
+}
+
+fn v_slice_scroll_speed(chart: &VSliceChart, difficulty: &str) -> f64 {
+    // ref: bdedc0aa:source/funkin/data/song/SongData.hx:640-647
+    let result = chart
+        .scroll_speed
+        .get(difficulty)
+        .copied()
+        .unwrap_or_default();
+    if result == 0.0 && difficulty != "default" {
+        return chart
+            .scroll_speed
+            .get("default")
+            .copied()
+            .filter(|speed| *speed != 0.0)
+            .unwrap_or(1.0);
+    }
+    if result == 0.0 {
+        1.0
+    } else {
+        result
+    }
+}
+
+fn v_slice_bpm(metadata: &VSliceMetadata) -> f64 {
+    // ref: bdedc0aa:source/funkin/data/song/SongData.hx:72-88
+    metadata
+        .time_changes
+        .first()
+        .map(|change| change.bpm)
+        .unwrap_or(100.0)
+}
+
 fn as_f64(v: &serde_json::Value) -> Option<f64> {
     v.as_f64().or_else(|| v.as_i64().map(|i| i as f64))
 }
@@ -309,6 +476,32 @@ mod tests {
                 }
             ]
         }
+    }"#;
+
+    const VSLICE_CHART: &str = r#"{
+        "version": "2.0.0",
+        "scrollSpeed": { "default": 1.1, "normal": 1.3, "hard": 1.6 },
+        "notes": {
+            "normal": [
+                { "t": 1000.0, "d": 1 },
+                { "t": 500.0, "d": 6, "l": 250.0 }
+            ],
+            "hard": [
+                { "t": 750.0, "d": 3 }
+            ]
+        }
+    }"#;
+
+    const VSLICE_METADATA: &str = r#"{
+        "version": "2.2.4",
+        "songName": "Bopeebo",
+        "playData": {
+            "characters": {
+                "player": "bf",
+                "opponent": "dad"
+            }
+        },
+        "timeChanges": [{ "t": 0, "b": 0, "bpm": 100 }]
     }"#;
 
     #[test]
@@ -405,5 +598,54 @@ mod tests {
              "sectionNotes":[[100.0,0]]}
         ]}}"#;
         assert!(ParsedSong::parse(bad.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn parses_vslice_chart_and_metadata() {
+        let p = ParsedSong::parse_vslice(
+            VSLICE_CHART.as_bytes(),
+            VSLICE_METADATA.as_bytes(),
+            "normal",
+        )
+        .unwrap();
+
+        assert_eq!(p.name, "Bopeebo");
+        assert_eq!(p.chart.bpm, 100.0);
+        assert_eq!(p.chart.speed, 1.3);
+        assert!(p.chart.needs_voices);
+        assert_eq!(p.chart.player1, "bf");
+        assert_eq!(p.chart.player2, "dad");
+        assert!(p.chart.valid_score);
+        assert!(p.chart.sections.is_empty());
+
+        let times: Vec<_> = p.chart.notes.iter().map(|n| n.time_ms).collect();
+        assert_eq!(times, vec![500.0, 1000.0]);
+        assert_eq!(p.chart.notes[0].raw_lane, 6);
+        assert!(!p.chart.notes[0].is_player);
+        assert_eq!(p.chart.notes[0].sustain_ms, 250.0);
+        assert_eq!(p.chart.notes[1].raw_lane, 1);
+        assert!(p.chart.notes[1].is_player);
+    }
+
+    #[test]
+    fn vslice_notes_fall_back_to_normal() {
+        let p =
+            ParsedSong::parse_vslice(VSLICE_CHART.as_bytes(), VSLICE_METADATA.as_bytes(), "easy")
+                .unwrap();
+
+        assert_eq!(p.chart.speed, 1.1);
+        assert_eq!(p.chart.notes.len(), 2);
+    }
+
+    #[test]
+    fn vslice_rejects_lane_out_of_range() {
+        let bad = r#"{
+            "scrollSpeed": { "normal": 1.0 },
+            "notes": { "normal": [{ "t": 100.0, "d": 8 }] }
+        }"#;
+
+        assert!(
+            ParsedSong::parse_vslice(bad.as_bytes(), VSLICE_METADATA.as_bytes(), "normal").is_err()
+        );
     }
 }
