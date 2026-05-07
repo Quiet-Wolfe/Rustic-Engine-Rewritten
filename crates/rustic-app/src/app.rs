@@ -428,7 +428,7 @@ impl App {
         }
     }
 
-    fn handle_gameplay_input(&mut self, event: &NormalizedInputEvent) {
+    fn handle_gameplay_input(&mut self, event: &NormalizedInputEvent, already_held: bool) {
         if event.state != InputState::Pressed {
             return;
         }
@@ -453,6 +453,9 @@ impl App {
                 let Some(lane) = lane_for_action(event.action) else {
                     return;
                 };
+                if already_held {
+                    return;
+                }
                 if let Some(outcome) =
                     play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate)
                 {
@@ -474,7 +477,8 @@ impl App {
                     }
                 } else {
                     play_state.register_ghost_miss();
-                    self.character_anim.player_note_miss(lane, cursor);
+                    self.character_anim
+                        .player_note_miss(lane, cursor, sample_rate, play_state.bpm);
                 }
                 should_enter_game_over = play_state.is_dead();
             }
@@ -701,9 +705,13 @@ impl ApplicationHandler for App {
                 if let Some(action) = map_key(event.physical_key) {
                     let song_cursor = self.advance_song_clock();
                     let evt = build_event(action, event.state, self.boot_instant, song_cursor);
+                    let already_held = event.repeat
+                        || lane_for_action(action)
+                            .map(|lane| self.held_lanes.is_held(lane))
+                            .unwrap_or(false);
                     self.held_lanes.apply(&evt);
                     self.screens.input(&evt);
-                    self.handle_gameplay_input(&evt);
+                    self.handle_gameplay_input(&evt, already_held);
                     if event.state == ElementState::Pressed
                         && action == rustic_core::InputAction::Back
                     {

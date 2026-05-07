@@ -8,6 +8,8 @@ use rustic_game::Lane;
 const DAD_HOLD_STEPS: f64 = 6.1;
 // ref: 50fccded:source/PlayState.hx:1983          // BF returns after 4 steps
 const BF_HOLD_STEPS: f64 = 4.0;
+// ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:414
+const MISS_HOLD_STEPS: f64 = BF_HOLD_STEPS * 2.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CharacterPoseRequest {
@@ -85,8 +87,7 @@ impl CharacterAnimState {
             self.opponent_started = cursor;
         }
         if self.player_pose.starts_with("sing")
-            && !self.player_pose.ends_with("miss")
-            && !player_holding
+            && (self.player_pose.ends_with("miss") || !player_holding)
             && cursor >= self.player_until
         {
             self.player_pose = "idle";
@@ -108,10 +109,11 @@ impl CharacterAnimState {
         self.player_until = Samples(cursor.0 + hold_samples(sample_rate, bpm, BF_HOLD_STEPS));
     }
 
-    pub fn player_note_miss(&mut self, lane: Lane, cursor: Samples) {
+    pub fn player_note_miss(&mut self, lane: Lane, cursor: Samples, sample_rate: u32, bpm: f64) {
         // ref: 50fccded:source/PlayState.hx:2056-2066
         self.player_pose = miss_pose(lane);
         self.player_started = cursor;
+        self.player_until = Samples(cursor.0 + hold_samples(sample_rate, bpm, MISS_HOLD_STEPS));
     }
 
     pub fn player_first_death(&mut self, cursor: Samples) {
@@ -258,10 +260,22 @@ mod tests {
     #[test]
     fn miss_pose_restarts_from_the_miss_cursor() {
         let mut state = CharacterAnimState::default();
-        state.player_note_miss(Lane::Right, Samples(1_234));
+        state.player_note_miss(Lane::Right, Samples(1_234), 48_000, 100.0);
 
         assert_eq!(state.poses().player.name, "singRIGHTmiss");
         assert_eq!(state.poses().player.started_at, Samples(1_234));
+    }
+
+    #[test]
+    fn miss_pose_returns_to_idle_after_extended_sing_time() {
+        let mut state = CharacterAnimState::default();
+        state.player_note_miss(Lane::Right, Samples(0), 48_000, 100.0);
+
+        state.update(Samples(57_599), 48_000, 100.0, true, false);
+        assert_eq!(state.poses().player.name, "singRIGHTmiss");
+        state.update(Samples(57_600), 48_000, 100.0, true, false);
+        assert_eq!(state.poses().player.name, "idle");
+        assert_eq!(state.poses().player.started_at, Samples(57_600));
     }
 
     #[test]

@@ -128,7 +128,7 @@ impl PlayState {
 
         let mut best: Option<(usize, f64)> = None;
         for (i, n) in self.notes.iter().enumerate() {
-            if n.opponent || n.lane != lane {
+            if n.opponent || n.is_sustain || n.lane != lane {
                 continue;
             }
             if self.resolved_notes.contains(&n.id) {
@@ -145,26 +145,15 @@ impl PlayState {
 
         let (idx, abs_diff_ms) = best?;
         let id = self.notes[idx].id;
-        let is_sustain = self.notes[idx].is_sustain;
         self.resolved_notes.push(id);
 
-        if is_sustain {
-            self.register_sustain_hit();
-            Some(HitOutcome {
-                judgment: Judgment::Sick,
-                is_sustain,
-                combo_break: false,
-                combo_popup: None,
-            })
-        } else {
-            let hit = self.register_timed_hit(abs_diff_ms);
-            Some(HitOutcome {
-                judgment: hit.judgment,
-                is_sustain,
-                combo_break: hit.combo_break,
-                combo_popup: hit.combo_popup,
-            })
-        }
+        let hit = self.register_timed_hit(abs_diff_ms);
+        Some(HitOutcome {
+            judgment: hit.judgment,
+            is_sustain: false,
+            combo_break: hit.combo_break,
+            combo_popup: hit.combo_popup,
+        })
     }
 
     /// Resolve player-side sustain child notes while a lane is held. This
@@ -187,6 +176,9 @@ impl PlayState {
             if self.resolved_notes.contains(&n.id) {
                 continue;
             }
+            if !self.is_active_sustain_child(n.id) {
+                continue;
+            }
             let diff_ms = (n.hit_at.0 - cursor.0) as f64 * ms_per_sample;
             if diff_ms > -hit_window && diff_ms < hit_window * 0.5 {
                 hits.push(n.id);
@@ -201,22 +193,30 @@ impl PlayState {
         count
     }
 
-    /// Mark every player-side note whose hit_at is more than the hit window
-    /// behind `cursor` as a miss. Returns the count of newly missed notes.
+    /// Mark every player-side tap note whose hit_at is more than the hit
+    /// window behind `cursor` as a miss. Sustain children are an internal
+    /// trail approximation in this prototype; v0.8.5 scores dropped holds
+    /// once by remaining duration, not as a miss per child.
     pub fn expire_late_notes(&mut self, cursor: Samples, sample_rate: u32) -> u32 {
         let hit_window = JudgmentWindows::from(self.windows).hit_window_ms.0;
         let ms_per_sample = 1000.0 / sample_rate as f64;
         let mut newly_missed = Vec::new();
+        let mut expired_sustains = Vec::new();
         for n in &self.notes {
             if n.opponent || self.resolved_notes.contains(&n.id) {
                 continue;
             }
             let diff_ms = (n.hit_at.0 - cursor.0) as f64 * ms_per_sample;
             if diff_ms < -hit_window {
-                newly_missed.push(n.id);
+                if n.is_sustain {
+                    expired_sustains.push(n.id);
+                } else {
+                    newly_missed.push(n.id);
+                }
             }
         }
         let count = newly_missed.len() as u32;
+        self.resolved_notes.extend(expired_sustains);
         for id in newly_missed {
             self.resolved_notes.push(id);
             self.register_note_miss();
@@ -229,6 +229,21 @@ impl PlayState {
         // Upstream caps at max health from above; below min health is allowed
         // and triggers game over via `is_dead`.
         self.health = if next > MAX_HEALTH { MAX_HEALTH } else { next };
+    }
+
+    fn is_active_sustain_child(&self, sustain_id: rustic_core::ids::NoteId) -> bool {
+        let Some(child) = self.notes.iter().find(|note| note.id == sustain_id) else {
+            return false;
+        };
+        self.notes.iter().any(|head| {
+            !head.opponent
+                && !head.is_sustain
+                && head.lane == child.lane
+                && head.sustain_samples > 0
+                && self.resolved_notes.contains(&head.id)
+                && child.hit_at > head.hit_at
+                && child.hit_at.0 <= head.hit_at.0 + head.sustain_samples
+        })
     }
 }
 
@@ -271,6 +286,24 @@ mod tests {
             sustain_samples: 0,
             is_sustain: true,
             is_sustain_end: true,
+            opponent: false,
+        });
+    }
+
+    fn add_hold_head(
+        s: &mut PlayState,
+        id: u32,
+        lane: Lane,
+        hit_at_samples: i64,
+        sustain_samples: i64,
+    ) {
+        s.notes.push(Note {
+            id: NoteId::new(id),
+            lane,
+            hit_at: Samples(hit_at_samples),
+            sustain_samples,
+            is_sustain: false,
+            is_sustain_end: false,
             opponent: false,
         });
     }
@@ -419,43 +452,49 @@ mod tests {
     }
 
     #[test]
-    fn sustain_hit_adds_prototype_health_without_score_or_combo() {
+    fn direct_input_does_not_score_sustain_children() {
         let mut s = PlayState::new();
         add_sustain(&mut s, 0, Lane::Left, 48_000);
 
         let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
 
-        assert_eq!(
-            j,
-            Some(HitOutcome {
-                judgment: Judgment::Sick,
-                is_sustain: true,
-                combo_break: false,
-                combo_popup: None,
-            })
-        );
+        assert_eq!(j, None);
         assert_eq!(s.score, 0);
         assert_eq!(s.combo, 0);
         assert_eq!(s.sicks, 0);
-        assert!(s.resolved_notes.contains(&NoteId::new(0)));
-        assert!((s.health - (INITIAL_HEALTH + 0.03)).abs() < 1e-5);
+        assert!(!s.resolved_notes.contains(&NoteId::new(0)));
+        assert!((s.health - INITIAL_HEALTH).abs() < 1e-5);
     }
 
     #[test]
-    fn held_lane_resolves_sustain_children_in_hit_window() {
+    fn held_lane_resolves_sustain_children_after_head_hit() {
         let mut s = PlayState::new();
-        add_sustain(&mut s, 0, Lane::Left, 48_000);
+        add_hold_head(&mut s, 0, Lane::Left, 48_000, 48_000);
         add_sustain(&mut s, 1, Lane::Left, 62_400);
-        add_note(&mut s, 2, Lane::Left, 48_000);
+        add_sustain(&mut s, 2, Lane::Left, 76_800);
+        s.resolved_notes.push(NoteId::new(0));
 
-        let count = s.resolve_held_sustains_in_lane(Samples(48_000), Lane::Left, 48_000);
+        let count = s.resolve_held_sustains_in_lane(Samples(62_400), Lane::Left, 48_000);
 
         assert_eq!(count, 1);
-        assert!(s.resolved_notes.contains(&NoteId::new(0)));
-        assert!(!s.resolved_notes.contains(&NoteId::new(1)));
+        assert!(s.resolved_notes.contains(&NoteId::new(1)));
         assert!(!s.resolved_notes.contains(&NoteId::new(2)));
         assert_eq!(s.score, 0);
         assert_eq!(s.combo, 0);
+    }
+
+    #[test]
+    fn held_lane_does_not_resolve_sustain_children_when_head_was_not_hit() {
+        let mut s = PlayState::new();
+        add_hold_head(&mut s, 0, Lane::Left, 48_000, 48_000);
+        add_sustain(&mut s, 1, Lane::Left, 62_400);
+
+        let count = s.resolve_held_sustains_in_lane(Samples(62_400), Lane::Left, 48_000);
+
+        assert_eq!(count, 0);
+        assert!(!s.resolved_notes.contains(&NoteId::new(1)));
+        assert_eq!(s.score, 0);
+        assert!((s.health - INITIAL_HEALTH).abs() < 1e-6);
     }
 
     #[test]
@@ -473,5 +512,22 @@ mod tests {
         assert_eq!(s.score, 400);
         assert_eq!(s.combo, 0);
         assert!((s.health - (INITIAL_HEALTH - 0.08)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn expire_late_notes_silently_resolves_sustain_children() {
+        let mut s = PlayState::new();
+        add_sustain(&mut s, 0, Lane::Left, 48_000);
+        s.score = 500;
+        s.combo = 3;
+
+        let missed = s.expire_late_notes(Samples(48_000 + 8_000), 48_000);
+
+        assert_eq!(missed, 0);
+        assert!(s.resolved_notes.contains(&NoteId::new(0)));
+        assert_eq!(s.misses, 0);
+        assert_eq!(s.score, 500);
+        assert_eq!(s.combo, 3);
+        assert!((s.health - INITIAL_HEALTH).abs() < 1e-6);
     }
 }
