@@ -102,6 +102,7 @@ impl NoteSplashes {
             cmd.filter = FilterMode::Linear;
             cmd.color.w = SPLASH_ALPHA;
             (cmd.uv_min, cmd.uv_max) = frame_uv(frame, skin.texture_width, skin.texture_height);
+            cmd.uv_rotated = frame.rotated;
             commands.push(cmd);
         }
         commands

@@ -63,6 +63,7 @@ impl NoteSkin {
         cmd.z = if view.is_sustain { 0 } else { 1 };
         cmd.filter = FilterMode::Linear;
         (cmd.uv_min, cmd.uv_max) = frame_uv(frame, texture_width, texture_height);
+        cmd.uv_rotated = frame.rotated;
         if view.is_sustain {
             cmd.color.w = 0.6;
         }
@@ -143,6 +144,7 @@ impl NoteSkin {
             self.strumline_texture_width,
             self.strumline_texture_height,
         );
+        cmd.uv_rotated = frame.rotated;
         cmd
     }
 

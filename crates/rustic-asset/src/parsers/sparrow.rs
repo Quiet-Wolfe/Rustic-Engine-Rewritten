@@ -35,6 +35,7 @@ pub struct SparrowFrame {
     pub frame_y: i32,
     pub frame_width: u32,
     pub frame_height: u32,
+    pub rotated: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -121,6 +122,7 @@ fn parse_subtexture(e: &quick_xml::events::BytesStart<'_>) -> AssetResult<Sparro
     let frame_y = read_int(e, b"frameY", 0)?;
     let frame_width = read_uint(e, b"frameWidth", width)?;
     let frame_height = read_uint(e, b"frameHeight", height)?;
+    let rotated = read_bool(e, b"rotated", false)?;
     Ok(SparrowFrame {
         name,
         x,
@@ -131,6 +133,7 @@ fn parse_subtexture(e: &quick_xml::events::BytesStart<'_>) -> AssetResult<Sparro
         frame_y,
         frame_width,
         frame_height,
+        rotated,
     })
 }
 
@@ -162,6 +165,24 @@ fn read_uint(e: &quick_xml::events::BytesStart<'_>, key: &[u8], default: u32) ->
         Some(s) => s.parse::<u32>().map_err(|_| {
             AssetError::InvalidPath(format!("non-uint {}", String::from_utf8_lossy(key)))
         }),
+    }
+}
+
+fn read_bool(
+    e: &quick_xml::events::BytesStart<'_>,
+    key: &[u8],
+    default: bool,
+) -> AssetResult<bool> {
+    match read_attr(e, key)? {
+        None => Ok(default),
+        Some(s) => match s.as_str() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            _ => Err(AssetError::InvalidPath(format!(
+                "non-bool {}",
+                String::from_utf8_lossy(key)
+            ))),
+        },
     }
 }
 
@@ -202,12 +223,26 @@ mod tests {
             (f0.frame_x, f0.frame_y, f0.frame_width, f0.frame_height),
             (-19, -15, 240, 290)
         );
+        assert!(!f0.rotated);
 
         // Optional frame* defaults: frame_width/height fall back to
         // packed width/height; frame_x/frame_y default to 0.
         let f1 = &a.frames[1];
         assert_eq!((f1.frame_x, f1.frame_y), (0, 0));
         assert_eq!((f1.frame_width, f1.frame_height), (221, 271));
+        assert!(!f1.rotated);
+    }
+
+    #[test]
+    fn parses_rotated_subtexture_flag() {
+        let xml = br#"<TextureAtlas imagePath="holdCoverBlue.png">
+          <SubTexture name="holdCoverBlue0001" x="407" y="242" width="108" height="138"
+                      rotated="true" frameX="-94" frameY="-94" frameWidth="300" frameHeight="400"/>
+        </TextureAtlas>"#;
+
+        let atlas = SparrowAtlas::parse(xml).unwrap();
+
+        assert!(atlas.frames[0].rotated);
     }
 
     #[test]

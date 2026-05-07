@@ -111,6 +111,7 @@ impl CharacterSprite {
         cmd.z = self.z;
         cmd.filter = self.filter;
         (cmd.uv_min, cmd.uv_max) = frame_uv(frame, self.texture_width, self.texture_height);
+        cmd.uv_rotated = frame.rotated;
         if effective_flip_x(&self.character, self.is_player) {
             std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
         }

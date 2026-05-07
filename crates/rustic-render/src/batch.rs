@@ -28,11 +28,13 @@ pub struct SpriteInstance {
     pub _pad0: f32,
     pub uv_min: [f32; 2],
     pub uv_max: [f32; 2],
+    pub uv_rotated: f32,
+    pub _pad1: f32,
     pub color: [f32; 4],
 }
 
 impl SpriteInstance {
-    pub const ATTRIBUTES: [wgpu::VertexAttribute; 8] = [
+    pub const ATTRIBUTES: [wgpu::VertexAttribute; 9] = [
         wgpu::VertexAttribute {
             format: wgpu::VertexFormat::Float32x2,
             offset: 0,
@@ -69,9 +71,14 @@ impl SpriteInstance {
             shader_location: 7,
         },
         wgpu::VertexAttribute {
-            format: wgpu::VertexFormat::Float32x4,
+            format: wgpu::VertexFormat::Float32,
             offset: 56,
             shader_location: 8,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 64,
+            shader_location: 9,
         },
     ];
 }
@@ -87,6 +94,8 @@ impl From<&DrawCommand> for SpriteInstance {
             _pad0: 0.0,
             uv_min: c.uv_min.to_array(),
             uv_max: c.uv_max.to_array(),
+            uv_rotated: if c.uv_rotated { 1.0 } else { 0.0 },
+            _pad1: 0.0,
             color: c.color.to_array(),
         }
     }
@@ -341,6 +350,7 @@ mod tests {
             filter: FilterMode::Linear,
             uv_min: Vec2::ZERO,
             uv_max: Vec2::ONE,
+            uv_rotated: false,
             world_pos: Vec2::ZERO,
             size: Vec2::ONE,
             pivot: Vec2::splat(0.5),

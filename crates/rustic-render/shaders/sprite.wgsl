@@ -10,6 +10,7 @@
 //   a_rotation     f32           // radians
 //   a_uv_min       vec2<f32>
 //   a_uv_max       vec2<f32>
+//   a_uv_rotated   f32           // Sparrow rotated="true"
 //   a_color        vec4<f32>
 //
 // Camera uniform binds the view-projection matrix (group=0 binding=0).
@@ -33,7 +34,8 @@ struct VsIn {
     @location(5) rotation: f32,
     @location(6) uv_min: vec2<f32>,
     @location(7) uv_max: vec2<f32>,
-    @location(8) color: vec4<f32>,
+    @location(8) uv_rotated: f32,
+    @location(9) color: vec4<f32>,
 };
 
 struct VsOut {
@@ -54,7 +56,12 @@ fn vs_main(input: VsIn) -> VsOut {
     );
     let world = input.world_pos + rotated;
 
-    let uv = mix(input.uv_min, input.uv_max, input.quad_uv);
+    var atlas_uv = input.quad_uv;
+    if (input.uv_rotated > 0.5) {
+        // Funkin's Sparrow exporter marks these as angle -90.
+        atlas_uv = vec2<f32>(input.quad_uv.y, 1.0 - input.quad_uv.x);
+    }
+    let uv = mix(input.uv_min, input.uv_max, atlas_uv);
 
     var out: VsOut;
     out.position = u_camera.view_proj * vec4<f32>(world, 0.0, 1.0);
