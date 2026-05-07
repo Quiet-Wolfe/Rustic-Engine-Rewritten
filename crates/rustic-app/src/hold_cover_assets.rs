@@ -382,6 +382,7 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn lane_skin() -> LaneHoldCoverSkin {
         let atlas = SparrowAtlas::parse(
@@ -411,6 +412,39 @@ mod tests {
         let lane = lane_skin();
         HoldCoverSkin {
             lanes: std::array::from_fn(|_| lane.clone()),
+        }
+    }
+
+    fn source_atlas(path: &str) -> SparrowAtlas {
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
+        let bytes = std::fs::read(workspace.join("assets/source").join(path)).unwrap();
+        SparrowAtlas::parse(&bytes).unwrap()
+    }
+
+    fn source_lane_skin(asset_name: &str, color_name: &str) -> LaneHoldCoverSkin {
+        let atlas = source_atlas(&format!("images/{asset_name}.xml"));
+        LaneHoldCoverSkin {
+            texture_id: AssetId::new(7),
+            texture_width: 599,
+            texture_height: 591,
+            start_frames: cloned_animation_frames(&atlas, &format!("holdCoverStart{color_name}"))
+                .unwrap(),
+            hold_frames: cloned_animation_frames(&atlas, &format!("holdCover{color_name}"))
+                .unwrap(),
+            end_frames: cloned_animation_frames(&atlas, &format!("holdCoverEnd{color_name}"))
+                .unwrap(),
+        }
+    }
+
+    fn source_skin() -> HoldCoverSkin {
+        HoldCoverSkin {
+            lanes: [
+                source_lane_skin("holdCoverPurple", "Purple"),
+                source_lane_skin("holdCoverBlue", "Blue"),
+                source_lane_skin("holdCoverGreen", "Green"),
+                source_lane_skin("holdCoverRed", "Red"),
+            ],
         }
     }
 
@@ -460,5 +494,25 @@ mod tests {
 
         let done = covers.commands(&skin(), Samples(6_000), 48_000);
         assert!(done.is_empty());
+    }
+
+    #[test]
+    fn tracked_source_hold_covers_emit_commands_for_all_lanes() {
+        let skin = source_skin();
+        for lane in &skin.lanes {
+            assert_eq!(lane.start_frames.len(), 1);
+            assert_eq!(lane.hold_frames.len(), 4);
+            assert_eq!(lane.end_frames.len(), 8);
+        }
+
+        let mut covers = HoldCovers::default();
+        for lane in [Lane::Left, Lane::Down, Lane::Up, Lane::Right] {
+            covers.start(lane, Samples(0), Samples(48_000));
+        }
+
+        let commands = covers.commands(&skin, Samples(0), 48_000);
+        assert_eq!(commands.len(), 4);
+        assert!(commands.iter().all(|cmd| cmd.layer == RenderLayer::Notes));
+        assert!(commands.iter().all(|cmd| cmd.z == 9));
     }
 }

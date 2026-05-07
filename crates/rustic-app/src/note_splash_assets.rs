@@ -258,6 +258,7 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     fn frame() -> SparrowFrame {
         SparrowAtlas::parse(
@@ -283,6 +284,48 @@ mod tests {
             lanes: std::array::from_fn(|_| LaneSplashFrames {
                 variants: [vec![f.clone(), f.clone()], vec![f.clone()]],
             }),
+        }
+    }
+
+    fn source_atlas(path: &str) -> SparrowAtlas {
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest_dir.parent().unwrap().parent().unwrap();
+        let bytes = std::fs::read(workspace.join("assets/source").join(path)).unwrap();
+        SparrowAtlas::parse(&bytes).unwrap()
+    }
+
+    fn source_skin() -> NoteSplashSkin {
+        let atlas = source_atlas("images/noteSplashes.xml");
+        NoteSplashSkin {
+            texture_id: AssetId::new(7),
+            texture_width: 2048,
+            texture_height: 1088,
+            lanes: [
+                LaneSplashFrames {
+                    variants: [
+                        cloned_animation_frames(&atlas, "note impact 1 purple0").unwrap(),
+                        cloned_animation_frames(&atlas, "note impact 2 purple0").unwrap(),
+                    ],
+                },
+                LaneSplashFrames {
+                    variants: [
+                        cloned_animation_frames(&atlas, "note impact 1  blue0").unwrap(),
+                        cloned_animation_frames(&atlas, "note impact 2 blue0").unwrap(),
+                    ],
+                },
+                LaneSplashFrames {
+                    variants: [
+                        cloned_animation_frames(&atlas, "note impact 1 green0").unwrap(),
+                        cloned_animation_frames(&atlas, "note impact 2 green0").unwrap(),
+                    ],
+                },
+                LaneSplashFrames {
+                    variants: [
+                        cloned_animation_frames(&atlas, "note impact 1 red0").unwrap(),
+                        cloned_animation_frames(&atlas, "note impact 2 red0").unwrap(),
+                    ],
+                },
+            ],
         }
     }
 
@@ -316,5 +359,24 @@ mod tests {
         }
         assert_eq!(splashes.active.len(), NOTE_SPLASH_CAP);
         assert_eq!(splashes.active[0].started_at, Samples(2));
+    }
+
+    #[test]
+    fn tracked_source_note_splashes_emit_commands_for_all_lanes() {
+        let skin = source_skin();
+        for lane in [Lane::Left, Lane::Down, Lane::Up, Lane::Right] {
+            assert_eq!(skin.frames(lane, 0).len(), 4);
+            assert_eq!(skin.frames(lane, 1).len(), 4);
+        }
+
+        let mut splashes = NoteSplashes::default();
+        for lane in [Lane::Left, Lane::Down, Lane::Up, Lane::Right] {
+            splashes.push(lane, Samples(0));
+        }
+
+        let commands = splashes.commands(&skin, Samples(0), 48_000);
+        assert_eq!(commands.len(), 4);
+        assert!(commands.iter().all(|cmd| cmd.layer == RenderLayer::Notes));
+        assert!(commands.iter().all(|cmd| cmd.z == 8));
     }
 }
