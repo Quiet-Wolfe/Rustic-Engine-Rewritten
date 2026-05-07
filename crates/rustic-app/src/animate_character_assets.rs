@@ -35,10 +35,10 @@ impl AnimateCharacterSprite {
         cursor: Samples,
         sample_rate: u32,
     ) -> Vec<DrawCommand> {
-        let pose = self.pose(request.name);
+        let (pose, started_at) = self.resolve_pose_for_request(request, cursor, sample_rate);
         let asset = &self.assets[pose.asset_index];
         let parts = pose
-            .parts(asset, cursor, sample_rate, request.started_at)
+            .parts(asset, cursor, sample_rate, started_at)
             .unwrap_or_default();
         parts
             .iter()
@@ -82,6 +82,32 @@ impl AnimateCharacterSprite {
             .iter()
             .find(|pose| pose.animation.name == animation_name)
             .unwrap_or(&self.poses[self.initial_pose])
+    }
+
+    fn resolve_pose_for_request(
+        &self,
+        request: CharacterPoseRequest,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> (&AnimateCharacterPose, Samples) {
+        let pose = self.pose(request.name);
+        let duration =
+            animation_duration_samples(sample_rate, pose.animation.fps, pose.frame_count);
+        if !pose.animation.looped && cursor.0.saturating_sub(request.started_at.0) >= duration.0 {
+            if let Some(hold_pose) = self.hold_pose_for(pose) {
+                return (
+                    hold_pose,
+                    Samples(request.started_at.0.saturating_add(duration.0)),
+                );
+            }
+        }
+        (pose, request.started_at)
+    }
+
+    fn hold_pose_for(&self, pose: &AnimateCharacterPose) -> Option<&AnimateCharacterPose> {
+        self.poses.iter().find(|candidate| {
+            candidate.animation.name.strip_prefix(&pose.animation.name) == Some("-hold")
+        })
     }
 
     fn command_for_part(
@@ -198,7 +224,6 @@ struct LoadedAnimateAtlas {
 
 #[derive(Debug, Clone)]
 struct FlatLabelAtlas {
-    all_frames: Vec<String>,
     labels: HashMap<String, Vec<String>>,
 }
 
@@ -248,7 +273,7 @@ impl FlatLabelAtlas {
             cursor += count;
             remaining_duration = remaining_duration.saturating_sub(label.duration.max(1) as usize);
         }
-        Some(Self { all_frames, labels })
+        Some(Self { labels })
     }
 
     fn parts(
@@ -257,18 +282,14 @@ impl FlatLabelAtlas {
         pose: &CharacterAnimation,
         frame_offset: u32,
     ) -> Result<Vec<AnimateDrawPart>> {
-        let frame_name = if !pose.indices.is_empty() {
-            self.all_frames
-                .get(frame_offset as usize)
-                .or_else(|| self.all_frames.last())
-        } else {
-            let frames = self
-                .labels
-                .get(&pose.prefix)
-                .with_context(|| format!("resolve flat animate label {}", pose.prefix))?;
-            frames.get(frame_offset as usize).or_else(|| frames.last())
-        }
-        .with_context(|| format!("resolve flat animate frame {}", pose.name))?;
+        let frames = self
+            .labels
+            .get(&pose.prefix)
+            .with_context(|| format!("resolve flat animate label {}", pose.prefix))?;
+        let frame_name = frames
+            .get(frame_offset as usize)
+            .or_else(|| frames.last())
+            .with_context(|| format!("resolve flat animate frame {}", pose.name))?;
         Ok(vec![AnimateDrawPart::atlas_frame(
             frame_name.clone(),
             flat_label_matrix(animation, &pose.prefix, frame_offset)?,
@@ -522,4 +543,120 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
     AssetId::new(hash)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn character_with_hold() -> CharacterDefinition {
+        CharacterDefinition::parse(
+            br#"{
+                "id": "dad",
+                "assetPath": "shared:characters/dad",
+                "animations": [
+                    { "name": "singUP", "prefix": "Up", "frameRate": 24 },
+                    { "name": "singUP-hold", "prefix": "Up", "frameRate": 24,
+                      "looped": true, "frameIndices": [3, 4, 5] }
+                ]
+            }"#,
+        )
+        .unwrap()
+    }
+
+    fn pose(animation: CharacterAnimation, frame_count: usize) -> AnimateCharacterPose {
+        AnimateCharacterPose {
+            animation,
+            asset_index: 0,
+            source: AnimatePoseSource::FrameLabel,
+            frame_count,
+        }
+    }
+
+    #[test]
+    fn finished_animate_pose_switches_to_matching_hold_animation() {
+        let character = character_with_hold();
+        let sprite = AnimateCharacterSprite {
+            poses: vec![
+                pose(character.animations[0].clone(), 2),
+                pose(character.animations[1].clone(), 3),
+            ],
+            character,
+            slot: StageCharacterSlot::default(),
+            is_player: false,
+            z: 0,
+            filter: FilterMode::Nearest,
+            assets: Vec::new(),
+            initial_pose: 0,
+        };
+        let request = CharacterPoseRequest {
+            name: "singUP",
+            started_at: Samples(100),
+        };
+
+        let (before, before_started) =
+            sprite.resolve_pose_for_request(request, Samples(4_099), 48_000);
+        assert_eq!(before.animation.name, "singUP");
+        assert_eq!(before_started, Samples(100));
+
+        let (after, after_started) =
+            sprite.resolve_pose_for_request(request, Samples(4_100), 48_000);
+        assert_eq!(after.animation.name, "singUP-hold");
+        assert_eq!(after_started, Samples(4_100));
+    }
+
+    #[test]
+    fn flat_label_indices_are_relative_to_the_label_prefix() {
+        let animation = AnimateAnimation::parse(
+            br#"{
+                "AN": {
+                    "N": "Test",
+                    "SN": "Root",
+                    "TL": {
+                        "L": [
+                            { "LN": "labels", "FR": [
+                                { "N": "Idle", "I": 0, "DU": 3, "E": [] },
+                                { "N": "Up", "I": 3, "DU": 3, "E": [] }
+                            ] },
+                            { "LN": "art", "FR": [
+                                { "I": 0, "DU": 6, "E": [] }
+                            ] }
+                        ]
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let atlas = AnimateAtlas::parse_spritemap(
+            br#"{
+                "ATLAS": {
+                    "SPRITES": [
+                        { "SPRITE": { "name": "idle0", "x": 0, "y": 0, "w": 10, "h": 10 } },
+                        { "SPRITE": { "name": "idle1", "x": 10, "y": 0, "w": 10, "h": 10 } },
+                        { "SPRITE": { "name": "idle2", "x": 20, "y": 0, "w": 10, "h": 10 } },
+                        { "SPRITE": { "name": "up0", "x": 30, "y": 0, "w": 10, "h": 10 } },
+                        { "SPRITE": { "name": "up1", "x": 40, "y": 0, "w": 10, "h": 10 } },
+                        { "SPRITE": { "name": "up2", "x": 50, "y": 0, "w": 10, "h": 10 } }
+                    ],
+                    "meta": { "size": { "w": 60, "h": 10 } }
+                }
+            }"#,
+        )
+        .unwrap();
+        let flat = FlatLabelAtlas::new(&animation, &atlas).unwrap();
+        let character = CharacterDefinition::parse(
+            br#"{
+                "id": "test",
+                "assetPath": "shared:characters/test",
+                "animations": [
+                    { "name": "singUP-hold", "prefix": "Up", "frameIndices": [1] }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let parts = flat.parts(&animation, &character.animations[0], 1).unwrap();
+        assert_eq!(parts[0].frame_name, "up1");
+    }
 }
