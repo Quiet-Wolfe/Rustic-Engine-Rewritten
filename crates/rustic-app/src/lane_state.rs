@@ -1,5 +1,6 @@
 //! App-owned lane hold state for gameplay input.
 
+use crate::active_holds::ActiveHolds;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
 use rustic_game::Lane;
@@ -20,6 +21,36 @@ pub enum ReceptorState {
     Static,
     Pressed { started_at: Samples },
     Confirm { started_at: Samples, hold: bool },
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct AutoReceptors {
+    holds: ActiveHolds,
+    lanes: HeldLanes,
+}
+
+impl AutoReceptors {
+    pub fn update(&mut self, cursor: Samples, confirm_duration: Samples) {
+        for lane in self.holds.complete_elapsed(cursor) {
+            self.lanes.play_static(lane);
+        }
+        let active_lanes: Vec<_> = self.holds.active_lanes(cursor).collect();
+        for lane in active_lanes {
+            self.lanes.hold_confirm(lane, cursor, confirm_duration);
+        }
+    }
+
+    pub fn confirm(&mut self, lane: Lane, cursor: Samples, confirm_duration: Samples) {
+        self.lanes.confirm(lane, cursor, confirm_duration);
+    }
+
+    pub fn start_hold(&mut self, lane: Lane, hold_end_at: Samples, cursor: Samples) {
+        self.holds.start(lane, hold_end_at, cursor);
+    }
+
+    pub fn receptor_state(&self, lane: Lane, cursor: Samples) -> ReceptorState {
+        self.lanes.receptor_state(lane, cursor)
+    }
 }
 
 impl HeldLanes {
@@ -285,6 +316,35 @@ mod tests {
             ReceptorState::Pressed {
                 started_at: Samples(25)
             }
+        );
+    }
+
+    #[test]
+    fn auto_receptors_confirm_then_hold_until_completion() {
+        let mut receptors = AutoReceptors::default();
+        receptors.confirm(Lane::Left, Samples(10), Samples(100));
+        assert_eq!(
+            receptors.receptor_state(Lane::Left, Samples(20)),
+            ReceptorState::Confirm {
+                started_at: Samples(10),
+                hold: false
+            }
+        );
+
+        receptors.start_hold(Lane::Left, Samples(500), Samples(10));
+        receptors.update(Samples(200), Samples(100));
+        assert_eq!(
+            receptors.receptor_state(Lane::Left, Samples(200)),
+            ReceptorState::Confirm {
+                started_at: Samples(200),
+                hold: true
+            }
+        );
+
+        receptors.update(Samples(500), Samples(100));
+        assert_eq!(
+            receptors.receptor_state(Lane::Left, Samples(500)),
+            ReceptorState::Static
         );
     }
 }

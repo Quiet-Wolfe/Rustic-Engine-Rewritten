@@ -178,16 +178,12 @@ impl NoteSkin {
         lane_state: F,
     ) -> Vec<DrawCommand>
     where
-        F: Fn(Lane) -> ReceptorState,
+        F: Fn(u8, Lane) -> ReceptorState,
     {
         let mut commands = Vec::with_capacity(8);
         for player in 0..=1 {
             for lane in LANES {
-                let state = if player == 1 {
-                    lane_state(lane)
-                } else {
-                    ReceptorState::Static
-                };
+                let state = lane_state(player, lane);
                 commands.push(self.receptor_command(player, lane, state, cursor, sample_rate));
             }
         }

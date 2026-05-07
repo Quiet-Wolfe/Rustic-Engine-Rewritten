@@ -18,7 +18,7 @@ use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
 use crate::hud_bop::health_icon_scale;
 use crate::input_bridge::{build_event, map_key};
-use crate::lane_state::{lane_for_action, HeldLanes};
+use crate::lane_state::{lane_for_action, AutoReceptors, HeldLanes};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
@@ -90,6 +90,7 @@ struct App {
     hold_covers: HoldCovers,
     active_holds: ActiveHolds,
     held_lanes: HeldLanes,
+    opponent_receptors: AutoReceptors,
     play_state: Option<PlayState>,
     song_start: Instant,
     song_start_cursor: Samples,
@@ -146,6 +147,7 @@ impl App {
             hold_covers: HoldCovers::default(),
             active_holds: ActiveHolds::default(),
             held_lanes: HeldLanes::default(),
+            opponent_receptors: AutoReceptors::default(),
             play_state: None,
             song_start: now,
             song_start_cursor: Samples(0),
@@ -363,6 +365,7 @@ impl App {
         let mut dead = false;
         let confirm_duration = confirm_duration_or_default(self.note_skin.as_ref(), sample_rate);
         let hold_ticks = self.active_holds.score_ticks(cursor);
+        self.opponent_receptors.update(cursor, confirm_duration);
         for lane in self.active_holds.complete_elapsed(cursor) {
             if self.held_lanes.is_held(lane) {
                 self.held_lanes.play_press(lane, cursor);
@@ -401,9 +404,13 @@ impl App {
         if let Some(bpm) = bpm {
             let had_opponent_hits = !opponent_hits.is_empty();
             for hit in opponent_hits {
+                self.opponent_receptors
+                    .confirm(hit.lane, cursor, confirm_duration);
                 self.character_anim
                     .opponent_note_hit(hit.lane, cursor, sample_rate, bpm);
                 if let Some(hold_end_at) = hit.hold_end_at {
+                    self.opponent_receptors
+                        .start_hold(hit.lane, hold_end_at, cursor);
                     self.hold_covers
                         .start_opponent(hit.lane, cursor, hold_end_at);
                 }
@@ -445,8 +452,9 @@ impl App {
                 }
             }
         }
-        for cmd in note_skin.receptor_commands(cursor, sample_rate, |lane| {
-            self.held_lanes.receptor_state(lane, cursor)
+        for cmd in note_skin.receptor_commands(cursor, sample_rate, |player, lane| match player {
+            1 => self.held_lanes.receptor_state(lane, cursor),
+            _ => self.opponent_receptors.receptor_state(lane, cursor),
         }) {
             self.cmds.push(cmd);
         }
@@ -667,6 +675,7 @@ impl App {
             .unwrap_or(Samples(i64::from(sample_rate)));
         self.character_anim.player_first_death(cursor);
         self.held_lanes = HeldLanes::default();
+        self.opponent_receptors = AutoReceptors::default();
         self.hold_covers = HoldCovers::default();
         self.active_holds = ActiveHolds::default();
         self.set_vocals_gain(0.0);
