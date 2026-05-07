@@ -1,9 +1,11 @@
 //! Adobe Animate `Animation.json` timeline labels and symbol inventory.
+// LINT-ALLOW: long-file animation timeline parser plus nested fixture coverage
 
 use crate::error::{AnimateError, AnimateResult};
+use glam::Vec2;
 use serde::Deserialize;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Animation {
     pub name: String,
@@ -20,10 +22,36 @@ pub struct AnimationLabel {
     pub duration: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Symbol {
     pub name: String,
+    pub layers: Vec<TimelineLayer>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct TimelineLayer {
+    pub name: String,
+    pub frames: Vec<TimelineFrame>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct TimelineFrame {
+    pub index: u32,
+    pub duration: u32,
+    pub elements: Vec<Element>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct Element {
+    pub symbol_name: String,
+    pub first_frame: u32,
+    pub matrix: [f32; 6],
+    pub transform_point: Vec2,
+    pub loop_mode: Option<String>,
 }
 
 impl Animation {
@@ -42,7 +70,10 @@ impl Animation {
                 if symbol.name.trim().is_empty() {
                     return Err(AnimateError::Atlas("symbol name is empty".into()));
                 }
-                Ok(Symbol { name: symbol.name })
+                Ok(Symbol {
+                    name: symbol.name,
+                    layers: timeline_layers(symbol.timeline.unwrap_or_default())?,
+                })
             })
             .collect::<AnimateResult<Vec<_>>>()?;
 
@@ -60,6 +91,10 @@ impl Animation {
 
     pub fn has_symbol(&self, name: &str) -> bool {
         self.symbols.iter().any(|symbol| symbol.name == name)
+    }
+
+    pub fn symbol(&self, name: &str) -> Option<&Symbol> {
+        self.symbols.iter().find(|symbol| symbol.name == name)
     }
 }
 
@@ -89,6 +124,56 @@ fn timeline_labels(timeline: RawTimeline) -> AnimateResult<Vec<AnimationLabel>> 
     Ok(labels)
 }
 
+fn timeline_layers(timeline: RawTimeline) -> AnimateResult<Vec<TimelineLayer>> {
+    timeline
+        .layers
+        .into_iter()
+        .map(|layer| {
+            let mut frames = layer
+                .frames
+                .into_iter()
+                .map(|frame| {
+                    if frame.duration == 0 {
+                        return Err(AnimateError::Atlas(format!(
+                            "timeline frame {} has zero duration",
+                            frame.index
+                        )));
+                    }
+                    Ok(TimelineFrame {
+                        index: frame.index,
+                        duration: frame.duration,
+                        elements: frame_elements(frame.elements)?,
+                    })
+                })
+                .collect::<AnimateResult<Vec<_>>>()?;
+            frames.sort_by_key(|frame| frame.index);
+            Ok(TimelineLayer {
+                name: layer.name.unwrap_or_default(),
+                frames,
+            })
+        })
+        .collect()
+}
+
+fn frame_elements(elements: Vec<RawElement>) -> AnimateResult<Vec<Element>> {
+    elements
+        .into_iter()
+        .filter_map(|element| element.symbol_instance)
+        .map(|instance| {
+            if instance.symbol_name.trim().is_empty() {
+                return Err(AnimateError::Atlas("element symbol name is empty".into()));
+            }
+            Ok(Element {
+                symbol_name: instance.symbol_name,
+                first_frame: instance.first_frame,
+                matrix: instance.matrix,
+                transform_point: Vec2::new(instance.transform_point.x, instance.transform_point.y),
+                loop_mode: instance.loop_mode,
+            })
+        })
+        .collect()
+}
+
 #[derive(Debug, Deserialize)]
 struct RawAnimationFile {
     #[serde(rename = "AN")]
@@ -107,7 +192,7 @@ struct RawAnimation {
     symbol_dictionary: Option<RawSymbolDictionary>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct RawTimeline {
     #[serde(rename = "L", default)]
     layers: Vec<RawLayer>,
@@ -115,6 +200,8 @@ struct RawTimeline {
 
 #[derive(Debug, Deserialize)]
 struct RawLayer {
+    #[serde(rename = "LN")]
+    name: Option<String>,
     #[serde(rename = "FR", default)]
     frames: Vec<RawFrame>,
 }
@@ -127,6 +214,8 @@ struct RawFrame {
     index: u32,
     #[serde(rename = "DU")]
     duration: u32,
+    #[serde(rename = "E", default)]
+    elements: Vec<RawElement>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -139,6 +228,40 @@ struct RawSymbolDictionary {
 struct RawSymbol {
     #[serde(rename = "SN")]
     name: String,
+    #[serde(rename = "TL")]
+    timeline: Option<RawTimeline>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawElement {
+    #[serde(rename = "SI")]
+    symbol_instance: Option<RawSymbolInstance>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawSymbolInstance {
+    #[serde(rename = "SN")]
+    symbol_name: String,
+    #[serde(rename = "FF", default)]
+    first_frame: u32,
+    #[serde(rename = "MX", default = "identity_matrix")]
+    matrix: [f32; 6],
+    #[serde(rename = "TRP", default)]
+    transform_point: RawPoint,
+    #[serde(rename = "LP")]
+    loop_mode: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawPoint {
+    #[serde(default)]
+    x: f32,
+    #[serde(default)]
+    y: f32,
+}
+
+fn identity_matrix() -> [f32; 6] {
+    [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
 }
 
 #[cfg(test)]
@@ -164,7 +287,33 @@ mod tests {
         },
         "SD": {
           "S": [
-            { "SN": "BF idle dance", "TL": { "L": [] } },
+            {
+              "SN": "BF idle dance",
+              "TL": {
+                "L": [
+                  {
+                    "LN": "Layer 1",
+                    "FR": [
+                      {
+                        "I": 0,
+                        "DU": 2,
+                        "E": [
+                          {
+                            "SI": {
+                              "SN": "BF Head default",
+                              "FF": 4,
+                              "TRP": { "x": 532.6, "y": -82 },
+                              "LP": "LP",
+                              "MX": [0.994, -0.105, 0.105, 0.994, 354.55, -165.35]
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
             { "SN": "BF NOTE LEFT", "TL": { "L": [] } }
           ]
         }
@@ -195,6 +344,20 @@ mod tests {
         assert_eq!(animation.label("Left").unwrap().duration, 8);
         assert!(animation.has_symbol("BF NOTE LEFT"));
         assert!(!animation.has_symbol("Missing"));
+
+        let symbol = animation.symbol("BF idle dance").unwrap();
+        assert_eq!(symbol.layers.len(), 1);
+        assert_eq!(symbol.layers[0].name, "Layer 1");
+        assert_eq!(symbol.layers[0].frames.len(), 1);
+        let element = &symbol.layers[0].frames[0].elements[0];
+        assert_eq!(element.symbol_name, "BF Head default");
+        assert_eq!(element.first_frame, 4);
+        assert_eq!(element.transform_point, Vec2::new(532.6, -82.0));
+        assert_eq!(
+            element.matrix,
+            [0.994, -0.105, 0.105, 0.994, 354.55, -165.35]
+        );
+        assert_eq!(element.loop_mode.as_deref(), Some("LP"));
     }
 
     #[test]
@@ -213,6 +376,30 @@ mod tests {
           "AN": {
             "TL": { "L": [] },
             "SD": { "S": [{ "SN": "" }] }
+          }
+        }"#;
+        assert!(matches!(Animation::parse(bad), Err(AnimateError::Atlas(_))));
+    }
+
+    #[test]
+    fn rejects_empty_element_symbol_names() {
+        let bad = br#"{
+          "AN": {
+            "TL": { "L": [] },
+            "SD": {
+              "S": [{
+                "SN": "container",
+                "TL": {
+                  "L": [{
+                    "FR": [{
+                      "I": 0,
+                      "DU": 1,
+                      "E": [{ "SI": { "SN": "" } }]
+                    }]
+                  }]
+                }
+              }]
+            }
           }
         }"#;
         assert!(matches!(Animation::parse(bad), Err(AnimateError::Atlas(_))));
