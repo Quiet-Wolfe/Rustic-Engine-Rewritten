@@ -83,7 +83,10 @@ pub struct DrawPart {
 
 impl Animation {
     pub fn parse(bytes: &[u8]) -> AnimateResult<Self> {
-        let raw: RawAnimationFile = serde_json::from_slice(bytes)?;
+        let raw: RawAnimationFile = match serde_json::from_slice(bytes) {
+            Ok(raw) => raw,
+            Err(err) => return crate::animation_alt::parse(bytes).map_err(|_| err.into()),
+        };
         let name = raw.animation.name.unwrap_or_default();
         let symbol_name = raw.animation.symbol_name.unwrap_or_default();
         let labels = timeline_labels(&raw.animation.timeline)?;
@@ -322,6 +325,7 @@ fn symbol_frame_index(instance: &SymbolInstance, symbol_duration: u32, frame_off
     let frame_index = instance.first_frame.saturating_add(frame_offset);
     match instance.loop_mode.as_deref() {
         Some("LP") => frame_index % symbol_duration,
+        Some("SF") => instance.first_frame.min(symbol_duration - 1),
         _ => frame_index.min(symbol_duration - 1),
     }
 }
@@ -622,7 +626,6 @@ mod tests {
     #[test]
     fn parses_animation_labels_and_symbols() {
         let animation = Animation::parse(ANIMATION).unwrap();
-
         assert_eq!(animation.name, "BoyFriend Assets_TA-Export");
         assert_eq!(animation.symbol_name, "BF ALL ANIMS");
         assert_eq!(animation.layers.len(), 1);

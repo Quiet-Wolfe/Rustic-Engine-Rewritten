@@ -38,7 +38,7 @@ impl AnimateCharacterSprite {
         let pose = self.pose(request.name);
         let asset = &self.assets[pose.asset_index];
         let parts = pose
-            .parts(&asset.animation, cursor, sample_rate, request.started_at)
+            .parts(asset, cursor, sample_rate, request.started_at)
             .unwrap_or_default();
         parts
             .iter()
@@ -182,6 +182,7 @@ fn load_animate_atlas(
 
     Ok(LoadedAnimateAtlas {
         texture_id,
+        flat_labels: FlatLabelAtlas::new(&animation, &atlas),
         animation,
         atlas,
     })
@@ -190,8 +191,89 @@ fn load_animate_atlas(
 #[derive(Debug, Clone)]
 struct LoadedAnimateAtlas {
     texture_id: AssetId,
+    flat_labels: Option<FlatLabelAtlas>,
     animation: AnimateAnimation,
     atlas: AnimateAtlas,
+}
+
+#[derive(Debug, Clone)]
+struct FlatLabelAtlas {
+    all_frames: Vec<String>,
+    labels: HashMap<String, Vec<String>>,
+}
+
+impl FlatLabelAtlas {
+    fn new(animation: &AnimateAnimation, atlas: &AnimateAtlas) -> Option<Self> {
+        if !animation.symbols.is_empty() || animation.labels.is_empty() {
+            return None;
+        }
+        let all_frames = atlas
+            .sprites
+            .iter()
+            .flat_map(|sprite| sprite.frames.iter())
+            .map(|frame| frame.name.clone())
+            .collect::<Vec<_>>();
+        if all_frames.is_empty() {
+            return None;
+        }
+
+        let mut labels = HashMap::new();
+        let mut cursor = 0usize;
+        let mut remaining_duration = animation
+            .labels
+            .iter()
+            .map(|label| label.duration.max(1) as usize)
+            .sum::<usize>();
+        for (index, label) in animation.labels.iter().enumerate() {
+            let remaining_labels = animation.labels.len() - index;
+            let remaining_frames = all_frames.len().saturating_sub(cursor);
+            if remaining_frames == 0 {
+                break;
+            }
+            let count = if remaining_labels == 1 {
+                remaining_frames
+            } else {
+                let weighted = ((label.duration.max(1) as f64 / remaining_duration as f64)
+                    * remaining_frames as f64)
+                    .round() as usize;
+                let max_count = remaining_frames
+                    .saturating_sub(remaining_labels.saturating_sub(1))
+                    .max(1);
+                weighted.clamp(1, max_count)
+            };
+            labels.insert(
+                label.name.clone(),
+                all_frames[cursor..cursor + count].to_vec(),
+            );
+            cursor += count;
+            remaining_duration = remaining_duration.saturating_sub(label.duration.max(1) as usize);
+        }
+        Some(Self { all_frames, labels })
+    }
+
+    fn parts(
+        &self,
+        animation: &AnimateAnimation,
+        pose: &CharacterAnimation,
+        frame_offset: u32,
+    ) -> Result<Vec<AnimateDrawPart>> {
+        let frame_name = if !pose.indices.is_empty() {
+            self.all_frames
+                .get(frame_offset as usize)
+                .or_else(|| self.all_frames.last())
+        } else {
+            let frames = self
+                .labels
+                .get(&pose.prefix)
+                .with_context(|| format!("resolve flat animate label {}", pose.prefix))?;
+            frames.get(frame_offset as usize).or_else(|| frames.last())
+        }
+        .with_context(|| format!("resolve flat animate frame {}", pose.name))?;
+        Ok(vec![AnimateDrawPart::atlas_frame(
+            frame_name.clone(),
+            flat_label_matrix(animation, &pose.prefix, frame_offset)?,
+        )])
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -205,7 +287,7 @@ struct AnimateCharacterPose {
 impl AnimateCharacterPose {
     fn parts(
         &self,
-        animation: &AnimateAnimation,
+        asset: &LoadedAnimateAtlas,
         cursor: Samples,
         sample_rate: u32,
         started_at: Samples,
@@ -221,11 +303,17 @@ impl AnimateCharacterPose {
         let frame_offset = animation_frame_offset(&self.animation, sequence_index);
         match self.source {
             AnimatePoseSource::FrameLabel => {
-                Ok(animation.flatten_label_frame(&self.animation.prefix, frame_offset)?)
+                if let Some(flat_labels) = &asset.flat_labels {
+                    flat_labels.parts(&asset.animation, &self.animation, frame_offset)
+                } else {
+                    Ok(asset
+                        .animation
+                        .flatten_label_frame(&self.animation.prefix, frame_offset)?)
+                }
             }
-            AnimatePoseSource::Symbol => {
-                Ok(animation.flatten_symbol_frame(&self.animation.prefix, frame_offset)?)
-            }
+            AnimatePoseSource::Symbol => Ok(asset
+                .animation
+                .flatten_symbol_frame(&self.animation.prefix, frame_offset)?),
         }
     }
 }
@@ -258,12 +346,7 @@ fn animate_character_poses(
                 frame_count,
             };
             if pose
-                .parts(
-                    &assets[asset_index].animation,
-                    Samples(0),
-                    SAMPLE_RATE,
-                    Samples(0),
-                )?
+                .parts(&assets[asset_index], Samples(0), SAMPLE_RATE, Samples(0))?
                 .is_empty()
             {
                 anyhow::bail!("resolve animate frame {}:{}", character.id, animation.name);
@@ -282,11 +365,21 @@ fn animate_pose_frame_count(
         return Ok(animation.indices.len());
     }
     let count = match source {
-        AnimatePoseSource::FrameLabel => asset
-            .animation
-            .label(&animation.prefix)
-            .map(|label| label.duration as usize)
-            .with_context(|| format!("resolve frame label {}", animation.prefix))?,
+        AnimatePoseSource::FrameLabel => {
+            if let Some(flat_labels) = &asset.flat_labels {
+                flat_labels
+                    .labels
+                    .get(&animation.prefix)
+                    .map(Vec::len)
+                    .with_context(|| format!("resolve frame label {}", animation.prefix))?
+            } else {
+                asset
+                    .animation
+                    .label(&animation.prefix)
+                    .map(|label| label.duration as usize)
+                    .with_context(|| format!("resolve frame label {}", animation.prefix))?
+            }
+        }
         AnimatePoseSource::Symbol => asset
             .animation
             .symbol(&animation.prefix)
@@ -297,6 +390,30 @@ fn animate_pose_frame_count(
         anyhow::bail!("animation {} has no frames", animation.name);
     }
     Ok(count)
+}
+
+fn flat_label_matrix(
+    animation: &AnimateAnimation,
+    label_name: &str,
+    frame_offset: u32,
+) -> Result<[f32; 6]> {
+    let label = animation
+        .label(label_name)
+        .with_context(|| format!("resolve frame label {label_name}"))?;
+    let frame_index = label
+        .index
+        .saturating_add(frame_offset.min(label.duration.saturating_sub(1)));
+    for layer in animation.layers.iter().rev() {
+        let Some(frame) = layer.frames.iter().find(|frame| {
+            frame_index >= frame.index && frame_index < frame.index.saturating_add(frame.duration)
+        }) else {
+            continue;
+        };
+        if let Some(element) = frame.elements.first() {
+            return Ok(element.matrix);
+        }
+    }
+    Ok([1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
 }
 
 fn animate_pose_source(animation: &CharacterAnimation) -> AnimatePoseSource {

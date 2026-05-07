@@ -1,148 +1,88 @@
 {
-  "id": "bf",
-  "atlas": "images/BOYFRIEND.xml",
-  "initialAnimation": "idle",
+  "version": "1.0.0",
+  "name": "Boyfriend",
+  "renderType": "multianimateatlas",
+  "assetPath": "shared:characters/bf",
   "flipX": true,
+  "offsets": [17, 14],
+  "cameraOffsets": [-18, 36],
+  "death": {
+    "cameraOffsets": [-73, 42]
+  },
   "animations": [
     {
       "name": "idle",
-      "prefix": "BF idle dance",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": -5.0,
-        "y": 0.0
-      }
-    },
-    {
-      "name": "singUP",
-      "prefix": "BF NOTE UP0",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": -29.0,
-        "y": 27.0
-      }
+      "prefix": "Idle"
     },
     {
       "name": "singLEFT",
-      "prefix": "BF NOTE LEFT0",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 12.0,
-        "y": -6.0
-      }
-    },
-    {
-      "name": "singRIGHT",
-      "prefix": "BF NOTE RIGHT0",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": -38.0,
-        "y": -7.0
-      }
+      "prefix": "Left"
     },
     {
       "name": "singDOWN",
-      "prefix": "BF NOTE DOWN0",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": -10.0,
-        "y": -50.0
-      }
+      "prefix": "Down"
     },
     {
-      "name": "singUPmiss",
-      "prefix": "BF NOTE UP MISS",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": -29.0,
-        "y": 27.0
-      }
+      "name": "singUP",
+      "prefix": "Up"
+    },
+    {
+      "name": "singRIGHT",
+      "prefix": "Right"
     },
     {
       "name": "singLEFTmiss",
-      "prefix": "BF NOTE LEFT MISS",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 12.0,
-        "y": 24.0
-      }
-    },
-    {
-      "name": "singRIGHTmiss",
-      "prefix": "BF NOTE RIGHT MISS",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": -30.0,
-        "y": 21.0
-      }
+      "prefix": "Left Miss"
     },
     {
       "name": "singDOWNmiss",
-      "prefix": "BF NOTE DOWN MISS",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": -11.0,
-        "y": -19.0
-      }
+      "prefix": "Down Miss"
+    },
+    {
+      "name": "singUPmiss",
+      "prefix": "Up Miss"
+    },
+    {
+      "name": "singRIGHTmiss",
+      "prefix": "Right Miss"
     },
     {
       "name": "hey",
-      "prefix": "BF HEY",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 7.0,
-        "y": 4.0
-      }
+      "prefix": "Hey"
     },
     {
+      "name": "cheer",
+      "prefix": "Cheer"
+    },
+    {
+      "assetPath": "shared:characters/bf-death",
       "name": "firstDeath",
-      "prefix": "BF dies",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 37.0,
-        "y": 11.0
-      }
+      "prefix": "Death Intro",
+      "offsets": [22, 15]
     },
     {
+      "assetPath": "shared:characters/bf-death",
       "name": "deathLoop",
-      "prefix": "BF Dead Loop",
-      "fps": 24,
+      "prefix": "Death Loop",
       "looped": true,
-      "offset": {
-        "x": 37.0,
-        "y": 5.0
-      }
+      "offsets": [22, 15]
     },
     {
+      "assetPath": "shared:characters/bf-death",
       "name": "deathConfirm",
-      "prefix": "BF Dead confirm",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 37.0,
-        "y": 69.0
-      }
+      "prefix": "Death Confirm",
+      "offsets": [22, 15]
+    },
+    {
+      "assetPath": "shared:characters/bfFakeOut",
+      "name": "fakeoutDeath",
+      "prefix": "fake out death BF",
+      "animType": "symbol",
+      "offsets": [-3, -65]
     },
     {
       "name": "scared",
-      "prefix": "BF idle shaking",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": -4.0,
-        "y": 0.0
-      }
+      "prefix": "Scared"
     }
   ]
 }

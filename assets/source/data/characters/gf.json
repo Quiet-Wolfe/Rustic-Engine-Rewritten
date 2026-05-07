@@ -1,183 +1,67 @@
 {
-  "id": "gf",
-  "atlas": "images/GF_assets.xml",
-  "initialAnimation": "danceRight",
+  "version": "1.0.0",
+  "name": "Girlfriend",
+  "renderType": "animateatlas",
+  "assetPath": "shared:characters/gf",
+  "startingAnimation": "danceRight",
+  "offsets": [-12, 4],
+  "cameraOffsets": [12, 8],
   "animations": [
     {
-      "name": "cheer",
-      "prefix": "GF Cheer",
-      "fps": 24,
-      "looped": false
-    },
-    {
-      "name": "singLEFT",
-      "prefix": "GF left note",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 0.0,
-        "y": -19.0
-      }
-    },
-    {
-      "name": "singRIGHT",
-      "prefix": "GF Right Note",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 0.0,
-        "y": -20.0
-      }
-    },
-    {
-      "name": "singUP",
-      "prefix": "GF Up Note",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 0.0,
-        "y": 4.0
-      }
-    },
-    {
-      "name": "singDOWN",
-      "prefix": "GF Down Note",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 0.0,
-        "y": -20.0
-      }
-    },
-    {
-      "name": "sad",
-      "prefix": "gf sad",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": -2.0,
-        "y": -2.0
-      },
-      "indices": [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12
-      ]
-    },
-    {
       "name": "danceLeft",
-      "prefix": "GF Dancing Beat",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 0.0,
-        "y": -9.0
-      },
-      "indices": [
-        30,
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14
-      ]
+      "prefix": "Idle",
+      "frameIndices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     },
     {
       "name": "danceRight",
-      "prefix": "GF Dancing Beat",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 0.0,
-        "y": -9.0
-      },
-      "indices": [
-        15,
-        16,
-        17,
-        18,
-        19,
-        20,
-        21,
-        22,
-        23,
-        24,
-        25,
-        26,
-        27,
-        28,
-        29
+      "prefix": "Idle",
+      "frameIndices": [
+        15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
       ]
+    },
+    {
+      "name": "singLEFT",
+      "prefix": "Left"
+    },
+    {
+      "name": "singDOWN",
+      "prefix": "Down"
+    },
+    {
+      "name": "singUP",
+      "prefix": "Up"
+    },
+    {
+      "name": "singRIGHT",
+      "prefix": "Right"
+    },
+    {
+      "name": "cheer",
+      "prefix": "Cheer"
+    },
+    {
+      "name": "combo50",
+      "prefix": "Cheer"
+    },
+    {
+      "name": "drop70",
+      "prefix": "Crying",
+      "frameIndices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     },
     {
       "name": "hairBlow",
-      "prefix": "GF Dancing Beat Hair blowing",
-      "fps": 24,
-      "looped": true,
-      "offset": {
-        "x": 45.0,
-        "y": -8.0
-      },
-      "indices": [
-        0,
-        1,
-        2,
-        3
-      ]
+      "prefix": "Idle (Hair blowing)",
+      "frameIndices": [0, 1, 2, 3]
     },
     {
       "name": "hairFall",
-      "prefix": "GF Dancing Beat Hair Landing",
-      "fps": 24,
-      "looped": false,
-      "offset": {
-        "x": 0.0,
-        "y": -9.0
-      },
-      "indices": [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11
-      ]
+      "prefix": "Hair landing",
+      "frameIndices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     },
     {
       "name": "scared",
-      "prefix": "GF FEAR",
-      "fps": 24,
-      "looped": true,
-      "offset": {
-        "x": -2.0,
-        "y": -17.0
-      }
+      "prefix": "Fear",
+      "frameIndices": [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]
     }
   ]
 }

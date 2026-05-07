@@ -13,6 +13,7 @@
 #![deny(unsafe_code)]
 
 pub mod animation;
+mod animation_alt;
 pub mod atlas;
 pub mod error;
 

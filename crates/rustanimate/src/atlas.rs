@@ -28,9 +28,15 @@ pub struct Atlas {
 
 impl Atlas {
     pub fn parse_spritemap(bytes: &[u8]) -> AnimateResult<Self> {
+        let bytes = bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes);
         let raw: RawSpritemap = serde_json::from_slice(bytes)?;
-        let width = raw.atlas.meta.size.w;
-        let height = raw.atlas.meta.size.h;
+        let meta = raw
+            .atlas
+            .meta
+            .or(raw.meta)
+            .ok_or_else(|| AnimateError::Atlas("spritemap metadata is missing".into()))?;
+        let width = meta.size.w;
+        let height = meta.size.h;
         if width <= 0.0 || height <= 0.0 {
             return Err(AnimateError::Atlas("spritemap texture size is zero".into()));
         }
@@ -76,13 +82,14 @@ impl Atlas {
 struct RawSpritemap {
     #[serde(rename = "ATLAS")]
     atlas: RawAtlas,
+    meta: Option<RawMeta>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawAtlas {
     #[serde(rename = "SPRITES")]
     sprites: Vec<RawSpriteEntry>,
-    meta: RawMeta,
+    meta: Option<RawMeta>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +138,8 @@ mod tests {
       }
     }"#;
 
+    const TOP_LEVEL_META_SPRITEMAP: &[u8] = b"\xef\xbb\xbf{\"ATLAS\":{\"SPRITES\":[{\"SPRITE\":{\"name\":\"0\",\"x\":0,\"y\":0,\"w\":10,\"h\":20}}]},\"meta\":{\"size\":{\"w\":100,\"h\":200}}}";
+
     #[test]
     fn parses_spritemap_frames_and_uvs() {
         let atlas = Atlas::parse_spritemap(SPRITEMAP).unwrap();
@@ -147,6 +156,12 @@ mod tests {
         assert_eq!(rotated.uv_min, Vec2::new(0.4, 0.3));
         assert_eq!(rotated.uv_max, Vec2::new(0.6, 0.35));
         assert!(rotated.rotated);
+    }
+
+    #[test]
+    fn parses_top_level_meta_with_bom() {
+        let atlas = Atlas::parse_spritemap(TOP_LEVEL_META_SPRITEMAP).unwrap();
+        assert_eq!(atlas.frame("0").unwrap().size, Vec2::new(10.0, 20.0));
     }
 
     #[test]

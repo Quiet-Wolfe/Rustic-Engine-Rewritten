@@ -364,20 +364,36 @@ mod tests {
         let resolver = source_resolver();
 
         let bf = load_character(&resolver, &ap("data/characters/bf.json")).unwrap();
-        assert_eq!(bf.id, "bf");
-        assert_eq!(bf.animations.len(), 14);
+        assert_eq!(bf.id, "Boyfriend");
+        assert_eq!(
+            bf.render_type,
+            crate::parsers::character::CharacterRenderType::MultiAnimateAtlas
+        );
+        assert_eq!(
+            bf.asset_path.as_ref().unwrap().as_str(),
+            "shared:characters/bf"
+        );
+        assert_eq!(bf.animations.len(), 16);
+        assert_eq!(
+            bf.animations[11].asset_path.as_ref().unwrap().as_str(),
+            "shared:characters/bf-death"
+        );
 
         let dad = load_character(&resolver, &ap("data/characters/dad.json")).unwrap();
-        assert_eq!(dad.id, "dad");
-        assert_eq!(dad.animations.len(), 5);
-        assert_eq!(dad.animations[1].offset.x, -6.0);
-        assert_eq!(dad.animations[1].offset.y, 50.0);
+        assert_eq!(dad.id, "Daddy Dearest");
+        assert_eq!(
+            dad.render_type,
+            crate::parsers::character::CharacterRenderType::AnimateAtlas
+        );
+        assert_eq!(dad.animations.len(), 9);
+        assert_eq!(dad.animations[1].indices, vec![11, 12, 0, 1]);
 
         let gf = load_character(&resolver, &ap("data/characters/gf.json")).unwrap();
-        assert_eq!(gf.id, "gf");
-        assert_eq!(gf.animations.len(), 11);
-        assert_eq!(gf.animations[6].indices.len(), 16);
-        assert_eq!(gf.animations[10].offset.y, -17.0);
+        assert_eq!(gf.id, "Girlfriend");
+        assert_eq!(gf.initial_animation.as_deref(), Some("danceRight"));
+        assert_eq!(gf.animations.len(), 12);
+        assert_eq!(gf.animations[1].indices.len(), 15);
+        assert_eq!(gf.animations[11].indices.len(), 12);
 
         let stage = load_stage(&resolver, &ap("data/stages/stage.json")).unwrap();
         assert_eq!(stage.id, "stage");
@@ -506,5 +522,43 @@ mod tests {
         assert_eq!(font.pages[0].file, "vcr-bmp.png");
         let font_image = load_png(&resolver, &ap("fonts/vcr-bmp.png")).unwrap();
         assert_eq!((font_image.width, font_image.height), (122, 122));
+    }
+
+    #[test]
+    fn tracked_source_week1_animate_assets_parse() {
+        let resolver = source_resolver();
+
+        for (dir, symbol_name, frames, size) in [
+            ("bf", "BF ALL ANIMS", 46, (1998, 1503)),
+            ("dad", "DAD ALL ANIMS", 15, (991, 981)),
+            ("gf", "GF ALL ANIMS", 45, (2064, 1065)),
+            ("bf-death", "BF DEATH ALL ANIMS", 94, (2046, 1098)),
+            ("bfFakeOut", "fake out death BF", 69, (2048, 1166)),
+        ] {
+            let animation = load_animate_animation(
+                &resolver,
+                &ap(&format!("images/characters/{dir}/Animation.json")),
+            )
+            .unwrap();
+            assert_eq!(animation.symbol_name, symbol_name);
+            assert!(
+                !animation.labels.is_empty() || !animation.symbols.is_empty(),
+                "{dir}"
+            );
+
+            let atlas = load_animate_spritemap(
+                &resolver,
+                &ap(&format!("images/characters/{dir}/spritemap1.json")),
+            )
+            .unwrap();
+            assert_eq!(atlas.sprites[0].frames.len(), frames, "{dir}");
+
+            let image = load_png(
+                &resolver,
+                &ap(&format!("images/characters/{dir}/spritemap1.png")),
+            )
+            .unwrap();
+            assert_eq!((image.width, image.height), size, "{dir}");
+        }
     }
 }
