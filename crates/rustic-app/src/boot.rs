@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
 /// Install the global tracing subscriber. Reads `RUST_LOG` if set,
-/// otherwise defaults to `info` for our crates.
+/// otherwise keeps external crates at warnings and Rustic targets verbose.
 pub fn init_logging() {
     #[cfg(target_os = "android")]
     {
@@ -16,8 +16,8 @@ pub fn init_logging() {
         );
     }
 
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,rustic=debug"));
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("warn,rustic=debug,rustic_app=info"));
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(true)
