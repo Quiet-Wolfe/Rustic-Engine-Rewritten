@@ -11,6 +11,7 @@ use crate::hud_assets::{load_hud_assets, HudSkin};
 use crate::note_assets::{load_note_skin, NoteSkin};
 use crate::note_splash_assets::{load_note_splash_assets, NoteSplashSkin};
 use crate::popup_assets::{load_popup_assets, PopupSkin};
+use crate::preview_song::PreviewSong;
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_character, load_png, load_sparrow, load_stage, load_vslice_chart, AssetPath,
@@ -266,11 +267,16 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
 
 pub fn load_preview_play_state(sample_rate: u32) -> Result<PlayState> {
     let resolver = OverlayResolver::new().with_baked_root("assets/baked");
-    let chart_path = AssetPath::new("data/songs/bopeebo/bopeebo-chart.json")?;
-    let metadata_path = AssetPath::new("data/songs/bopeebo/bopeebo-metadata.json")?;
+    let song = PreviewSong::from_env();
+    let chart_path = AssetPath::new(song.chart_path())?;
+    let metadata_path = AssetPath::new(song.metadata_path())?;
     let chart = load_vslice_chart(&resolver, &chart_path, &metadata_path, "normal")
         .with_context(|| format!("load {} + {}", chart_path, metadata_path))?;
-    Ok(PlayState::from_chart(SongId::new(0), &chart, sample_rate))
+    Ok(PlayState::from_chart(
+        SongId::new(song.id),
+        &chart,
+        sample_rate,
+    ))
 }
 
 fn load_stage_object(

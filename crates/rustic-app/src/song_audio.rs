@@ -1,14 +1,16 @@
 //! App-owned loading of vanilla song stems into the shared mixer.
 
+use crate::preview_song::PreviewSong;
 use anyhow::{Context, Result};
 use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem};
 use rustic_core::time::Samples;
 
-pub fn load_bopeebo_stems(mixer: &SharedMixer, start_cursor: Samples) -> Result<()> {
+pub fn load_preview_stems(mixer: &SharedMixer, start_cursor: Samples) -> Result<()> {
     let resolver = OverlayResolver::new().with_baked_root("assets/baked");
-    let inst = load_stem(&resolver, "music/Bopeebo_Inst.ogg")?;
-    let vocals = load_stem(&resolver, "music/Bopeebo_Voices.ogg")?;
+    let song = PreviewSong::from_env();
+    let inst = load_stem(&resolver, &song.inst_path())?;
+    let vocals = load_stem(&resolver, &song.voices_path())?;
 
     mixer
         .edit(|mixer| {
@@ -18,7 +20,7 @@ pub fn load_bopeebo_stems(mixer: &SharedMixer, start_cursor: Samples) -> Result<
             mixer.seek(start_cursor)?;
             Ok(())
         })
-        .context("configure Bopeebo stems")?;
+        .with_context(|| format!("configure {} stems", song.folder))?;
     Ok(())
 }
 

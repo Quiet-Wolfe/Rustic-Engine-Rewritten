@@ -24,7 +24,7 @@ use crate::scene_assets::{
     load_default_scene, load_preview_play_state, CameraFocusPoints, CharacterSet,
 };
 use crate::screen::ScreenStack;
-use crate::song_audio::load_bopeebo_stems;
+use crate::song_audio::load_preview_stems;
 use anyhow::Result;
 use rustic_asset::ChartEventKind;
 use rustic_audio::{AudioOutput, SharedMixer, Stem};
@@ -215,7 +215,7 @@ impl App {
                         self.song_started = false;
                         self.game_over = None;
                         if self.audio_output.is_some() {
-                            if let Err(e) = load_bopeebo_stems(&self.mixer, Samples(0)) {
+                            if let Err(e) = load_preview_stems(&self.mixer, Samples(0)) {
                                 tracing::warn!(target: "rustic.audio", "preview stems unavailable: {e:#}");
                             } else if let Err(e) = self.mixer.edit(|mixer| {
                                 mixer.pause();
