@@ -16,7 +16,7 @@ use rustic_render::{DrawCommand, FilterMode, Texture};
 use std::collections::HashMap;
 
 const PLAYER_STRUMLINE_X: f32 = 1280.0 / 2.0 + 48.0;
-const PROTOTYPE_STRUMLINE_Y: f32 = 50.0;
+const STRUMLINE_Y_OFFSET: f32 = 24.0;
 const STRUMLINE_SIZE: f32 = 104.0;
 const NOTE_SPACING: f32 = STRUMLINE_SIZE + 8.0;
 const INITIAL_OFFSET: f32 = -0.275 * STRUMLINE_SIZE;
@@ -191,7 +191,7 @@ fn splash_frame_index(
 fn splash_world_pos(lane: Lane, frame: &SparrowFrame) -> glam::Vec2 {
     let base = glam::vec2(
         PLAYER_STRUMLINE_X + lane_index(lane) as f32 * NOTE_SPACING + INITIAL_OFFSET,
-        PROTOTYPE_STRUMLINE_Y - INITIAL_OFFSET,
+        STRUMLINE_Y_OFFSET - INITIAL_OFFSET,
     ) + SPLASH_OFFSET * SPLASH_SCALE;
     let offset =
         glam::vec2(frame.frame_width as f32, frame.frame_height as f32) * SPLASH_SCALE * 0.3;
@@ -289,7 +289,7 @@ mod tests {
     fn splash_position_uses_strumline_offsets_trim_and_note_splash_offset() {
         let pos = splash_world_pos(Lane::Left, &frame());
         assert!((pos.x - 638.4).abs() < 1e-3);
-        assert!((pos.y - -3.800003).abs() < 1e-3);
+        assert!((pos.y - -29.800003).abs() < 1e-3);
     }
 
     #[test]

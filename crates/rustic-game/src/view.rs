@@ -1,10 +1,8 @@
 //! Headless gameplay view models for notes.
 //!
-//! ref: 50fccded:source/Note.hx:27,104-118       // swagWidth and lane x
-//! ref: 50fccded:source/PlayState.hx:629         // strumLine y = 50
-//! ref: 50fccded:source/PlayState.hx:1487-1494   // spawn notes within 1500ms
-//! ref: 50fccded:source/PlayState.hx:1512        // note y scroll formula
-//! ref: 50fccded:source/PlayState.hx:1175-1176   // x += 50 + half screen for player
+//! ref: bdedc0aa:source/funkin/play/notes/Strumline.hx:35-45,1172-1174
+//! ref: bdedc0aa:source/funkin/play/PlayState.hx:2233-2252
+//! ref: bdedc0aa:source/funkin/util/Constants.hx:347,632-637
 
 use crate::note::Lane;
 use crate::state::PlayState;
@@ -13,9 +11,9 @@ use rustic_core::time::Samples;
 
 pub const FNF_WIDTH: f32 = 1280.0;
 pub const FNF_HEIGHT: f32 = 720.0;
-pub const STRUM_LINE_Y: f32 = 50.0;
-pub const NOTE_SWAG_WIDTH: f32 = 160.0 * 0.7;
-pub const NOTE_BASE_X: f32 = 50.0;
+pub const STRUM_LINE_Y: f32 = 24.0;
+pub const NOTE_SWAG_WIDTH: f32 = 104.0 + 8.0;
+pub const NOTE_BASE_X: f32 = 48.0;
 pub const NOTE_SPAWN_LEAD_MS: f32 = 1500.0;
 pub const NOTE_SCROLL_FACTOR: f32 = 0.45;
 
@@ -99,11 +97,11 @@ mod tests {
 
     #[test]
     fn note_x_matches_og_lane_offsets() {
-        assert_eq!(note_x(Lane::Left, false), 50.0);
-        assert_eq!(note_x(Lane::Down, false), 162.0);
-        assert_eq!(note_x(Lane::Up, false), 274.0);
-        assert_eq!(note_x(Lane::Right, false), 386.0);
-        assert_eq!(note_x(Lane::Left, true), 690.0);
+        assert_eq!(note_x(Lane::Left, false), 48.0);
+        assert_eq!(note_x(Lane::Down, false), 160.0);
+        assert_eq!(note_x(Lane::Up, false), 272.0);
+        assert_eq!(note_x(Lane::Right, false), 384.0);
+        assert_eq!(note_x(Lane::Left, true), 688.0);
     }
 
     #[test]
@@ -118,8 +116,8 @@ mod tests {
 
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].id, NoteId::new(0));
-        assert_eq!(views[0].x, 50.0);
-        assert!((views[0].y - 500.0).abs() < 1e-6);
+        assert_eq!(views[0].x, 48.0);
+        assert!((views[0].y - 474.0).abs() < 1e-6);
     }
 
     #[test]
@@ -145,6 +143,6 @@ mod tests {
 
         let views = state.note_views(Samples(0), 48_000);
 
-        assert!((views[0].y - 603.5).abs() < 1e-4);
+        assert!((views[0].y - 577.5).abs() < 1e-4);
     }
 }

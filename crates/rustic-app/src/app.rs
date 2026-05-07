@@ -13,11 +13,10 @@ use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
+use crate::note_assets::NoteSkin;
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
-use crate::scene_assets::{
-    load_default_scene, load_preview_play_state, CharacterSet, NoteSkin, SAMPLE_RATE,
-};
+use crate::scene_assets::{load_default_scene, load_preview_play_state, CharacterSet, SAMPLE_RATE};
 use crate::screen::ScreenStack;
 use crate::song_audio::load_bopeebo_stems;
 use anyhow::Result;
