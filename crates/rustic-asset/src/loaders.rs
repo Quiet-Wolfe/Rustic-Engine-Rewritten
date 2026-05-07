@@ -3,13 +3,14 @@
 //! touch the filesystem directly.
 // LINT-ALLOW: long-file typed loader tests cover tracked source assets together.
 
-use crate::error::AssetResult;
+use crate::error::{AssetError, AssetResult};
 use crate::parsers::{
     character::CharacterDefinition, chart::ParsedSong, font::BitmapFont, png::PngImage,
     sparrow::SparrowAtlas, stage::StageDefinition, text_list::TextList,
 };
 use crate::path::AssetPath;
 use crate::resolver::AssetResolver;
+use rustanimate::{Animation as AnimateAnimation, Atlas as AnimateAtlas};
 
 pub fn load_chart(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult<ParsedSong> {
     let src = resolver.resolve(path)?;
@@ -34,6 +35,24 @@ pub fn load_sparrow(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResu
     let src = resolver.resolve(path)?;
     let bytes = src.read_all()?;
     SparrowAtlas::parse(&bytes)
+}
+
+pub fn load_animate_animation(
+    resolver: &dyn AssetResolver,
+    path: &AssetPath,
+) -> AssetResult<AnimateAnimation> {
+    let src = resolver.resolve(path)?;
+    let bytes = src.read_all()?;
+    AnimateAnimation::parse(&bytes).map_err(invalid_animate_data)
+}
+
+pub fn load_animate_spritemap(
+    resolver: &dyn AssetResolver,
+    path: &AssetPath,
+) -> AssetResult<AnimateAtlas> {
+    let src = resolver.resolve(path)?;
+    let bytes = src.read_all()?;
+    AnimateAtlas::parse_spritemap(&bytes).map_err(invalid_animate_data)
 }
 
 pub fn load_png(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult<PngImage> {
@@ -77,6 +96,10 @@ pub fn load_bytes(
     src.read_all()
 }
 
+fn invalid_animate_data(error: rustanimate::AnimateError) -> AssetError {
+    AssetError::InvalidData(format!("animate atlas: {error}"))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -117,6 +140,27 @@ mod tests {
   <SubTexture name="bf idle0000" x="0" y="0" width="100" height="100"
               frameX="-2" frameY="-3" frameWidth="104" frameHeight="106"/>
 </TextureAtlas>"#;
+
+    const ANIMATE_JSON: &str = r#"{
+      "AN": {
+        "N": "Dad_assets_TA-Export",
+        "SN": "DAD ALL ANIMS",
+        "TL": {
+          "L": [{
+            "FR": [{ "N": "Idle", "I": 0, "DU": 12, "E": [] }]
+          }]
+        }
+      }
+    }"#;
+
+    const SPRITEMAP_JSON: &str = r#"{
+      "ATLAS": {
+        "SPRITES": [
+          { "SPRITE": { "name": "0", "x": 10, "y": 20, "w": 30, "h": 40 } }
+        ],
+        "meta": { "size": { "w": 100, "h": 200 } }
+      }
+    }"#;
 
     const CHARACTER_JSON: &str = r#"{
         "id": "bf",
@@ -202,6 +246,38 @@ mod tests {
         let atlas = load_sparrow(&resolver, &ap("images/bf.xml")).unwrap();
         assert_eq!(atlas.image_path, "bf.png");
         assert_eq!(atlas.frames.len(), 1);
+    }
+
+    #[test]
+    fn load_animate_animation_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(
+            ap("images/characters/dad/Animation.json"),
+            ANIMATE_JSON.as_bytes().to_vec(),
+        );
+        resolver.push_overlay(overlay);
+
+        let animation =
+            load_animate_animation(&resolver, &ap("images/characters/dad/Animation.json")).unwrap();
+        assert_eq!(animation.symbol_name, "DAD ALL ANIMS");
+        assert_eq!(animation.label("Idle").unwrap().duration, 12);
+    }
+
+    #[test]
+    fn load_animate_spritemap_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(
+            ap("images/characters/dad/spritemap1.json"),
+            SPRITEMAP_JSON.as_bytes().to_vec(),
+        );
+        resolver.push_overlay(overlay);
+
+        let atlas = load_animate_spritemap(&resolver, &ap("images/characters/dad/spritemap1.json"))
+            .unwrap();
+        let frame = atlas.frame("0").unwrap();
+        assert_eq!((frame.size.x, frame.size.y), (30.0, 40.0));
     }
 
     #[test]
