@@ -184,7 +184,9 @@ impl BitmapTextSkin {
     }
 
     fn glyph(&self, ch: char) -> Option<&BitmapGlyph> {
-        self.font.glyph(ch as u32)
+        self.font
+            .glyph(ch as u32)
+            .or_else(|| (ch != ' ').then(|| self.font.glyph('?' as u32)).flatten())
     }
 
     fn missing_advance(&self) -> f32 {
@@ -282,9 +284,11 @@ mod tests {
               <info face="test" size="16"/>
               <common lineHeight="18" base="14" scaleW="100" scaleH="50"/>
               <pages><page id="0" file="test.png"/></pages>
-              <chars count="3">
+              <chars count="4">
                 <char id="32" x="0" y="0" width="0" height="8"
                   xoffset="0" yoffset="2" xadvance="3" page="0" chnl="15"/>
+                <char id="63" x="30" y="0" width="4" height="8"
+                  xoffset="0" yoffset="2" xadvance="5" page="0" chnl="15"/>
                 <char id="65" x="10" y="0" width="4" height="8"
                   xoffset="1" yoffset="2" xadvance="6" page="0" chnl="15"/>
                 <char id="66" x="20" y="0" width="5" height="8"
@@ -349,5 +353,15 @@ mod tests {
         assert_eq!(commands[0].z, SCORE_TEXT_Z);
         assert_eq!(commands.last().unwrap().color, SCORE_TEXT_COLOR);
         assert_eq!(commands.last().unwrap().z, SCORE_TEXT_Z + 1);
+    }
+
+    #[test]
+    fn missing_printable_glyphs_render_question_mark_fallback() {
+        let commands = skin().commands("A~B", glam::vec2(10.0, 20.0), 1.0, 0, glam::Vec4::ONE, 4);
+
+        assert_eq!(commands.len(), 3);
+        assert_eq!(commands[1].world_pos, glam::vec2(16.0, 22.0));
+        assert_eq!(commands[1].uv_min, glam::vec2(0.3, 0.0));
+        assert_eq!(commands[1].uv_max, glam::vec2(0.34, 0.16));
     }
 }
