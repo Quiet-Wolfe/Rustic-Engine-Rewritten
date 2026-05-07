@@ -1,14 +1,26 @@
 //! App-owned camera zoom behavior ported from base FNF `PlayState`.
+// LINT-ALLOW: long-file camera zoom, bop, easing, and source-aligned tests stay together.
 
 use rustic_core::ids::CameraId;
 use rustic_core::time::Samples;
 use rustic_render::CameraRegistry;
+
+const DEFAULT_BOP_INTENSITY: f32 = 1.015;
+const DEFAULT_ZOOM_RATE: f32 = 4.0;
+const DEFAULT_ZOOM_OFFSET: f32 = 0.0;
+const DEFAULT_HUD_CAMERA_ZOOM: f32 = 1.0;
+const STEPS_PER_BEAT: f32 = 4.0;
+const MAX_RELATIVE_CAM_ZOOM: f32 = 1.35;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CameraFx {
     stage_game_zoom: f32,
     current_game_zoom: f32,
     camera_bop_multiplier: f32,
+    camera_bop_intensity: f32,
+    hud_camera_zoom_intensity: f32,
+    camera_zoom_rate: f32,
+    camera_zoom_rate_offset: f32,
     zooming: bool,
     last_step: i64,
     zoom_tween: Option<CameraZoomTween>,
@@ -45,6 +57,10 @@ impl Default for CameraFx {
             stage_game_zoom: 1.0,
             current_game_zoom: 1.0,
             camera_bop_multiplier: 1.0,
+            camera_bop_intensity: DEFAULT_BOP_INTENSITY,
+            hud_camera_zoom_intensity: (DEFAULT_BOP_INTENSITY - 1.0) * 2.0,
+            camera_zoom_rate: DEFAULT_ZOOM_RATE,
+            camera_zoom_rate_offset: DEFAULT_ZOOM_OFFSET,
             zooming: false,
             last_step: -1,
             zoom_tween: None,
@@ -57,6 +73,10 @@ impl CameraFx {
         self.stage_game_zoom = default_game_zoom;
         self.current_game_zoom = default_game_zoom;
         self.camera_bop_multiplier = 1.0;
+        self.camera_bop_intensity = DEFAULT_BOP_INTENSITY;
+        self.hud_camera_zoom_intensity = (DEFAULT_BOP_INTENSITY - 1.0) * 2.0;
+        self.camera_zoom_rate = DEFAULT_ZOOM_RATE;
+        self.camera_zoom_rate_offset = DEFAULT_ZOOM_OFFSET;
         self.zooming = false;
         self.last_step = -1;
         self.zoom_tween = None;
@@ -64,7 +84,7 @@ impl CameraFx {
             camera.zoom = default_game_zoom;
         }
         if let Some(camera) = cameras.get_mut(CameraId(1)) {
-            camera.zoom = 1.0;
+            camera.zoom = DEFAULT_HUD_CAMERA_ZOOM;
         }
     }
 
@@ -106,6 +126,14 @@ impl CameraFx {
         });
     }
 
+    pub(crate) fn set_camera_bop(&mut self, event: CameraBopEvent) {
+        // ref: bdedc0aa:source/funkin/play/event/SetCameraBopSongEvent.hx:45-53
+        self.camera_bop_intensity = (DEFAULT_BOP_INTENSITY - 1.0) * event.intensity + 1.0;
+        self.hud_camera_zoom_intensity = (DEFAULT_BOP_INTENSITY - 1.0) * event.intensity * 2.0;
+        self.camera_zoom_rate = event.rate;
+        self.camera_zoom_rate_offset = event.offset;
+    }
+
     pub(crate) fn update(
         &mut self,
         cameras: &mut CameraRegistry,
@@ -115,7 +143,7 @@ impl CameraFx {
     ) {
         self.update_zoom_tween(cursor);
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:1223-1229,1855-1861
-        if self.zooming {
+        if self.zooming && self.camera_zoom_rate > 0.0 {
             self.camera_bop_multiplier = camera_bop_decay(self.camera_bop_multiplier);
             self.update_camera_bop(cameras, cursor, sample_rate, bpm);
         }
@@ -152,13 +180,13 @@ impl CameraFx {
             return;
         }
         self.last_step = step;
-        if step.rem_euclid(16) != 0 {
+        if !should_bop_step(step, self.camera_zoom_rate, self.camera_zoom_rate_offset) {
             return;
         }
         if let Some(camera) = cameras.get_mut(CameraId(1)) {
-            if camera.zoom < 1.35 {
-                self.camera_bop_multiplier = 1.015;
-                camera.zoom += 0.03;
+            if camera.zoom < MAX_RELATIVE_CAM_ZOOM * DEFAULT_HUD_CAMERA_ZOOM {
+                self.camera_bop_multiplier = self.camera_bop_intensity;
+                camera.zoom += self.hud_camera_zoom_intensity * DEFAULT_HUD_CAMERA_ZOOM;
             }
         }
     }
@@ -175,6 +203,12 @@ pub(crate) struct ZoomCameraEvent<'a> {
     pub(crate) duration_steps: f32,
     pub(crate) direct: bool,
     pub(crate) ease: &'a str,
+}
+
+pub(crate) struct CameraBopEvent {
+    pub(crate) rate: f32,
+    pub(crate) offset: f32,
+    pub(crate) intensity: f32,
 }
 
 impl CameraEase {
@@ -207,6 +241,16 @@ fn hud_zoom_decay(current: f32) -> f32 {
 fn camera_step_index(cursor: Samples, sample_rate: u32, bpm: f64) -> i64 {
     let samples_per_step = f64::from(sample_rate.max(1)) * 60.0 / bpm.max(1.0) / 4.0;
     (cursor.0.max(0) as f64 / samples_per_step).floor() as i64
+}
+
+fn should_bop_step(step: i64, rate: f32, offset: f32) -> bool {
+    if rate <= 0.0 {
+        return false;
+    }
+    let period_steps = rate * STEPS_PER_BEAT;
+    let step_with_offset = step as f32 + offset * STEPS_PER_BEAT;
+    let remainder = step_with_offset.rem_euclid(period_steps);
+    remainder <= f32::EPSILON || (period_steps - remainder) <= f32::EPSILON
 }
 
 fn steps_to_samples(steps: f32, sample_rate: u32, bpm: f64) -> i64 {
@@ -294,6 +338,16 @@ mod tests {
     }
 
     #[test]
+    fn camera_bop_step_respects_rate_and_offset() {
+        assert!(should_bop_step(0, 4.0, 0.0));
+        assert!(!should_bop_step(15, 4.0, 0.0));
+        assert!(should_bop_step(16, 4.0, 0.0));
+        assert!(!should_bop_step(2, 1.0, 0.25));
+        assert!(should_bop_step(3, 1.0, 0.25));
+        assert!(!should_bop_step(0, 0.0, 0.0));
+    }
+
+    #[test]
     fn reset_sets_base_camera_zooms() {
         let mut cameras = CameraRegistry::with_default_fnf();
         let mut fx = CameraFx::default();
@@ -351,5 +405,26 @@ mod tests {
         );
 
         assert!((cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom) - 1.26).abs() < 1e-6);
+    }
+
+    #[test]
+    fn set_camera_bop_changes_rate_and_intensity() {
+        let mut cameras = CameraRegistry::with_default_fnf();
+        let mut fx = CameraFx::default();
+        fx.reset(&mut cameras, 1.0);
+        fx.enable_zooming();
+        fx.set_camera_bop(CameraBopEvent {
+            rate: 1.0,
+            offset: 0.0,
+            intensity: 2.0,
+        });
+
+        fx.update(&mut cameras, Samples(6_000), 48_000, 120.0);
+        assert!((cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom) - 1.0).abs() < 1e-6);
+
+        fx.update(&mut cameras, Samples(24_000), 48_000, 120.0);
+
+        assert!((cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom) - 1.03).abs() < 1e-6);
+        assert!((cameras.get(CameraId(1)).map_or(0.0, |camera| camera.zoom) - 1.06).abs() < 1e-6);
     }
 }

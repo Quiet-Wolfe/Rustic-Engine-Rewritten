@@ -275,6 +275,11 @@ pub enum ChartEventKind {
         strumline: String,
         ease: String,
     },
+    SetCameraBop {
+        rate: f32,
+        offset: f32,
+        intensity: f32,
+    },
     Unknown {
         name: String,
     },
@@ -547,7 +552,9 @@ mod tests {
             { "t": 0.0, "e": "FocusCamera", "v": { "char": 1 } },
             { "t": 2500.0, "e": "ZoomCamera", "v": { "zoom": 1.05 } },
             { "t": 3000.0, "e": "ScrollSpeed",
-              "v": { "scroll": 1.2, "duration": 4, "strumline": "both", "absolute": false } }
+              "v": { "scroll": 1.2, "duration": 4, "strumline": "both", "absolute": false } },
+            { "t": 3500.0, "e": "SetCameraBop",
+              "v": { "rate": 1, "offset": 0.25, "intensity": 0.6 } }
         ],
         "notes": {
             "normal": [
@@ -685,7 +692,7 @@ mod tests {
         assert_eq!(p.chart.player2, "dad");
         assert!(p.chart.valid_score);
         assert!(p.chart.sections.is_empty());
-        assert_eq!(p.chart.events.len(), 4);
+        assert_eq!(p.chart.events.len(), 5);
         assert_eq!(p.chart.events[0].time_ms, 0.0);
         assert_eq!(
             p.chart.events[0].kind,
@@ -720,6 +727,14 @@ mod tests {
                 absolute: false,
                 strumline: "both".to_string(),
                 ease: "linear".to_string()
+            }
+        );
+        assert_eq!(
+            p.chart.events[4].kind,
+            ChartEventKind::SetCameraBop {
+                rate: 1.0,
+                offset: 0.25,
+                intensity: 0.6
             }
         );
 

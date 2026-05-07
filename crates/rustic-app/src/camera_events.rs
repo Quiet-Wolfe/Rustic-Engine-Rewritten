@@ -1,6 +1,6 @@
 //! Song-event camera helpers.
 
-use crate::camera_fx::{CameraFx, ZoomCameraEvent};
+use crate::camera_fx::{CameraBopEvent, CameraFx, ZoomCameraEvent};
 use crate::scene_assets::CameraFocusPoints;
 use glam::Vec2;
 use rustic_asset::ChartEventKind;
@@ -40,6 +40,18 @@ pub(crate) fn apply_camera_event(
                     ease,
                 },
             );
+            true
+        }
+        ChartEventKind::SetCameraBop {
+            rate,
+            offset,
+            intensity,
+        } => {
+            camera_fx.set_camera_bop(CameraBopEvent {
+                rate: *rate,
+                offset: *offset,
+                intensity: *intensity,
+            });
             true
         }
         _ => false,

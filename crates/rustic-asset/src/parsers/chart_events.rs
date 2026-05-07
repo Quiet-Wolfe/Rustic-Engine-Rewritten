@@ -55,6 +55,11 @@ fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
                 .to_string(),
             ease: event_ease_name(&event.value),
         },
+        "SetCameraBop" => ChartEventKind::SetCameraBop {
+            rate: event_float(&event.value, "rate", 4.0),
+            offset: event_float(&event.value, "offset", 0.0),
+            intensity: event_float(&event.value, "intensity", 1.0),
+        },
         _ => ChartEventKind::Unknown {
             name: event.name.clone(),
         },
