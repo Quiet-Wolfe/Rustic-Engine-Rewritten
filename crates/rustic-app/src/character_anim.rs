@@ -197,13 +197,13 @@ impl CharacterAnimState {
     }
 
     pub fn player_first_death(&mut self, cursor: Samples) {
-        // ref: 50fccded:source/GameOverSubstate.hx:51
+        // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:259
         self.player_pose = "firstDeath";
         self.player_started = cursor;
     }
 
     pub fn player_death_loop(&mut self, cursor: Samples) {
-        // ref: 50fccded:source/Boyfriend.hx:36-38
+        // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:312-315
         self.player_pose = "deathLoop";
         self.player_started = cursor;
     }
@@ -214,11 +214,11 @@ impl CharacterAnimState {
             return;
         }
         self.last_beat = beat;
-        // ref: 50fccded:source/PlayState.hx:2296-2298
+        // ref: bdedc0aa:source/funkin/play/stage/Bopper.hx:172-180
         if self.girlfriend_pose.starts_with("dance") {
             self.dance_girlfriend(cursor);
         }
-        // ref: 50fccded:source/PlayState.hx:2300-2308
+        // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:457-473
         if !self.player_pose.starts_with("sing") && !self.player_pose.starts_with("death") {
             self.player_pose = "idle";
             self.player_started = cursor;
