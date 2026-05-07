@@ -1,7 +1,6 @@
 //! Per-frame chart progression that is not player scoring.
 //!
-//! ref: 50fccded:source/Note.hx:186-192          // opponent note wasGoodHit at songPosition
-//! ref: 50fccded:source/PlayState.hx:1528-1552   // opponent note animation/removal
+//! ref: bdedc0aa:source/funkin/play/PlayState.hx:2760-2789
 
 use crate::note::Lane;
 use crate::state::PlayState;
@@ -12,6 +11,7 @@ use rustic_core::time::Samples;
 pub struct ResolvedOpponentNote {
     pub lane: Lane,
     pub is_sustain: bool,
+    pub hold_end_at: Option<Samples>,
 }
 
 impl PlayState {
@@ -30,6 +30,8 @@ impl PlayState {
                     ResolvedOpponentNote {
                         lane: note.lane,
                         is_sustain: note.is_sustain,
+                        hold_end_at: (note.sustain_samples > 0)
+                            .then_some(Samples(note.hit_at.0 + note.sustain_samples)),
                     },
                 ));
             }
@@ -75,7 +77,8 @@ mod tests {
             hits,
             vec![ResolvedOpponentNote {
                 lane: Lane::Left,
-                is_sustain: false
+                is_sustain: false,
+                hold_end_at: None
             }]
         );
         assert!(state.resolved_notes.contains(&NoteId::new(0)));
@@ -85,5 +88,25 @@ mod tests {
         assert_eq!(state.combo, 4);
         assert_eq!(state.misses, 0);
         assert!((state.health - INITIAL_HEALTH).abs() < 1e-6);
+    }
+
+    #[test]
+    fn opponent_hold_head_reports_hold_end_cursor() {
+        let mut state = PlayState::new();
+        state.notes.push(Note {
+            sustain_samples: 3_000,
+            ..note(0, 1_000, true)
+        });
+
+        let hits = state.resolve_opponent_notes(Samples(1_000));
+
+        assert_eq!(
+            hits,
+            vec![ResolvedOpponentNote {
+                lane: Lane::Left,
+                is_sustain: false,
+                hold_end_at: Some(Samples(4_000))
+            }]
+        );
     }
 }

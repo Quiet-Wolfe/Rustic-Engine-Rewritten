@@ -12,7 +12,8 @@ use rustic_game::Lane;
 use rustic_render::{DrawCommand, FilterMode, Texture};
 use std::collections::HashMap;
 
-const PLAYER_STRUMLINE_X: f32 = 1280.0 / 2.0 + 48.0;
+const FNF_WIDTH: f32 = 1280.0;
+const STRUMLINE_X_OFFSET: f32 = 48.0;
 const STRUMLINE_Y_OFFSET: f32 = 24.0;
 const STRUMLINE_SIZE: f32 = 104.0;
 const NOTE_SPACING: f32 = STRUMLINE_SIZE + 8.0;
@@ -38,7 +39,7 @@ struct LaneHoldCoverSkin {
 
 #[derive(Debug, Default, Clone)]
 pub struct HoldCovers {
-    active: [Option<ActiveHoldCover>; 4],
+    active: [[Option<ActiveHoldCover>; 4]; 2],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,18 +51,34 @@ enum HoldCoverPhase {
 
 #[derive(Debug, Clone, Copy)]
 struct ActiveHoldCover {
+    side: StrumlineSide,
     lane: Lane,
     hold_end_at: Samples,
     phase: HoldCoverPhase,
     phase_started_at: Samples,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StrumlineSide {
+    Opponent,
+    Player,
+}
+
 impl HoldCovers {
     pub fn start(&mut self, lane: Lane, cursor: Samples, hold_end_at: Samples) {
+        self.start_on(StrumlineSide::Player, lane, cursor, hold_end_at);
+    }
+
+    pub fn start_opponent(&mut self, lane: Lane, cursor: Samples, hold_end_at: Samples) {
+        self.start_on(StrumlineSide::Opponent, lane, cursor, hold_end_at);
+    }
+
+    fn start_on(&mut self, side: StrumlineSide, lane: Lane, cursor: Samples, hold_end_at: Samples) {
         if hold_end_at <= cursor {
             return;
         }
-        self.active[lane_index(lane)] = Some(ActiveHoldCover {
+        self.active[side_index(side)][lane_index(lane)] = Some(ActiveHoldCover {
+            side,
             lane,
             hold_end_at,
             phase: HoldCoverPhase::Start,
@@ -70,7 +87,7 @@ impl HoldCovers {
     }
 
     pub fn end(&mut self, lane: Lane, cursor: Samples) -> Option<Samples> {
-        let active = self.active[lane_index(lane)].as_mut()?;
+        let active = self.active[side_index(StrumlineSide::Player)][lane_index(lane)].as_mut()?;
         let hold_end_at = (active.phase != HoldCoverPhase::End && active.hold_end_at > cursor)
             .then_some(active.hold_end_at);
         if active.phase != HoldCoverPhase::End {
@@ -87,21 +104,28 @@ impl HoldCovers {
         sample_rate: u32,
     ) -> Vec<DrawCommand> {
         let mut commands = Vec::new();
-        for index in 0..self.active.len() {
-            let Some(active) = self.active[index].as_mut() else {
-                continue;
-            };
-            if active.phase != HoldCoverPhase::End && cursor >= active.hold_end_at {
-                active.phase = HoldCoverPhase::End;
-                active.phase_started_at = active.hold_end_at;
-            }
+        for side_index in 0..self.active.len() {
+            for lane_slot in 0..self.active[side_index].len() {
+                let Some(active) = self.active[side_index][lane_slot].as_mut() else {
+                    continue;
+                };
+                if active.phase != HoldCoverPhase::End && cursor >= active.hold_end_at {
+                    active.phase = HoldCoverPhase::End;
+                    active.phase_started_at = active.hold_end_at;
+                }
 
-            let lane_skin = &skin.lanes[lane_index(active.lane)];
-            let Some(frame) = frame_for_active(active, lane_skin, cursor, sample_rate) else {
-                self.active[index] = None;
-                continue;
-            };
-            commands.push(command_for_frame(lane_skin, active.lane, frame));
+                let lane_skin = &skin.lanes[lane_index(active.lane)];
+                let Some(frame) = frame_for_active(active, lane_skin, cursor, sample_rate) else {
+                    self.active[side_index][lane_slot] = None;
+                    continue;
+                };
+                commands.push(command_for_frame(
+                    lane_skin,
+                    active.side,
+                    active.lane,
+                    frame,
+                ));
+            }
         }
         commands
     }
@@ -220,9 +244,18 @@ fn looped_frame(
         .map(|index| &frames[index])
 }
 
-fn command_for_frame(skin: &LaneHoldCoverSkin, lane: Lane, frame: &SparrowFrame) -> DrawCommand {
+fn command_for_frame(
+    skin: &LaneHoldCoverSkin,
+    side: StrumlineSide,
+    lane: Lane,
+    frame: &SparrowFrame,
+) -> DrawCommand {
     let size = frame_draw_size(frame);
-    let mut cmd = DrawCommand::sprite(skin.texture_id, frame_world_pos(lane, frame, size), size);
+    let mut cmd = DrawCommand::sprite(
+        skin.texture_id,
+        frame_world_pos(side, lane, frame, size),
+        size,
+    );
     cmd.camera = CameraId(1);
     cmd.pivot = glam::Vec2::ZERO;
     cmd.layer = RenderLayer::Notes;
@@ -241,16 +274,27 @@ fn frame_draw_size(frame: &SparrowFrame) -> glam::Vec2 {
     }
 }
 
-fn frame_world_pos(lane: Lane, frame: &SparrowFrame, size: glam::Vec2) -> glam::Vec2 {
+fn frame_world_pos(
+    side: StrumlineSide,
+    lane: Lane,
+    frame: &SparrowFrame,
+    size: glam::Vec2,
+) -> glam::Vec2 {
     // ref: bdedc0aa:source/funkin/play/notes/Strumline.hx:1107-1131
     let frame_width = frame.frame_width as f32;
-    let group_x =
-        PLAYER_STRUMLINE_X + lane_index(lane) as f32 * NOTE_SPACING + STRUMLINE_SIZE * 0.5
-            - frame_width * 0.5
-            + COVER_X_ADJUST;
+    let group_x = strumline_x(side) + lane_index(lane) as f32 * NOTE_SPACING + STRUMLINE_SIZE * 0.5
+        - frame_width * 0.5
+        + COVER_X_ADJUST;
     let group_y = STRUMLINE_Y_OFFSET + INITIAL_OFFSET + STRUMLINE_SIZE * 0.5 + COVER_Y_ADJUST;
     let trimmed = glam::vec2(frame.frame_x as f32, frame.frame_y as f32);
     glam::vec2(group_x, group_y) - trimmed + (frame_draw_size(frame) - size) * 0.5
+}
+
+fn strumline_x(side: StrumlineSide) -> f32 {
+    match side {
+        StrumlineSide::Opponent => STRUMLINE_X_OFFSET,
+        StrumlineSide::Player => FNF_WIDTH * 0.5 + STRUMLINE_X_OFFSET,
+    }
 }
 
 fn animation_frame_index(
@@ -318,6 +362,13 @@ fn lane_index(lane: Lane) -> usize {
     }
 }
 
+fn side_index(side: StrumlineSide) -> usize {
+    match side {
+        StrumlineSide::Opponent => 0,
+        StrumlineSide::Player => 1,
+    }
+}
+
 fn asset_id_for_path(path: &AssetPath) -> AssetId {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     for byte in path.as_str().as_bytes() {
@@ -368,10 +419,21 @@ mod tests {
         let skin = lane_skin();
         let frame = &skin.hold_frames[0];
 
-        let cmd = command_for_frame(&skin, Lane::Down, frame);
+        let cmd = command_for_frame(&skin, StrumlineSide::Player, Lane::Down, frame);
 
         assert!(cmd.uv_rotated);
         assert_eq!(cmd.size, glam::vec2(138.0, 108.0));
+    }
+
+    #[test]
+    fn opponent_cover_uses_left_strumline() {
+        let skin = lane_skin();
+        let frame = &skin.start_frames[0];
+
+        let player = command_for_frame(&skin, StrumlineSide::Player, Lane::Left, frame);
+        let opponent = command_for_frame(&skin, StrumlineSide::Opponent, Lane::Left, frame);
+
+        assert!((player.world_pos.x - opponent.world_pos.x - FNF_WIDTH * 0.5).abs() < 1e-3);
     }
 
     #[test]

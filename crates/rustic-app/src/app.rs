@@ -392,6 +392,10 @@ impl App {
             for hit in opponent_hits {
                 self.character_anim
                     .opponent_note_hit(hit.lane, cursor, sample_rate, bpm);
+                if let Some(hold_end_at) = hit.hold_end_at {
+                    self.hold_covers
+                        .start_opponent(hit.lane, cursor, hold_end_at);
+                }
             }
             if had_opponent_hits {
                 self.camera_fx.enable_zooming();
