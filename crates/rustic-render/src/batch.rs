@@ -3,6 +3,7 @@
 //! Sort key: `camera.order -> layer -> z -> insertion_index`. After
 //! sort, runs of commands sharing (camera, atlas, sampler) become
 //! single instanced draws.
+// LINT-ALLOW: long-file sprite batching plus instance layout tests
 
 use crate::camera::CameraRegistry;
 use crate::command::DrawCommand;
@@ -26,6 +27,9 @@ pub struct SpriteInstance {
     pub scale: [f32; 2],
     pub rotation: f32,
     pub _pad0: f32,
+    pub affine_x: [f32; 2],
+    pub affine_y: [f32; 2],
+    pub affine_t: [f32; 2],
     pub uv_min: [f32; 2],
     pub uv_max: [f32; 2],
     pub uv_rotated: f32,
@@ -34,7 +38,7 @@ pub struct SpriteInstance {
 }
 
 impl SpriteInstance {
-    pub const ATTRIBUTES: [wgpu::VertexAttribute; 9] = [
+    pub const ATTRIBUTES: [wgpu::VertexAttribute; 12] = [
         wgpu::VertexAttribute {
             format: wgpu::VertexFormat::Float32x2,
             offset: 0,
@@ -71,14 +75,29 @@ impl SpriteInstance {
             shader_location: 7,
         },
         wgpu::VertexAttribute {
-            format: wgpu::VertexFormat::Float32,
+            format: wgpu::VertexFormat::Float32x2,
             offset: 56,
             shader_location: 8,
         },
         wgpu::VertexAttribute {
-            format: wgpu::VertexFormat::Float32x4,
+            format: wgpu::VertexFormat::Float32x2,
             offset: 64,
             shader_location: 9,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x2,
+            offset: 72,
+            shader_location: 10,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32,
+            offset: 80,
+            shader_location: 11,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 88,
+            shader_location: 12,
         },
     ];
 }
@@ -92,6 +111,9 @@ impl From<&DrawCommand> for SpriteInstance {
             scale: c.scale.to_array(),
             rotation: c.rotation,
             _pad0: 0.0,
+            affine_x: [c.affine[0], c.affine[1]],
+            affine_y: [c.affine[2], c.affine[3]],
+            affine_t: [c.affine[4], c.affine[5]],
             uv_min: c.uv_min.to_array(),
             uv_max: c.uv_max.to_array(),
             uv_rotated: if c.uv_rotated { 1.0 } else { 0.0 },
@@ -356,8 +378,22 @@ mod tests {
             pivot: Vec2::splat(0.5),
             scale: Vec2::ONE,
             rotation: 0.0,
+            affine: DrawCommand::IDENTITY_AFFINE,
             color: Vec4::ONE,
         }
+    }
+
+    #[test]
+    fn sprite_instance_carries_affine_matrix() {
+        let mut cmd = cmd(0, RenderLayer::Stage, 0, 1);
+        cmd.affine = [0.5, 0.25, -0.75, 1.5, 12.0, -8.0];
+
+        let instance = SpriteInstance::from(&cmd);
+
+        assert_eq!(std::mem::size_of::<SpriteInstance>(), 104);
+        assert_eq!(instance.affine_x, [0.5, 0.25]);
+        assert_eq!(instance.affine_y, [-0.75, 1.5]);
+        assert_eq!(instance.affine_t, [12.0, -8.0]);
     }
 
     #[test]

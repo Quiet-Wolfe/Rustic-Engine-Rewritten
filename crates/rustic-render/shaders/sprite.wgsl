@@ -8,6 +8,9 @@
 //   a_pivot        vec2<f32>     // pivot in unit-quad space
 //   a_scale        vec2<f32>
 //   a_rotation     f32           // radians
+//   a_affine_x     vec2<f32>     // [a, b]
+//   a_affine_y     vec2<f32>     // [c, d]
+//   a_affine_t     vec2<f32>     // [tx, ty]
 //   a_uv_min       vec2<f32>
 //   a_uv_max       vec2<f32>
 //   a_uv_rotated   f32           // Sparrow rotated="true"
@@ -32,10 +35,13 @@ struct VsIn {
     @location(3) pivot: vec2<f32>,
     @location(4) scale: vec2<f32>,
     @location(5) rotation: f32,
-    @location(6) uv_min: vec2<f32>,
-    @location(7) uv_max: vec2<f32>,
-    @location(8) uv_rotated: f32,
-    @location(9) color: vec4<f32>,
+    @location(6) affine_x: vec2<f32>,
+    @location(7) affine_y: vec2<f32>,
+    @location(8) affine_t: vec2<f32>,
+    @location(9) uv_min: vec2<f32>,
+    @location(10) uv_max: vec2<f32>,
+    @location(11) uv_rotated: f32,
+    @location(12) color: vec4<f32>,
 };
 
 struct VsOut {
@@ -54,7 +60,11 @@ fn vs_main(input: VsIn) -> VsOut {
         local_px.x * c - local_px.y * s,
         local_px.x * s + local_px.y * c
     );
-    let world = input.world_pos + rotated;
+    let affine = vec2<f32>(
+        rotated.x * input.affine_x.x + rotated.y * input.affine_y.x + input.affine_t.x,
+        rotated.x * input.affine_x.y + rotated.y * input.affine_y.y + input.affine_t.y
+    );
+    let world = input.world_pos + affine;
 
     var atlas_uv = input.quad_uv;
     if (input.uv_rotated > 0.5) {
