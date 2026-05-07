@@ -12,8 +12,10 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 #![deny(unsafe_code)]
 
+pub mod animation;
 pub mod atlas;
 pub mod error;
 
+pub use animation::{Animation, AnimationLabel, Symbol};
 pub use atlas::{Atlas, Frame, Sprite};
 pub use error::{AnimateError, AnimateResult};
