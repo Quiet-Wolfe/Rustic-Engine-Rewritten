@@ -15,6 +15,7 @@ use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
+use crate::hud_bop::health_icon_scale;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
@@ -694,26 +695,6 @@ fn game_over_cursor(game_over: GameOverState, sample_rate: u32) -> Samples {
     Samples(game_over.song_cursor.0 + elapsed_samples)
 }
 
-fn health_icon_scale(cursor: Samples, sample_rate: u32, bpm: f64) -> f32 {
-    // ref: bdedc0aa:source/funkin/play/components/HealthIcon.hx:227-242,296-315
-    if cursor.0 < 0 {
-        return 1.0;
-    }
-    const BOP_SCALE: f32 = 0.2;
-    let bpm = bpm.max(1.0);
-    let beat_samples = (f64::from(sample_rate.max(1)) * 60.0 / bpm).round() as i64;
-    let step_length_ms = 15_000.0 / bpm;
-    let tween_secs = (step_length_ms * 0.002).min(0.175);
-    let tween_samples = (f64::from(sample_rate.max(1)) * tween_secs).round() as i64;
-    let phase_samples = cursor.0.rem_euclid(beat_samples.max(1));
-    if tween_samples <= 0 || phase_samples >= tween_samples {
-        1.0
-    } else {
-        let t = phase_samples as f32 / tween_samples as f32;
-        1.0 + BOP_SCALE * (1.0 - t)
-    }
-}
-
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.runtime.is_some() {
@@ -788,7 +769,3 @@ pub fn run(options: AppOptions) -> Result<()> {
     event_loop.run_app(&mut app)?;
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "app_tests.rs"]
-mod tests;
