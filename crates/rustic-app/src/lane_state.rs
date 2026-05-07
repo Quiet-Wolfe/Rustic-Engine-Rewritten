@@ -50,6 +50,15 @@ impl HeldLanes {
         self.confirm_until[index] = Samples(started_at.0 + duration.0.max(0));
     }
 
+    pub fn hold_confirm(&mut self, lane: Lane, cursor: Samples, duration: Samples) {
+        let index = lane_index(lane);
+        if !self.is_confirming(lane, cursor) {
+            self.confirm_started[index] = cursor;
+        }
+        let until = Samples(cursor.0 + duration.0.max(0));
+        self.confirm_until[index] = self.confirm_until[index].max(until);
+    }
+
     pub fn is_confirming(&self, lane: Lane, cursor: Samples) -> bool {
         let until = self.confirm_until[lane_index(lane)];
         until.0 > 0 && until >= cursor
@@ -176,5 +185,21 @@ mod tests {
                 started_at: Samples(25)
             }
         );
+    }
+
+    #[test]
+    fn hold_confirm_extends_without_restarting_active_confirm() {
+        let mut held = HeldLanes::default();
+        held.confirm(Lane::Left, Samples(50), Samples(100));
+        held.hold_confirm(Lane::Left, Samples(80), Samples(100));
+
+        assert_eq!(
+            held.receptor_state(Lane::Left, Samples(120)),
+            ReceptorState::Confirm {
+                started_at: Samples(50)
+            }
+        );
+        assert!(held.is_confirming(Lane::Left, Samples(180)));
+        assert!(!held.is_confirming(Lane::Left, Samples(181)));
     }
 }

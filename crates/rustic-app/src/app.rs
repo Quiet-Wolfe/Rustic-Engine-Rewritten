@@ -14,7 +14,7 @@ use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
-use crate::note_assets::NoteSkin;
+use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::scene_assets::{load_default_scene, load_preview_play_state, CharacterSet, SAMPLE_RATE};
@@ -345,10 +345,14 @@ impl App {
         let mut bpm = None;
         let mut late_misses = 0;
         let mut dead = false;
+        let confirm_duration = confirm_duration_or_default(self.note_skin.as_ref(), sample_rate);
         if let Some(play_state) = self.play_state.as_mut() {
             opponent_hits = play_state.resolve_opponent_notes(cursor);
-            for lane in self.held_lanes.active_lanes() {
-                play_state.resolve_held_sustains_in_lane(cursor, lane, sample_rate);
+            let held_lanes: Vec<_> = self.held_lanes.active_lanes().collect();
+            for lane in held_lanes {
+                if play_state.resolve_held_sustains_in_lane(cursor, lane, sample_rate) > 0 {
+                    self.held_lanes.hold_confirm(lane, cursor, confirm_duration);
+                }
             }
             late_misses = play_state.expire_late_notes(cursor, sample_rate);
             dead = play_state.is_dead();
@@ -460,6 +464,7 @@ impl App {
             return;
         }
         let sample_rate = self.play_sample_rate();
+        let confirm_duration = confirm_duration_or_default(self.note_skin.as_ref(), sample_rate);
         let gameplay_event =
             NormalizedInputEvent::new(event.action, event.state, event.wall_clock_ns, cursor);
         let mut restore_vocals = false;
@@ -482,11 +487,6 @@ impl App {
                 if let Some(outcome) =
                     play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate)
                 {
-                    let confirm_duration = self
-                        .note_skin
-                        .as_ref()
-                        .map(|note_skin| note_skin.confirm_duration(sample_rate))
-                        .unwrap_or(Samples(i64::from(sample_rate) / 6));
                     self.held_lanes.confirm(lane, cursor, confirm_duration);
                     self.character_anim
                         .player_note_hit(lane, cursor, sample_rate, play_state.bpm);

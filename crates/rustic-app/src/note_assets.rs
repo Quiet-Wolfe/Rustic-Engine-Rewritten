@@ -251,6 +251,12 @@ impl NoteSkin {
     }
 }
 
+pub fn confirm_duration_or_default(note_skin: Option<&NoteSkin>, sample_rate: u32) -> Samples {
+    note_skin
+        .map(|note_skin| note_skin.confirm_duration(sample_rate))
+        .unwrap_or(Samples(i64::from(sample_rate) / 6))
+}
+
 pub fn load_note_skin(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
