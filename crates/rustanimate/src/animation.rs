@@ -47,11 +47,30 @@ pub struct TimelineFrame {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Element {
+    pub matrix: [f32; 6],
+    pub kind: ElementKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum ElementKind {
+    Symbol(SymbolInstance),
+    Atlas(AtlasInstance),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct SymbolInstance {
     pub symbol_name: String,
     pub first_frame: u32,
-    pub matrix: [f32; 6],
     pub transform_point: Vec2,
     pub loop_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AtlasInstance {
+    pub frame_name: String,
 }
 
 impl Animation {
@@ -156,22 +175,61 @@ fn timeline_layers(timeline: RawTimeline) -> AnimateResult<Vec<TimelineLayer>> {
 }
 
 fn frame_elements(elements: Vec<RawElement>) -> AnimateResult<Vec<Element>> {
-    elements
-        .into_iter()
-        .filter_map(|element| element.symbol_instance)
-        .map(|instance| {
-            if instance.symbol_name.trim().is_empty() {
-                return Err(AnimateError::Atlas("element symbol name is empty".into()));
+    let mut parsed = Vec::new();
+    for element in elements {
+        match (element.symbol_instance, element.atlas_instance) {
+            (Some(_), Some(_)) => {
+                return Err(AnimateError::Atlas(
+                    "timeline element has both symbol and atlas instances".into(),
+                ));
             }
-            Ok(Element {
-                symbol_name: instance.symbol_name,
-                first_frame: instance.first_frame,
-                matrix: instance.matrix,
-                transform_point: Vec2::new(instance.transform_point.x, instance.transform_point.y),
-                loop_mode: instance.loop_mode,
-            })
-        })
-        .collect()
+            (Some(instance), None) => parsed.push(symbol_element(instance)?),
+            (None, Some(instance)) => parsed.push(atlas_element(instance)?),
+            (None, None) => {}
+        }
+    }
+    Ok(parsed)
+}
+
+fn symbol_element(instance: RawSymbolInstance) -> AnimateResult<Element> {
+    if instance.symbol_name.trim().is_empty() {
+        return Err(AnimateError::Atlas("element symbol name is empty".into()));
+    }
+    Ok(Element {
+        matrix: instance_matrix(instance.matrix, instance.matrix3d),
+        kind: ElementKind::Symbol(SymbolInstance {
+            symbol_name: instance.symbol_name,
+            first_frame: instance.first_frame,
+            transform_point: Vec2::new(instance.transform_point.x, instance.transform_point.y),
+            loop_mode: instance.loop_mode,
+        }),
+    })
+}
+
+fn atlas_element(instance: RawAtlasInstance) -> AnimateResult<Element> {
+    if instance.frame_name.trim().is_empty() {
+        return Err(AnimateError::Atlas(
+            "element atlas frame name is empty".into(),
+        ));
+    }
+    Ok(Element {
+        matrix: instance_matrix(instance.matrix, instance.matrix3d),
+        kind: ElementKind::Atlas(AtlasInstance {
+            frame_name: instance.frame_name,
+        }),
+    })
+}
+
+fn instance_matrix(matrix: Option<[f32; 6]>, matrix3d: Option<[f32; 16]>) -> [f32; 6] {
+    matrix
+        .or_else(|| matrix3d.map(matrix3d_to_affine))
+        .unwrap_or_else(identity_matrix)
+}
+
+fn matrix3d_to_affine(matrix: [f32; 16]) -> [f32; 6] {
+    [
+        matrix[0], matrix[1], matrix[4], matrix[5], matrix[12], matrix[13],
+    ]
 }
 
 #[derive(Debug, Deserialize)]
@@ -236,6 +294,8 @@ struct RawSymbol {
 struct RawElement {
     #[serde(rename = "SI")]
     symbol_instance: Option<RawSymbolInstance>,
+    #[serde(rename = "ASI")]
+    atlas_instance: Option<RawAtlasInstance>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -244,12 +304,24 @@ struct RawSymbolInstance {
     symbol_name: String,
     #[serde(rename = "FF", default)]
     first_frame: u32,
-    #[serde(rename = "MX", default = "identity_matrix")]
-    matrix: [f32; 6],
+    #[serde(rename = "MX")]
+    matrix: Option<[f32; 6]>,
+    #[serde(rename = "M3D")]
+    matrix3d: Option<[f32; 16]>,
     #[serde(rename = "TRP", default)]
     transform_point: RawPoint,
     #[serde(rename = "LP")]
     loop_mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawAtlasInstance {
+    #[serde(rename = "N")]
+    frame_name: String,
+    #[serde(rename = "MX")]
+    matrix: Option<[f32; 6]>,
+    #[serde(rename = "M3D")]
+    matrix3d: Option<[f32; 16]>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -306,6 +378,12 @@ mod tests {
                               "LP": "LP",
                               "MX": [0.994, -0.105, 0.105, 0.994, 354.55, -165.35]
                             }
+                          },
+                          {
+                            "ASI": {
+                              "N": "0",
+                              "MX": [1, 0, 0, 1, 401.15, -123]
+                            }
                           }
                         ]
                       }
@@ -350,14 +428,24 @@ mod tests {
         assert_eq!(symbol.layers[0].name, "Layer 1");
         assert_eq!(symbol.layers[0].frames.len(), 1);
         let element = &symbol.layers[0].frames[0].elements[0];
-        assert_eq!(element.symbol_name, "BF Head default");
-        assert_eq!(element.first_frame, 4);
-        assert_eq!(element.transform_point, Vec2::new(532.6, -82.0));
         assert_eq!(
             element.matrix,
             [0.994, -0.105, 0.105, 0.994, 354.55, -165.35]
         );
-        assert_eq!(element.loop_mode.as_deref(), Some("LP"));
+        let ElementKind::Symbol(instance) = &element.kind else {
+            panic!("expected symbol instance");
+        };
+        assert_eq!(instance.symbol_name, "BF Head default");
+        assert_eq!(instance.first_frame, 4);
+        assert_eq!(instance.transform_point, Vec2::new(532.6, -82.0));
+        assert_eq!(instance.loop_mode.as_deref(), Some("LP"));
+
+        let element = &symbol.layers[0].frames[0].elements[1];
+        assert_eq!(element.matrix, [1.0, 0.0, 0.0, 1.0, 401.15, -123.0]);
+        let ElementKind::Atlas(instance) = &element.kind else {
+            panic!("expected atlas instance");
+        };
+        assert_eq!(instance.frame_name, "0");
     }
 
     #[test]
@@ -395,6 +483,61 @@ mod tests {
                       "I": 0,
                       "DU": 1,
                       "E": [{ "SI": { "SN": "" } }]
+                    }]
+                  }]
+                }
+              }]
+            }
+          }
+        }"#;
+        assert!(matches!(Animation::parse(bad), Err(AnimateError::Atlas(_))));
+    }
+
+    #[test]
+    fn parses_matrix3d_as_affine() {
+        let json = br#"{
+          "AN": {
+            "TL": { "L": [] },
+            "SD": {
+              "S": [{
+                "SN": "container",
+                "TL": {
+                  "L": [{
+                    "FR": [{
+                      "I": 0,
+                      "DU": 1,
+                      "E": [{
+                        "ASI": {
+                          "N": "0000",
+                          "M3D": [2, 0.5, 0, 0, -0.25, 3, 0, 0, 0, 0, 1, 0, 7, 8, 0, 1]
+                        }
+                      }]
+                    }]
+                  }]
+                }
+              }]
+            }
+          }
+        }"#;
+        let animation = Animation::parse(json).unwrap();
+        let element = &animation.symbol("container").unwrap().layers[0].frames[0].elements[0];
+        assert_eq!(element.matrix, [2.0, 0.5, -0.25, 3.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn rejects_empty_element_atlas_frame_names() {
+        let bad = br#"{
+          "AN": {
+            "TL": { "L": [] },
+            "SD": {
+              "S": [{
+                "SN": "container",
+                "TL": {
+                  "L": [{
+                    "FR": [{
+                      "I": 0,
+                      "DU": 1,
+                      "E": [{ "ASI": { "N": "" } }]
                     }]
                   }]
                 }

@@ -16,6 +16,9 @@ pub mod animation;
 pub mod atlas;
 pub mod error;
 
-pub use animation::{Animation, AnimationLabel, Symbol};
+pub use animation::{
+    Animation, AnimationLabel, AtlasInstance, Element, ElementKind, Symbol, SymbolInstance,
+    TimelineFrame, TimelineLayer,
+};
 pub use atlas::{Atlas, Frame, Sprite};
 pub use error::{AnimateError, AnimateResult};
