@@ -95,10 +95,8 @@ impl PlayState {
     }
 
     /// Sustain child notes are still represented by the prototype's expanded
-    /// chart model. The v0.8.5 hold trail score/health pass is separate.
-    pub fn register_sustain_hit(&mut self) {
-        self.apply_health(health_delta(Judgment::Sick));
-    }
+    /// chart model, but v0.8.5 hold score/health comes from `register_hold_tick`.
+    pub fn register_sustain_hit(&mut self) {}
 
     /// Player pressed an empty lane or the wrong lane. v0.8.5 treats this as
     /// a ghost miss: score/health penalty, no combo break and no miss tally.
@@ -572,6 +570,7 @@ mod tests {
         assert!(!s.resolved_notes.contains(&NoteId::new(2)));
         assert_eq!(s.score, 0);
         assert_eq!(s.combo, 0);
+        assert!((s.health - INITIAL_HEALTH).abs() < 1e-6);
     }
 
     #[test]
