@@ -9,8 +9,9 @@
 
 use crate::judgment::JudgmentWindows;
 use crate::note::{notes_from_chart, Note};
-use rustic_asset::ParsedSong;
+use rustic_asset::{ChartEvent, ChartEventKind, ParsedSong};
 use rustic_core::ids::{NoteId, SongId};
+use rustic_core::time::Samples;
 use serde::{Deserialize, Serialize};
 
 /// Initial player health. Bar UI shows 50% at this value (range 0..2).
@@ -34,6 +35,9 @@ pub struct PlayState {
     #[serde(default = "default_scroll_speed")]
     pub scroll_speed: f32,
     pub notes: Vec<Note>,
+    pub events: Vec<SongEvent>,
+    #[serde(default)]
+    pub next_event_index: usize,
     /// IDs of notes that have already been resolved (hit or expired). Kept
     /// separately from `notes` so the chart stays immutable and rewind
     /// only needs to replay the resolved set.
@@ -61,6 +65,8 @@ impl Default for PlayState {
             bpm: default_bpm(),
             scroll_speed: default_scroll_speed(),
             notes: Vec::new(),
+            events: Vec::new(),
+            next_event_index: 0,
             resolved_notes: Vec::new(),
             windows: JudgmentWindows::base_fnf().into(),
             score: 0,
@@ -90,13 +96,27 @@ impl PlayState {
 
     pub fn load_chart(&mut self, song: SongId, parsed: &ParsedSong, sample_rate: u32) {
         let notes = notes_from_chart(parsed.chart.notes.iter(), sample_rate, parsed.chart.bpm);
+        let events = song_events_from_chart(parsed.chart.events.iter(), sample_rate);
         *self = Self {
             song: Some(song),
             bpm: parsed.chart.bpm,
             scroll_speed: parsed.chart.speed as f32,
             notes,
+            events,
             ..Self::default()
         };
+    }
+
+    pub fn resolve_song_events(&mut self, cursor: Samples) -> Vec<SongEvent> {
+        let mut events = Vec::new();
+        while let Some(event) = self.events.get(self.next_event_index) {
+            if event.at > cursor {
+                break;
+            }
+            events.push(event.clone());
+            self.next_event_index += 1;
+        }
+        events
     }
 
     /// Total non-miss judgments — used for accuracy and UI counters.
@@ -108,6 +128,29 @@ impl PlayState {
     pub fn is_dead(&self) -> bool {
         self.health <= DEATH_HEALTH
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct SongEvent {
+    pub at: Samples,
+    pub kind: ChartEventKind,
+}
+
+fn song_events_from_chart<'a>(
+    chart_events: impl IntoIterator<Item = &'a ChartEvent>,
+    sample_rate: u32,
+) -> Vec<SongEvent> {
+    let scale = f64::from(sample_rate.max(1)) / 1000.0;
+    let mut events: Vec<_> = chart_events
+        .into_iter()
+        .map(|event| SongEvent {
+            at: Samples((event.time_ms * scale).round() as i64),
+            kind: event.kind.clone(),
+        })
+        .collect();
+    events.sort_by_key(|event| event.at);
+    events
 }
 
 pub(crate) fn default_scroll_speed() -> f32 {
@@ -151,8 +194,6 @@ impl From<JudgmentWindowsSerde> for JudgmentWindows {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use rustic_core::time::Samples;
-
     #[test]
     fn defaults_match_fnf() {
         let s = PlayState::new();
@@ -161,6 +202,7 @@ mod tests {
         assert_eq!(s.max_combo, 0);
         assert_eq!(s.bpm, 100.0);
         assert_eq!(s.scroll_speed, 1.0);
+        assert!(s.events.is_empty());
         assert!((s.health - INITIAL_HEALTH).abs() < 1e-6);
         assert!(!s.is_dead());
     }
@@ -207,8 +249,51 @@ mod tests {
         assert_eq!(state.notes[0].hit_at, Samples(48_000));
         assert_eq!(state.notes[1].sustain_samples, 12_000);
         assert!(state.notes[2].is_sustain);
+        assert!(state.events.is_empty());
         assert_eq!(state.score, 0);
         assert_eq!(state.combo, 0);
         assert!((state.health - INITIAL_HEALTH).abs() < 1e-6);
+    }
+
+    #[test]
+    fn load_vslice_chart_sets_and_resolves_song_events() {
+        const CHART: &str = r#"{
+            "scrollSpeed": { "normal": 1.0 },
+            "events": [
+                { "t": 100.0, "e": "FocusCamera", "v": 1 },
+                { "t": 250.0, "e": "PlayAnimation",
+                  "v": { "target": "bf", "anim": "hey", "force": true } }
+            ],
+            "notes": { "normal": [{ "t": 1000.0, "d": 0 }] }
+        }"#;
+        const METADATA: &str = r#"{
+            "songName": "Bopeebo",
+            "timeChanges": [{ "bpm": 100 }]
+        }"#;
+        let parsed =
+            ParsedSong::parse_vslice(CHART.as_bytes(), METADATA.as_bytes(), "normal").unwrap();
+        let mut state = PlayState::from_chart(SongId::new(9), &parsed, 48_000);
+
+        assert_eq!(state.events.len(), 2);
+        assert!(state.resolve_song_events(Samples(4_799)).is_empty());
+        assert_eq!(
+            state.resolve_song_events(Samples(4_800)),
+            vec![SongEvent {
+                at: Samples(4_800),
+                kind: ChartEventKind::FocusCamera { target: Some(1) }
+            }]
+        );
+        assert_eq!(
+            state.resolve_song_events(Samples(12_000)),
+            vec![SongEvent {
+                at: Samples(12_000),
+                kind: ChartEventKind::PlayAnimation {
+                    target: "bf".to_string(),
+                    animation: "hey".to_string(),
+                    force: true
+                }
+            }]
+        );
+        assert!(state.resolve_song_events(Samples(12_001)).is_empty());
     }
 }

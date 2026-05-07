@@ -21,7 +21,7 @@ pub use loaders::{
     load_vslice_chart,
 };
 pub use parsers::character::{CharacterAnimation, CharacterDefinition};
-pub use parsers::chart::{Chart, ChartNote, ChartSection, ParsedSong};
+pub use parsers::chart::{Chart, ChartEvent, ChartEventKind, ChartNote, ChartSection, ParsedSong};
 pub use parsers::png::PngImage;
 pub use parsers::sparrow::{SparrowAtlas, SparrowFrame};
 pub use parsers::stage::{

@@ -73,15 +73,8 @@ impl CharacterAnimState {
         }
     }
 
-    pub fn update(
-        &mut self,
-        cursor: Samples,
-        sample_rate: u32,
-        bpm: f64,
-        player_holding: bool,
-        bopeebo_hey: bool,
-    ) {
-        self.update_beat_dances(cursor, sample_rate, bpm, bopeebo_hey);
+    pub fn update(&mut self, cursor: Samples, sample_rate: u32, bpm: f64, player_holding: bool) {
+        self.update_beat_dances(cursor, sample_rate, bpm);
         if self.opponent_pose.starts_with("sing") && cursor >= self.opponent_until {
             self.opponent_pose = "idle";
             self.opponent_started = cursor;
@@ -92,6 +85,43 @@ impl CharacterAnimState {
         {
             self.player_pose = "idle";
             self.player_started = cursor;
+        }
+    }
+
+    pub fn play_chart_animation(
+        &mut self,
+        target: &str,
+        animation: &str,
+        cursor: Samples,
+        force: bool,
+    ) -> bool {
+        let Some(pose) = chart_animation_pose(animation) else {
+            return false;
+        };
+        let target = target.to_ascii_lowercase();
+        match target.as_str() {
+            "bf" | "boyfriend" | "player" => {
+                if force || self.player_pose != pose {
+                    self.player_pose = pose;
+                    self.player_started = cursor;
+                }
+                true
+            }
+            "dad" | "opponent" => {
+                if force || self.opponent_pose != pose {
+                    self.opponent_pose = pose;
+                    self.opponent_started = cursor;
+                }
+                true
+            }
+            "gf" | "girlfriend" => {
+                if force || self.girlfriend_pose != pose {
+                    self.girlfriend_pose = pose;
+                    self.girlfriend_started = cursor;
+                }
+                true
+            }
+            _ => false,
         }
     }
 
@@ -128,13 +158,7 @@ impl CharacterAnimState {
         self.player_started = cursor;
     }
 
-    fn update_beat_dances(
-        &mut self,
-        cursor: Samples,
-        sample_rate: u32,
-        bpm: f64,
-        bopeebo_hey: bool,
-    ) {
+    fn update_beat_dances(&mut self, cursor: Samples, sample_rate: u32, bpm: f64) {
         let beat = beat_index(cursor, sample_rate, bpm);
         if beat <= self.last_beat {
             return;
@@ -155,10 +179,14 @@ impl CharacterAnimState {
             self.player_pose = "idle";
             self.player_started = cursor;
         }
-        if bopeebo_hey && beat.rem_euclid(8) == 7 && !self.player_pose.starts_with("sing") {
-            self.player_pose = "hey";
-            self.player_started = cursor;
-        }
+    }
+}
+
+fn chart_animation_pose(animation: &str) -> Option<&'static str> {
+    match animation {
+        "hey" => Some("hey"),
+        "cheer" => Some("cheer"),
+        _ => None,
     }
 }
 
@@ -203,9 +231,9 @@ mod tests {
 
         assert_eq!(state.poses().opponent.name, "singLEFT");
         assert_eq!(state.poses().opponent.started_at, Samples(1_000));
-        state.update(Samples(44_919), 48_000, 100.0, false, false);
+        state.update(Samples(44_919), 48_000, 100.0, false);
         assert_eq!(state.poses().opponent.name, "singLEFT");
-        state.update(Samples(44_920), 48_000, 100.0, false, false);
+        state.update(Samples(44_920), 48_000, 100.0, false);
         assert_eq!(state.poses().opponent.name, "idle");
         assert_eq!(state.poses().opponent.started_at, Samples(44_920));
     }
@@ -215,9 +243,9 @@ mod tests {
         let mut state = CharacterAnimState::default();
         state.player_note_hit(Lane::Down, Samples(0), 48_000, 100.0);
 
-        state.update(Samples(30_000), 48_000, 100.0, true, false);
+        state.update(Samples(30_000), 48_000, 100.0, true);
         assert_eq!(state.poses().player.name, "singDOWN");
-        state.update(Samples(30_000), 48_000, 100.0, false, false);
+        state.update(Samples(30_000), 48_000, 100.0, false);
         assert_eq!(state.poses().player.name, "idle");
     }
 
@@ -225,10 +253,10 @@ mod tests {
     fn girlfriend_toggles_dance_on_new_beat() {
         let mut state = CharacterAnimState::default();
 
-        state.update(Samples(0), 48_000, 100.0, false, false);
+        state.update(Samples(0), 48_000, 100.0, false);
         assert_eq!(state.poses().girlfriend.name, "danceRight");
         assert_eq!(state.poses().girlfriend.started_at, Samples(0));
-        state.update(Samples(28_800), 48_000, 100.0, false, false);
+        state.update(Samples(28_800), 48_000, 100.0, false);
         assert_eq!(state.poses().girlfriend.name, "danceLeft");
         assert_eq!(state.poses().girlfriend.started_at, Samples(28_800));
     }
@@ -237,24 +265,34 @@ mod tests {
     fn player_idle_restarts_on_each_beat_when_not_singing() {
         let mut state = CharacterAnimState::default();
 
-        state.update(Samples(0), 48_000, 100.0, false, false);
-        state.update(Samples(28_800), 48_000, 100.0, false, false);
+        state.update(Samples(0), 48_000, 100.0, false);
+        state.update(Samples(28_800), 48_000, 100.0, false);
 
         assert_eq!(state.poses().player.name, "idle");
         assert_eq!(state.poses().player.started_at, Samples(28_800));
     }
 
     #[test]
-    fn bopeebo_triggers_bf_hey_on_beat_seven() {
+    fn chart_event_triggers_bf_hey_until_next_beat() {
         let mut state = CharacterAnimState::default();
 
-        state.update(Samples(201_600), 48_000, 100.0, false, true);
+        assert!(state.play_chart_animation("bf", "hey", Samples(201_600), true));
         assert_eq!(state.poses().player.name, "hey");
         assert_eq!(state.poses().player.started_at, Samples(201_600));
 
-        state.update(Samples(230_400), 48_000, 100.0, false, true);
+        state.update(Samples(230_400), 48_000, 100.0, false);
         assert_eq!(state.poses().player.name, "idle");
         assert_eq!(state.poses().player.started_at, Samples(230_400));
+    }
+
+    #[test]
+    fn chart_event_triggers_known_girlfriend_animation() {
+        let mut state = CharacterAnimState::default();
+
+        assert!(state.play_chart_animation("girlfriend", "cheer", Samples(500), true));
+
+        assert_eq!(state.poses().girlfriend.name, "cheer");
+        assert_eq!(state.poses().girlfriend.started_at, Samples(500));
     }
 
     #[test]
@@ -271,9 +309,9 @@ mod tests {
         let mut state = CharacterAnimState::default();
         state.player_note_miss(Lane::Right, Samples(0), 48_000, 100.0);
 
-        state.update(Samples(57_599), 48_000, 100.0, true, false);
+        state.update(Samples(57_599), 48_000, 100.0, true);
         assert_eq!(state.poses().player.name, "singRIGHTmiss");
-        state.update(Samples(57_600), 48_000, 100.0, true, false);
+        state.update(Samples(57_600), 48_000, 100.0, true);
         assert_eq!(state.poses().player.name, "idle");
         assert_eq!(state.poses().player.started_at, Samples(57_600));
     }

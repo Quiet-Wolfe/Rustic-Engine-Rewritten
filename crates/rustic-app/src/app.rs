@@ -23,6 +23,7 @@ use crate::scene_assets::{load_default_scene, load_preview_play_state, Character
 use crate::screen::ScreenStack;
 use crate::song_audio::load_bopeebo_stems;
 use anyhow::Result;
+use rustic_asset::ChartEventKind;
 use rustic_audio::{AudioOutput, SharedMixer, Stem};
 use rustic_core::ids::AssetId;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
@@ -339,6 +340,7 @@ impl App {
             return;
         }
         let mut opponent_hits = Vec::new();
+        let mut song_events = Vec::new();
         let mut bpm = None;
         let mut late_misses = 0;
         let mut dead = false;
@@ -359,6 +361,7 @@ impl App {
             for tick in hold_ticks {
                 play_state.register_hold_tick(tick.elapsed_samples, sample_rate);
             }
+            song_events = play_state.resolve_song_events(cursor);
             opponent_hits = play_state.resolve_opponent_notes(cursor);
             let held_lanes: Vec<_> = self.held_lanes.active_lanes().collect();
             for lane in held_lanes {
@@ -388,12 +391,14 @@ impl App {
                 self.camera_fx.enable_zooming();
                 self.set_vocals_gain(1.0);
             }
+            for event in song_events {
+                self.apply_song_event(&event.kind, cursor);
+            }
             self.character_anim.update(
                 cursor,
                 sample_rate,
                 bpm,
                 self.held_lanes.active_lanes().next().is_some(),
-                true,
             );
             self.camera_fx
                 .update(&mut self.cameras, cursor, sample_rate, bpm);
@@ -467,6 +472,18 @@ impl App {
             for cmd in countdown_skin.commands(cursor, sample_rate, play_state.bpm) {
                 self.cmds.push(cmd);
             }
+        }
+    }
+
+    fn apply_song_event(&mut self, kind: &ChartEventKind, cursor: Samples) {
+        if let ChartEventKind::PlayAnimation {
+            target,
+            animation,
+            force,
+        } = kind
+        {
+            self.character_anim
+                .play_chart_animation(target, animation, cursor, *force);
         }
     }
 

@@ -50,6 +50,7 @@
 
 use crate::error::{AssetError, AssetResult};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,7 +83,20 @@ struct VSliceChart {
     #[serde(default)]
     scroll_speed: HashMap<String, f64>,
     #[serde(default)]
+    events: Vec<VSliceEvent>,
+    #[serde(default)]
     notes: HashMap<String, Vec<VSliceNote>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct VSliceEvent {
+    // ref: bdedc0aa:source/funkin/data/song/SongData.hx:981-1013
+    #[serde(rename = "t")]
+    time_ms: f64,
+    #[serde(rename = "e")]
+    name: String,
+    #[serde(default, rename = "v")]
+    value: Value,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -225,6 +239,29 @@ pub struct ChartSection {
     pub alt_anim: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ChartEvent {
+    pub time_ms: f64,
+    pub kind: ChartEventKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum ChartEventKind {
+    FocusCamera {
+        target: Option<u8>,
+    },
+    PlayAnimation {
+        target: String,
+        animation: String,
+        force: bool,
+    },
+    Unknown {
+        name: String,
+    },
+}
+
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Chart {
@@ -238,6 +275,7 @@ pub struct Chart {
     /// ref: 50fccded:source/Song.hx:70-75
     pub valid_score: bool,
     pub sections: Vec<ChartSection>,
+    pub events: Vec<ChartEvent>,
     pub notes: Vec<ChartNote>,
 }
 
@@ -263,6 +301,7 @@ impl ParsedSong {
             // validScore=true unconditionally after load.
             valid_score: true,
             sections: Vec::with_capacity(raw.notes.len()),
+            events: Vec::new(),
             notes: Vec::new(),
         };
 
@@ -313,6 +352,7 @@ impl ParsedSong {
             player2: metadata.play_data.characters.opponent,
             valid_score: true,
             sections: Vec::new(),
+            events: parse_vslice_events(&raw_chart),
             notes: Vec::new(),
         };
 
@@ -396,6 +436,64 @@ fn parse_vslice_note(note: &VSliceNote) -> AssetResult<ChartNote> {
         is_player: raw_lane < 4,
         section_index: 0,
     })
+}
+
+fn parse_vslice_events(chart: &VSliceChart) -> Vec<ChartEvent> {
+    let mut events: Vec<_> = chart
+        .events
+        .iter()
+        .map(|event| ChartEvent {
+            time_ms: event.time_ms,
+            kind: parse_vslice_event_kind(event),
+        })
+        .collect();
+    events.sort_by(|a, b| {
+        a.time_ms
+            .partial_cmp(&b.time_ms)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    events
+}
+
+fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
+    match event.name.as_str() {
+        "FocusCamera" => ChartEventKind::FocusCamera {
+            target: focus_camera_target(&event.value),
+        },
+        "PlayAnimation" => parse_play_animation_event(event),
+        _ => ChartEventKind::Unknown {
+            name: event.name.clone(),
+        },
+    }
+}
+
+fn focus_camera_target(value: &Value) -> Option<u8> {
+    value
+        .as_u64()
+        .or_else(|| value.get("char").and_then(Value::as_u64))
+        .and_then(|target| u8::try_from(target).ok())
+}
+
+fn parse_play_animation_event(event: &VSliceEvent) -> ChartEventKind {
+    let Some(target) = event.value.get("target").and_then(Value::as_str) else {
+        return ChartEventKind::Unknown {
+            name: event.name.clone(),
+        };
+    };
+    let Some(animation) = event.value.get("anim").and_then(Value::as_str) else {
+        return ChartEventKind::Unknown {
+            name: event.name.clone(),
+        };
+    };
+    ChartEventKind::PlayAnimation {
+        target: target.to_string(),
+        animation: animation.to_string(),
+        force: event
+            .value
+            .get("force")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    }
 }
 
 fn v_slice_notes_for<'a>(chart: &'a VSliceChart, difficulty: &str) -> Option<&'a Vec<VSliceNote>> {
@@ -483,6 +581,12 @@ mod tests {
     const VSLICE_CHART: &str = r#"{
         "version": "2.0.0",
         "scrollSpeed": { "default": 1.1, "normal": 1.3, "hard": 1.6 },
+        "events": [
+            { "t": 1200.0, "e": "PlayAnimation",
+              "v": { "target": "bf", "anim": "hey", "force": true } },
+            { "t": 0.0, "e": "FocusCamera", "v": { "char": 1 } },
+            { "t": 2500.0, "e": "ZoomCamera", "v": { "zoom": 1.05 } }
+        ],
         "notes": {
             "normal": [
                 { "t": 1000.0, "d": 1 },
@@ -619,6 +723,26 @@ mod tests {
         assert_eq!(p.chart.player2, "dad");
         assert!(p.chart.valid_score);
         assert!(p.chart.sections.is_empty());
+        assert_eq!(p.chart.events.len(), 3);
+        assert_eq!(p.chart.events[0].time_ms, 0.0);
+        assert_eq!(
+            p.chart.events[0].kind,
+            ChartEventKind::FocusCamera { target: Some(1) }
+        );
+        assert_eq!(
+            p.chart.events[1].kind,
+            ChartEventKind::PlayAnimation {
+                target: "bf".to_string(),
+                animation: "hey".to_string(),
+                force: true
+            }
+        );
+        assert_eq!(
+            p.chart.events[2].kind,
+            ChartEventKind::Unknown {
+                name: "ZoomCamera".to_string()
+            }
+        );
 
         let times: Vec<_> = p.chart.notes.iter().map(|n| n.time_ms).collect();
         assert_eq!(times, vec![500.0, 1000.0]);
