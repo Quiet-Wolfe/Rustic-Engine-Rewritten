@@ -9,7 +9,7 @@
 use crate::active_holds::ActiveHolds;
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::boot::{init_logging, install_panic_hook};
-use crate::camera_events::focus_camera;
+use crate::camera_events::apply_camera_event;
 use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
@@ -398,7 +398,7 @@ impl App {
                 self.set_vocals_gain(1.0);
             }
             for event in song_events {
-                self.apply_song_event(&event.kind, cursor);
+                self.apply_song_event(&event.kind, cursor, sample_rate, bpm);
             }
             self.character_anim.update(
                 cursor,
@@ -481,26 +481,32 @@ impl App {
         }
     }
 
-    fn apply_song_event(&mut self, kind: &ChartEventKind, cursor: Samples) {
-        match kind {
-            ChartEventKind::FocusCamera { target, x, y } => {
-                focus_camera(
-                    &mut self.cameras,
-                    self.camera_focus,
-                    *target,
-                    glam::vec2(*x, *y),
-                );
-            }
-            ChartEventKind::PlayAnimation {
-                target,
-                animation,
-                force,
-            } => {
-                self.character_anim
-                    .play_chart_animation(target, animation, cursor, *force);
-            }
-            ChartEventKind::Unknown { .. } => {}
-            _ => {}
+    fn apply_song_event(
+        &mut self,
+        kind: &ChartEventKind,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+    ) {
+        if apply_camera_event(
+            &mut self.cameras,
+            &mut self.camera_fx,
+            self.camera_focus,
+            kind,
+            cursor,
+            sample_rate,
+            bpm,
+        ) {
+            return;
+        }
+        if let ChartEventKind::PlayAnimation {
+            target,
+            animation,
+            force,
+        } = kind
+        {
+            self.character_anim
+                .play_chart_animation(target, animation, cursor, *force);
         }
     }
 

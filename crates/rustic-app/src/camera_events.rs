@@ -1,9 +1,50 @@
 //! Song-event camera helpers.
 
+use crate::camera_fx::{CameraFx, ZoomCameraEvent};
 use crate::scene_assets::CameraFocusPoints;
 use glam::Vec2;
+use rustic_asset::ChartEventKind;
 use rustic_core::ids::CameraId;
+use rustic_core::time::Samples;
 use rustic_render::CameraRegistry;
+
+pub(crate) fn apply_camera_event(
+    cameras: &mut CameraRegistry,
+    camera_fx: &mut CameraFx,
+    focus: CameraFocusPoints,
+    kind: &ChartEventKind,
+    cursor: Samples,
+    sample_rate: u32,
+    bpm: f64,
+) -> bool {
+    match kind {
+        ChartEventKind::FocusCamera { target, x, y } => {
+            focus_camera(cameras, focus, *target, Vec2::new(*x, *y));
+            true
+        }
+        ChartEventKind::ZoomCamera {
+            zoom,
+            duration_steps,
+            direct,
+            ease,
+        } => {
+            camera_fx.zoom_camera(
+                cameras,
+                cursor,
+                sample_rate,
+                bpm,
+                ZoomCameraEvent {
+                    zoom: *zoom,
+                    duration_steps: *duration_steps,
+                    direct: *direct,
+                    ease,
+                },
+            );
+            true
+        }
+        _ => false,
+    }
+}
 
 pub fn focus_camera(
     cameras: &mut CameraRegistry,

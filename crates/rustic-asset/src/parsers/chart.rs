@@ -53,6 +53,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+#[path = "chart_events.rs"]
+mod chart_events;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OuterSong {
     song: RawSong,
@@ -259,6 +262,12 @@ pub enum ChartEventKind {
         animation: String,
         force: bool,
     },
+    ZoomCamera {
+        zoom: f32,
+        duration_steps: f32,
+        direct: bool,
+        ease: String,
+    },
     Unknown {
         name: String,
     },
@@ -354,7 +363,7 @@ impl ParsedSong {
             player2: metadata.play_data.characters.opponent,
             valid_score: true,
             sections: Vec::new(),
-            events: parse_vslice_events(&raw_chart),
+            events: chart_events::parse_vslice_events(&raw_chart),
             notes: Vec::new(),
         };
 
@@ -438,70 +447,6 @@ fn parse_vslice_note(note: &VSliceNote) -> AssetResult<ChartNote> {
         is_player: raw_lane < 4,
         section_index: 0,
     })
-}
-
-fn parse_vslice_events(chart: &VSliceChart) -> Vec<ChartEvent> {
-    let mut events: Vec<_> = chart
-        .events
-        .iter()
-        .map(|event| ChartEvent {
-            time_ms: event.time_ms,
-            kind: parse_vslice_event_kind(event),
-        })
-        .collect();
-    events.sort_by(|a, b| {
-        a.time_ms
-            .partial_cmp(&b.time_ms)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    events
-}
-
-fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
-    match event.name.as_str() {
-        "FocusCamera" => ChartEventKind::FocusCamera {
-            target: focus_camera_target(&event.value),
-            x: event_float(&event.value, "x"),
-            y: event_float(&event.value, "y"),
-        },
-        "PlayAnimation" => parse_play_animation_event(event),
-        _ => ChartEventKind::Unknown {
-            name: event.name.clone(),
-        },
-    }
-}
-
-fn focus_camera_target(value: &Value) -> Option<i8> {
-    value
-        .as_i64()
-        .or_else(|| value.get("char").and_then(Value::as_i64))
-        .and_then(|target| i8::try_from(target).ok())
-}
-
-fn event_float(value: &Value, key: &str) -> f32 {
-    value.get(key).and_then(Value::as_f64).unwrap_or_default() as f32
-}
-
-fn parse_play_animation_event(event: &VSliceEvent) -> ChartEventKind {
-    let Some(target) = event.value.get("target").and_then(Value::as_str) else {
-        return ChartEventKind::Unknown {
-            name: event.name.clone(),
-        };
-    };
-    let Some(animation) = event.value.get("anim").and_then(Value::as_str) else {
-        return ChartEventKind::Unknown {
-            name: event.name.clone(),
-        };
-    };
-    ChartEventKind::PlayAnimation {
-        target: target.to_string(),
-        animation: animation.to_string(),
-        force: event
-            .value
-            .get("force")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-    }
 }
 
 fn v_slice_notes_for<'a>(chart: &'a VSliceChart, difficulty: &str) -> Option<&'a Vec<VSliceNote>> {
@@ -751,8 +696,11 @@ mod tests {
         );
         assert_eq!(
             p.chart.events[2].kind,
-            ChartEventKind::Unknown {
-                name: "ZoomCamera".to_string()
+            ChartEventKind::ZoomCamera {
+                zoom: 1.05,
+                duration_steps: 4.0,
+                direct: true,
+                ease: "linear".to_string()
             }
         );
 
