@@ -1,11 +1,12 @@
 //! Typed loaders that go through the resolver. Callers in release crates
 //! load assets via these helpers; only `rustic-asset`/`xtask`/`rustic-dev`
 //! touch the filesystem directly.
+// LINT-ALLOW: long-file typed loader tests cover tracked source assets together.
 
 use crate::error::AssetResult;
 use crate::parsers::{
-    character::CharacterDefinition, chart::ParsedSong, png::PngImage, sparrow::SparrowAtlas,
-    stage::StageDefinition, text_list::TextList,
+    character::CharacterDefinition, chart::ParsedSong, font::BitmapFont, png::PngImage,
+    sparrow::SparrowAtlas, stage::StageDefinition, text_list::TextList,
 };
 use crate::path::AssetPath;
 use crate::resolver::AssetResolver;
@@ -60,6 +61,12 @@ pub fn load_text_list(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetRe
     let src = resolver.resolve(path)?;
     let bytes = src.read_all()?;
     TextList::parse(&bytes)
+}
+
+pub fn load_bitmap_font(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult<BitmapFont> {
+    let src = resolver.resolve(path)?;
+    let bytes = src.read_all()?;
+    BitmapFont::parse(&bytes)
 }
 
 pub fn load_bytes(
@@ -123,6 +130,15 @@ mod tests {
     }"#;
 
     const FREEPLAY_LIST: &str = "Tutorial\nBopeebo\nFresh\nDadbattle\n";
+    const BITMAP_FONT_XML: &str = r#"<font>
+      <info face="vcr-bmp" size="16"/>
+      <common lineHeight="18" base="14" scaleW="122" scaleH="122"/>
+      <pages><page id="0" file="vcr-bmp.png"/></pages>
+      <chars count="1">
+        <char id="65" x="27" y="32" width="11" height="14"
+          xoffset="-1" yoffset="2" xadvance="10" page="0" chnl="15"/>
+      </chars>
+    </font>"#;
 
     fn tiny_png() -> Vec<u8> {
         use image::ImageEncoder;
@@ -245,6 +261,18 @@ mod tests {
     }
 
     #[test]
+    fn load_bitmap_font_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(ap("fonts/vcr-bmp.fnt"), BITMAP_FONT_XML.as_bytes().to_vec());
+        resolver.push_overlay(overlay);
+
+        let font = load_bitmap_font(&resolver, &ap("fonts/vcr-bmp.fnt")).unwrap();
+        assert_eq!(font.face, "vcr-bmp");
+        assert_eq!(font.glyph(65).unwrap().xadvance, 10);
+    }
+
+    #[test]
     fn load_bytes_through_resolver() {
         let mut resolver = OverlayResolver::new();
         let mut overlay = InMemoryLayer::new();
@@ -284,6 +312,11 @@ mod tests {
             songs.items,
             vec!["Tutorial", "Bopeebo", "Fresh", "DadBattle"]
         );
+
+        let font = load_bitmap_font(&resolver, &ap("fonts/vcr-bmp.fnt")).unwrap();
+        assert_eq!(font.face, "vcr-bmp");
+        assert_eq!(font.glyphs.len(), 90);
+        assert_eq!(font.glyph(u32::from('A')).unwrap().xadvance, 10);
     }
 
     #[test]
@@ -392,5 +425,10 @@ mod tests {
             let bytes = load_bytes(&resolver, &ap(path)).unwrap();
             assert_eq!(&bytes[..4], b"OggS", "{path}");
         }
+
+        let font = load_bitmap_font(&resolver, &ap("fonts/vcr-bmp.fnt")).unwrap();
+        assert_eq!(font.pages[0].file, "vcr-bmp.png");
+        let font_image = load_png(&resolver, &ap("fonts/vcr-bmp.png")).unwrap();
+        assert_eq!((font_image.width, font_image.height), (122, 122));
     }
 }
