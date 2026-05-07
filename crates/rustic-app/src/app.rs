@@ -14,7 +14,7 @@ use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
-use crate::lane_state::{lane_for_action, HeldLanes};
+use crate::lane_state::{lane_for_action, ActiveHolds, HeldLanes};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
@@ -79,6 +79,7 @@ struct App {
     score_popups: ScorePopups,
     note_splashes: NoteSplashes,
     hold_covers: HoldCovers,
+    active_holds: ActiveHolds,
     held_lanes: HeldLanes,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -132,6 +133,7 @@ impl App {
             score_popups: ScorePopups::default(),
             note_splashes: NoteSplashes::default(),
             hold_covers: HoldCovers::default(),
+            active_holds: ActiveHolds::default(),
             held_lanes: HeldLanes::default(),
             play_state: None,
             song_start: now,
@@ -340,6 +342,17 @@ impl App {
         let mut late_misses = 0;
         let mut dead = false;
         let confirm_duration = confirm_duration_or_default(self.note_skin.as_ref(), sample_rate);
+        for lane in self.active_holds.complete_elapsed(cursor) {
+            if self.held_lanes.is_held(lane) {
+                self.held_lanes.play_press(lane, cursor);
+            } else {
+                self.held_lanes.play_static(lane);
+            }
+        }
+        let active_hold_lanes: Vec<_> = self.active_holds.active_lanes(cursor).collect();
+        for lane in active_hold_lanes {
+            self.held_lanes.hold_confirm(lane, cursor, confirm_duration);
+        }
         if let Some(play_state) = self.play_state.as_mut() {
             opponent_hits = play_state.resolve_opponent_notes(cursor);
             let held_lanes: Vec<_> = self.held_lanes.active_lanes().collect();
@@ -495,6 +508,7 @@ impl App {
                             self.note_splashes.push(lane, cursor);
                         }
                         if let Some(hold_end_at) = outcome.hold_end_at {
+                            self.active_holds.start(lane, hold_end_at, cursor);
                             self.hold_covers.start(lane, cursor, hold_end_at);
                         }
                     }
@@ -582,6 +596,7 @@ impl App {
         self.character_anim.player_first_death(cursor);
         self.held_lanes = HeldLanes::default();
         self.hold_covers = HoldCovers::default();
+        self.active_holds = ActiveHolds::default();
         self.set_vocals_gain(0.0);
         if let Err(e) = self.mixer.edit(|mixer| {
             mixer.pause();
@@ -669,9 +684,12 @@ impl ApplicationHandler for App {
                     self.held_lanes.apply(&evt);
                     if event.state == ElementState::Released {
                         if let Some(lane) = lane_for_action(action) {
-                            if let Some(hold_end_at) = self.hold_covers.end(lane, song_cursor) {
+                            if let Some(hold_end_at) = self.active_holds.release(lane, song_cursor)
+                            {
                                 self.register_hold_drop(song_cursor, hold_end_at);
                             }
+                            self.hold_covers.end(lane, song_cursor);
+                            self.held_lanes.play_static(lane);
                         }
                     }
                     self.screens.input(&evt);
