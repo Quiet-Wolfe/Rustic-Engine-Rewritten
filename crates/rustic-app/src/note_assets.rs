@@ -52,17 +52,17 @@ pub struct NoteSkin {
 impl NoteSkin {
     pub fn command_for_view(&self, view: &NoteView) -> DrawCommand {
         let (frame, texture_id, texture_width, texture_height) = self.frame_for_view(view);
-        let size = glam::vec2(
-            frame.width as f32 * NOTE_ASSET_SCALE,
-            frame.height as f32 * NOTE_ASSET_SCALE,
-        );
+        let size = frame_draw_size(frame) * NOTE_ASSET_SCALE;
+        let source_size = frame_source_size(frame) * NOTE_ASSET_SCALE;
+        let trimmed = frame_trim_offset(frame) * NOTE_ASSET_SCALE;
         let x = if view.is_sustain {
-            view.x + (NOTE_SPACING - size.x) * 0.5
+            view.x + STRUMLINE_SIZE * 0.5 - source_size.x * 0.5 - trimmed.x
         } else {
-            note_sprite_x(view.x, size.x)
+            note_sprite_x(view.x, source_size.x) - trimmed.x
         };
+        let y = view.y - trimmed.y;
 
-        let mut cmd = DrawCommand::sprite(texture_id, glam::vec2(x, view.y), size);
+        let mut cmd = DrawCommand::sprite(texture_id, glam::vec2(x, y), size);
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
         cmd.layer = RenderLayer::Notes;
@@ -202,13 +202,10 @@ impl NoteSkin {
         sample_rate: u32,
     ) -> DrawCommand {
         let frame = self.receptor_frame(lane, state, cursor, sample_rate);
-        let size = glam::vec2(
-            frame.width as f32 * NOTE_ASSET_SCALE,
-            frame.height as f32 * NOTE_ASSET_SCALE,
-        );
+        let size = frame_draw_size(frame) * NOTE_ASSET_SCALE;
         let mut cmd = DrawCommand::sprite(
             self.strumline_texture_id,
-            receptor_sprite_pos(player, lane, size),
+            receptor_sprite_pos(player, lane, frame),
             size,
         );
         cmd.camera = CameraId(1);
@@ -416,16 +413,34 @@ fn note_sprite_x(slot_x: f32, sprite_width: f32) -> f32 {
     slot_x - (sprite_width - STRUMLINE_SIZE) * 0.5 - NOTE_NUDGE
 }
 
-fn receptor_sprite_pos(player: u8, lane: Lane, size: glam::Vec2) -> glam::Vec2 {
+fn receptor_sprite_pos(player: u8, lane: Lane, frame: &SparrowFrame) -> glam::Vec2 {
     let center = glam::vec2(
         strumline_x(player) + lane_index(lane) as f32 * NOTE_SPACING + STRUMLINE_SIZE * 0.5,
         STRUMLINE_Y_OFFSET + STRUMLINE_SIZE * 0.5,
     );
-    center - size * 0.5
+    let source_size = frame_source_size(frame) * NOTE_ASSET_SCALE;
+    let trimmed = frame_trim_offset(frame) * NOTE_ASSET_SCALE;
+    center - source_size * 0.5 - trimmed
 }
 
 fn strumline_x(player: u8) -> f32 {
     STRUMLINE_X_OFFSET + player as f32 * (FNF_WIDTH / 2.0)
+}
+
+fn frame_draw_size(frame: &SparrowFrame) -> glam::Vec2 {
+    if frame.rotated {
+        glam::vec2(frame.height as f32, frame.width as f32)
+    } else {
+        glam::vec2(frame.width as f32, frame.height as f32)
+    }
+}
+
+fn frame_source_size(frame: &SparrowFrame) -> glam::Vec2 {
+    glam::vec2(frame.frame_width as f32, frame.frame_height as f32)
+}
+
+fn frame_trim_offset(frame: &SparrowFrame) -> glam::Vec2 {
+    glam::vec2(frame.frame_x as f32, frame.frame_y as f32)
 }
 
 fn frame_uv(
@@ -625,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn receptor_frames_share_the_same_lane_center() {
+    fn receptor_frames_share_the_same_untrimmed_lane_center() {
         let skin = test_note_skin();
         let static_cmd =
             skin.receptor_command(1, Lane::Left, ReceptorState::Static, Samples(0), 48_000);
@@ -639,8 +654,8 @@ mod tests {
             48_000,
         );
 
-        let static_center = static_cmd.world_pos + static_cmd.size * 0.5;
-        let press_center = press_cmd.world_pos + press_cmd.size * 0.5;
+        let static_center = frame_source_center(&static_cmd, &skin.static_frames[0]);
+        let press_center = frame_source_center(&press_cmd, &skin.press_frames[0][0]);
 
         assert_eq!(static_cmd.texture, AssetId::new(2));
         assert_eq!(press_cmd.texture, AssetId::new(2));
@@ -648,6 +663,12 @@ mod tests {
         assert!((static_center.y - 76.0).abs() < 1e-5);
         assert!((press_center.x - static_center.x).abs() < 1e-5);
         assert!((press_center.y - static_center.y).abs() < 1e-5);
+    }
+
+    fn frame_source_center(cmd: &DrawCommand, frame: &SparrowFrame) -> glam::Vec2 {
+        cmd.world_pos
+            + frame_trim_offset(frame) * NOTE_ASSET_SCALE
+            + frame_source_size(frame) * NOTE_ASSET_SCALE * 0.5
     }
 
     #[test]
