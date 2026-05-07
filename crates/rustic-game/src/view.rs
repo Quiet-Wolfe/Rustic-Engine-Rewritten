@@ -3,9 +3,11 @@
 //! ref: bdedc0aa:source/funkin/play/notes/Strumline.hx:35-45,741-745,1172-1218
 //! ref: bdedc0aa:source/funkin/play/PlayState.hx:2233-2252
 //! ref: bdedc0aa:source/funkin/util/Constants.hx:347,632-637
+// LINT-ALLOW: long-file note, hold, and scroll-speed view math tests stay together.
 
 use crate::note::Lane;
 use crate::state::PlayState;
+use rustic_asset::ChartEventKind;
 use rustic_core::ids::NoteId;
 use rustic_core::time::Samples;
 
@@ -69,9 +71,9 @@ impl PlayState {
     /// Visible note sprites at the current audio cursor. This mirrors the
     /// OG spawn window and y-position math while staying renderer-agnostic.
     pub fn note_views(&self, cursor: Samples, sample_rate: u32) -> Vec<NoteView> {
-        let sample_rate = sample_rate.max(1) as f32;
+        let sample_rate_u32 = sample_rate.max(1);
+        let sample_rate = sample_rate_u32 as f32;
         let song_ms = cursor.0 as f32 * 1000.0 / sample_rate;
-        let rounded_speed = round_decimal(self.scroll_speed, 2);
         let mut out = Vec::new();
 
         for note in &self.notes {
@@ -84,6 +86,10 @@ impl PlayState {
                 continue;
             }
 
+            let rounded_speed = round_decimal(
+                self.effective_scroll_speed(cursor, sample_rate_u32, note.opponent),
+                2,
+            );
             let y = STRUM_LINE_Y - (song_ms - note_ms) * (NOTE_SCROLL_FACTOR * rounded_speed);
             if y > FNF_HEIGHT {
                 continue;
@@ -106,10 +112,9 @@ impl PlayState {
     /// Visible v0.8.5 hold-trail strips, derived from hold heads rather
     /// than the legacy per-step sustain children.
     pub fn hold_trail_views(&self, cursor: Samples, sample_rate: u32) -> Vec<HoldTrailView> {
-        let sample_rate = sample_rate.max(1) as f32;
+        let sample_rate_u32 = sample_rate.max(1);
+        let sample_rate = sample_rate_u32 as f32;
         let song_ms = cursor.0 as f32 * 1000.0 / sample_rate;
-        let rounded_speed = round_decimal(self.scroll_speed, 2);
-        let scroll = NOTE_SCROLL_FACTOR * rounded_speed;
         let mut out = Vec::new();
 
         for note in &self.notes {
@@ -124,6 +129,11 @@ impl PlayState {
                 continue;
             }
 
+            let rounded_speed = round_decimal(
+                self.effective_scroll_speed(cursor, sample_rate_u32, note.opponent),
+                2,
+            );
+            let scroll = NOTE_SCROLL_FACTOR * rounded_speed;
             let remaining_ms = if song_ms > note_ms {
                 end_ms - song_ms
             } else {
@@ -152,6 +162,55 @@ impl PlayState {
 
         out
     }
+
+    fn effective_scroll_speed(&self, cursor: Samples, sample_rate: u32, opponent: bool) -> f32 {
+        let mut speed = self.scroll_speed;
+        let mut tween: Option<ScrollSpeedTween> = None;
+        for event in &self.events {
+            if event.at > cursor {
+                break;
+            }
+            if let Some(active) = tween {
+                speed = active.value_at(event.at);
+                if event.at.0 >= active.start_at.0 + active.duration_samples {
+                    tween = None;
+                }
+            }
+            let ChartEventKind::ScrollSpeed {
+                scroll,
+                duration_steps,
+                absolute,
+                strumline,
+                ease,
+            } = &event.kind
+            else {
+                continue;
+            };
+            if !scroll_event_applies(strumline, opponent) {
+                continue;
+            }
+            let target = if *absolute {
+                *scroll
+            } else {
+                *scroll * self.scroll_speed
+            };
+            let ease = ScrollEase::from_name(ease);
+            let duration_samples = steps_to_samples(*duration_steps, sample_rate, self.bpm);
+            if ease == ScrollEase::Instant || duration_samples <= 0 {
+                speed = target;
+                tween = None;
+            } else {
+                tween = Some(ScrollSpeedTween {
+                    start_at: event.at,
+                    start_speed: speed,
+                    target_speed: target,
+                    duration_samples,
+                    ease,
+                });
+            }
+        }
+        tween.map(|active| active.value_at(cursor)).unwrap_or(speed)
+    }
 }
 
 pub fn note_x(lane: Lane, player: bool) -> f32 {
@@ -163,11 +222,95 @@ fn round_decimal(value: f32, decimals: u32) -> f32 {
     (value * factor).round() / factor
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ScrollSpeedTween {
+    start_at: Samples,
+    start_speed: f32,
+    target_speed: f32,
+    duration_samples: i64,
+    ease: ScrollEase,
+}
+
+impl ScrollSpeedTween {
+    fn value_at(self, cursor: Samples) -> f32 {
+        let elapsed = cursor.0.saturating_sub(self.start_at.0).max(0);
+        let t = elapsed as f32 / self.duration_samples.max(1) as f32;
+        self.start_speed + (self.target_speed - self.start_speed) * ease_progress(self.ease, t)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScrollEase {
+    Linear,
+    Instant,
+    ExpoIn,
+    ExpoOut,
+    ExpoInOut,
+}
+
+impl ScrollEase {
+    fn from_name(name: &str) -> Self {
+        match name {
+            "INSTANT" => Self::Instant,
+            "expoIn" | "expo" => Self::ExpoIn,
+            "expoOut" => Self::ExpoOut,
+            "expoInOut" => Self::ExpoInOut,
+            _ => Self::Linear,
+        }
+    }
+}
+
+fn scroll_event_applies(strumline: &str, opponent: bool) -> bool {
+    match strumline {
+        "both" => true,
+        "player" | "playerStrumline" => !opponent,
+        "opponent" | "opponentStrumline" => opponent,
+        _ => true,
+    }
+}
+
+fn steps_to_samples(steps: f32, sample_rate: u32, bpm: f64) -> i64 {
+    (f64::from(steps.max(0.0)) * f64::from(sample_rate.max(1)) * 60.0 / bpm.max(1.0) / 4.0).round()
+        as i64
+}
+
+fn ease_progress(ease: ScrollEase, t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    match ease {
+        ScrollEase::Instant => 1.0,
+        ScrollEase::Linear => t,
+        ScrollEase::ExpoIn => {
+            if t == 0.0 {
+                0.0
+            } else {
+                2.0_f32.powf(10.0 * t - 10.0)
+            }
+        }
+        ScrollEase::ExpoOut => {
+            if t == 1.0 {
+                1.0
+            } else {
+                1.0 - 2.0_f32.powf(-10.0 * t)
+            }
+        }
+        ScrollEase::ExpoInOut => {
+            if t == 0.0 || t == 1.0 {
+                t
+            } else if t < 0.5 {
+                2.0_f32.powf(20.0 * t - 10.0) * 0.5
+            } else {
+                (2.0 - 2.0_f32.powf(-20.0 * t + 10.0)) * 0.5
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::note::Note;
+    use crate::state::SongEvent;
 
     fn note(id: u32, lane: Lane, hit_at: i64, opponent: bool) -> Note {
         Note {
@@ -255,5 +398,49 @@ mod tests {
         let views = state.note_views(Samples(0), 48_000);
 
         assert!((views[0].y - 577.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn scroll_speed_events_tween_note_positions_from_song_time() {
+        let mut state = PlayState::new();
+        state.bpm = 120.0;
+        state.notes.push(note(0, Lane::Left, 48_000, true));
+        state.events.push(SongEvent {
+            at: Samples(0),
+            kind: ChartEventKind::ScrollSpeed {
+                scroll: 2.0,
+                duration_steps: 4.0,
+                absolute: false,
+                strumline: "both".to_string(),
+                ease: "linear".to_string(),
+            },
+        });
+
+        let views = state.note_views(Samples(12_000), 48_000);
+
+        assert!((views[0].y - 530.25).abs() < 1e-4);
+    }
+
+    #[test]
+    fn scroll_speed_events_can_target_one_strumline() {
+        let mut state = PlayState::new();
+        state.bpm = 120.0;
+        state.notes.push(note(0, Lane::Left, 24_000, true));
+        state.notes.push(note(1, Lane::Left, 24_000, false));
+        state.events.push(SongEvent {
+            at: Samples(0),
+            kind: ChartEventKind::ScrollSpeed {
+                scroll: 2.0,
+                duration_steps: 0.0,
+                absolute: true,
+                strumline: "player".to_string(),
+                ease: "linear".to_string(),
+            },
+        });
+
+        let views = state.note_views(Samples(0), 48_000);
+
+        assert!((views[0].y - 249.0).abs() < 1e-4);
+        assert!((views[1].y - 474.0).abs() < 1e-4);
     }
 }

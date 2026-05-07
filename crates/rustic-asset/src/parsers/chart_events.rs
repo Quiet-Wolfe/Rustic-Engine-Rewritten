@@ -39,6 +39,22 @@ fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
                 .unwrap_or(true),
             ease: event_ease_name(&event.value),
         },
+        "ScrollSpeed" => ChartEventKind::ScrollSpeed {
+            scroll: event_float_or_scalar(&event.value, "scroll", 1.0),
+            duration_steps: event_float(&event.value, "duration", 4.0),
+            absolute: event
+                .value
+                .get("absolute")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            strumline: event
+                .value
+                .get("strumline")
+                .and_then(Value::as_str)
+                .unwrap_or("both")
+                .to_string(),
+            ease: event_ease_name(&event.value),
+        },
         _ => ChartEventKind::Unknown {
             name: event.name.clone(),
         },

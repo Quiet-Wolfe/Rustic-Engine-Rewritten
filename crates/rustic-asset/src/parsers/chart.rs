@@ -268,6 +268,13 @@ pub enum ChartEventKind {
         direct: bool,
         ease: String,
     },
+    ScrollSpeed {
+        scroll: f32,
+        duration_steps: f32,
+        absolute: bool,
+        strumline: String,
+        ease: String,
+    },
     Unknown {
         name: String,
     },
@@ -538,7 +545,9 @@ mod tests {
             { "t": 1200.0, "e": "PlayAnimation",
               "v": { "target": "bf", "anim": "hey", "force": true } },
             { "t": 0.0, "e": "FocusCamera", "v": { "char": 1 } },
-            { "t": 2500.0, "e": "ZoomCamera", "v": { "zoom": 1.05 } }
+            { "t": 2500.0, "e": "ZoomCamera", "v": { "zoom": 1.05 } },
+            { "t": 3000.0, "e": "ScrollSpeed",
+              "v": { "scroll": 1.2, "duration": 4, "strumline": "both", "absolute": false } }
         ],
         "notes": {
             "normal": [
@@ -676,7 +685,7 @@ mod tests {
         assert_eq!(p.chart.player2, "dad");
         assert!(p.chart.valid_score);
         assert!(p.chart.sections.is_empty());
-        assert_eq!(p.chart.events.len(), 3);
+        assert_eq!(p.chart.events.len(), 4);
         assert_eq!(p.chart.events[0].time_ms, 0.0);
         assert_eq!(
             p.chart.events[0].kind,
@@ -700,6 +709,16 @@ mod tests {
                 zoom: 1.05,
                 duration_steps: 4.0,
                 direct: true,
+                ease: "linear".to_string()
+            }
+        );
+        assert_eq!(
+            p.chart.events[3].kind,
+            ChartEventKind::ScrollSpeed {
+                scroll: 1.2,
+                duration_steps: 4.0,
+                absolute: false,
+                strumline: "both".to_string(),
                 ease: "linear".to_string()
             }
         );
