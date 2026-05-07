@@ -4,6 +4,7 @@
 //! uploads textures, and emits render commands, but gameplay and render
 //! crates remain free of filesystem and wgpu wiring.
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
+use crate::bitmap_text_assets::{load_bitmap_text_assets, BitmapTextSkin};
 use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
 use crate::hold_cover_assets::{load_hold_cover_assets, HoldCoverSkin};
@@ -31,6 +32,7 @@ pub struct LoadedScene {
     pub commands: RenderCommandList,
     pub textures: HashMap<AssetId, Texture>,
     pub characters: Option<CharacterSet>,
+    pub bitmap_text_skin: Option<BitmapTextSkin>,
     pub note_skin: Option<NoteSkin>,
     pub note_splash_skin: Option<NoteSplashSkin>,
     pub hold_cover_skin: Option<HoldCoverSkin>,
@@ -212,6 +214,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         commands: RenderCommandList::new(),
         textures: HashMap::new(),
         characters: None,
+        bitmap_text_skin: None,
         note_skin: None,
         note_splash_skin: None,
         hold_cover_skin: None,
@@ -226,6 +229,12 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
     let characters = load_stage_characters(device, queue, &resolver, &stage, &mut scene)?;
     scene.camera_focus = characters.camera_focus_points();
     scene.characters = Some(characters);
+    scene.bitmap_text_skin = Some(load_bitmap_text_assets(
+        device,
+        queue,
+        &resolver,
+        &mut scene.textures,
+    )?);
     scene.note_skin = Some(load_note_skin(
         device,
         queue,

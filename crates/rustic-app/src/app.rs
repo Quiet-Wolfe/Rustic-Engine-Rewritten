@@ -8,6 +8,7 @@
 
 use crate::active_holds::ActiveHolds;
 use crate::audio_fallback::open_audio_output_or_fallback;
+use crate::bitmap_text_assets::BitmapTextSkin;
 use crate::boot::{init_logging, install_panic_hook};
 use crate::camera_events::apply_camera_event;
 use crate::camera_fx::CameraFx;
@@ -76,6 +77,7 @@ struct App {
     cmds: RenderCommandList,
     atlases: HashMap<AssetId, Texture>,
     characters: Option<CharacterSet>,
+    bitmap_text_skin: Option<BitmapTextSkin>,
     character_anim: CharacterAnimState,
     note_skin: Option<NoteSkin>,
     note_splash_skin: Option<NoteSplashSkin>,
@@ -131,6 +133,7 @@ impl App {
             cmds: RenderCommandList::new(),
             atlases: HashMap::new(),
             characters: None,
+            bitmap_text_skin: None,
             character_anim: CharacterAnimState::default(),
             note_skin: None,
             note_splash_skin: None,
@@ -199,6 +202,7 @@ impl App {
                 self.static_cmds = self.cmds.clone();
                 self.atlases = scene.textures;
                 self.characters = scene.characters;
+                self.bitmap_text_skin = scene.bitmap_text_skin;
                 self.note_skin = scene.note_skin;
                 self.note_splash_skin = scene.note_splash_skin;
                 self.hold_cover_skin = scene.hold_cover_skin;
@@ -471,6 +475,11 @@ impl App {
                 play_state.health,
                 health_icon_scale(cursor, sample_rate, play_state.bpm),
             ) {
+                self.cmds.push(cmd);
+            }
+        }
+        if let Some(bitmap_text_skin) = &self.bitmap_text_skin {
+            for cmd in bitmap_text_skin.score_text_commands(play_state.score) {
                 self.cmds.push(cmd);
             }
         }

@@ -12,15 +12,14 @@ behavior on purpose.
   use the wall-clock preview cursor when CPAL output is disabled, errors, or
   times out. `RUSTIC_AUDIO=off` forces this path, and
   `RUSTIC_AUDIO_OPEN_TIMEOUT_MS` tunes the bounded probe.
-- OG VCR font assets are present in `assets/source/fonts`. Text rendering is
-  not wired yet; until it is, any text UI should fall back to a system
-  monospace font rather than blocking gameplay work.
+- OG VCR bitmap font assets are present in `assets/source/fonts` and are wired
+  for the gameplay score HUD. Full `glyphon` text is still pending for broader
+  menu/debug UI.
 
 ## Known Visual/Timing Gaps
 
-- Receptor hold-confirm behavior now follows active hold state instead of
-  generated sustain children, but it is still a simplified state model compared
-  to v0.8.5's `StrumlineNote.holdConfirm()` transition into `confirm-hold`.
+- Receptor hold-confirm behavior follows active hold state and transitions into
+  the v0.8.5 `confirm-hold` atlas frames after the confirm animation completes.
 - Hold trails, hold covers, and note splashes use the v0.8.5 assets. Hold
   trail clipping is still quad-tiled rather than a literal `drawTriangles`
   port of `SustainTrail`.
