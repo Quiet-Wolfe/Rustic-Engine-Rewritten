@@ -42,6 +42,8 @@ pub struct PlayState {
     /// prototype saves can fall back cleanly.
     pub windows: JudgmentWindowsSerde,
     pub score: i64,
+    #[serde(default)]
+    pub hold_score_carry: f64,
     pub combo: u32,
     pub max_combo: u32,
     pub health: f32,
@@ -62,6 +64,7 @@ impl Default for PlayState {
             resolved_notes: Vec::new(),
             windows: JudgmentWindows::base_fnf().into(),
             score: 0,
+            hold_score_carry: 0.0,
             combo: 0,
             max_combo: 0,
             health: INITIAL_HEALTH,

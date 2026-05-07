@@ -3,6 +3,7 @@
 //! `rustic-app` is the only release crate allowed to wire audio, render,
 //! game, settings, and assets together. Other crates stay headless.
 
+pub mod active_holds;
 pub mod app;
 pub mod audio_fallback;
 pub mod boot;

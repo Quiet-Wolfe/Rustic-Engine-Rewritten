@@ -6,6 +6,7 @@
 //! window is held in an `Arc`.
 // LINT-ALLOW: long-file app event loop plus temporary gameplay preview wiring
 
+use crate::active_holds::ActiveHolds;
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::boot::{init_logging, install_panic_hook};
 use crate::camera_fx::CameraFx;
@@ -14,7 +15,7 @@ use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
-use crate::lane_state::{lane_for_action, ActiveHolds, HeldLanes};
+use crate::lane_state::{lane_for_action, HeldLanes};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
@@ -342,6 +343,7 @@ impl App {
         let mut late_misses = 0;
         let mut dead = false;
         let confirm_duration = confirm_duration_or_default(self.note_skin.as_ref(), sample_rate);
+        let hold_ticks = self.active_holds.score_ticks(cursor);
         for lane in self.active_holds.complete_elapsed(cursor) {
             if self.held_lanes.is_held(lane) {
                 self.held_lanes.play_press(lane, cursor);
@@ -354,6 +356,9 @@ impl App {
             self.held_lanes.hold_confirm(lane, cursor, confirm_duration);
         }
         if let Some(play_state) = self.play_state.as_mut() {
+            for tick in hold_ticks {
+                play_state.register_hold_tick(tick.elapsed_samples, sample_rate);
+            }
             opponent_hits = play_state.resolve_opponent_notes(cursor);
             let held_lanes: Vec<_> = self.held_lanes.active_lanes().collect();
             for lane in held_lanes {
@@ -541,6 +546,13 @@ impl App {
         }
     }
 
+    fn register_hold_tick(&mut self, elapsed_samples: i64) {
+        let sample_rate = self.play_sample_rate();
+        if let Some(play_state) = self.play_state.as_mut() {
+            play_state.register_hold_tick(elapsed_samples, sample_rate);
+        }
+    }
+
     fn advance_song_clock(&mut self) -> Samples {
         if !self.song_started {
             let elapsed = self.song_start.elapsed().as_secs_f64();
@@ -684,9 +696,11 @@ impl ApplicationHandler for App {
                     self.held_lanes.apply(&evt);
                     if event.state == ElementState::Released {
                         if let Some(lane) = lane_for_action(action) {
-                            if let Some(hold_end_at) = self.active_holds.release(lane, song_cursor)
-                            {
-                                self.register_hold_drop(song_cursor, hold_end_at);
+                            if let Some(release) = self.active_holds.release(lane, song_cursor) {
+                                self.register_hold_tick(release.elapsed_samples);
+                                if release.hold_end_at > song_cursor {
+                                    self.register_hold_drop(song_cursor, release.hold_end_at);
+                                }
                             }
                             self.hold_covers.end(lane, song_cursor);
                             self.held_lanes.play_static(lane);

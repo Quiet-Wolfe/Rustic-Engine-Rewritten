@@ -14,11 +14,6 @@ pub struct HeldLanes {
     confirm_until: [Samples; 4],
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct ActiveHolds {
-    ends_at: [Option<Samples>; 4],
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReceptorState {
     Static,
@@ -96,39 +91,6 @@ impl HeldLanes {
         } else {
             ReceptorState::Static
         }
-    }
-}
-
-impl ActiveHolds {
-    pub fn start(&mut self, lane: Lane, hold_end_at: Samples, cursor: Samples) {
-        if hold_end_at > cursor {
-            self.ends_at[lane_index(lane)] = Some(hold_end_at);
-        }
-    }
-
-    pub fn release(&mut self, lane: Lane, cursor: Samples) -> Option<Samples> {
-        let active = self.ends_at[lane_index(lane)].take()?;
-        (active > cursor).then_some(active)
-    }
-
-    pub fn active_lanes(&self, cursor: Samples) -> impl Iterator<Item = Lane> + '_ {
-        LANES
-            .iter()
-            .copied()
-            .enumerate()
-            .filter(move |(idx, _)| self.ends_at[*idx].is_some_and(|end| end > cursor))
-            .map(|(_, lane)| lane)
-    }
-
-    pub fn complete_elapsed(&mut self, cursor: Samples) -> Vec<Lane> {
-        let mut completed = Vec::new();
-        for (idx, lane) in LANES.iter().copied().enumerate() {
-            if self.ends_at[idx].is_some_and(|end| end <= cursor) {
-                self.ends_at[idx] = None;
-                completed.push(lane);
-            }
-        }
-        completed
     }
 }
 
@@ -294,21 +256,5 @@ mod tests {
                 started_at: Samples(80)
             }
         );
-    }
-
-    #[test]
-    fn active_holds_report_drops_and_completions_once() {
-        let mut holds = ActiveHolds::default();
-        holds.start(Lane::Left, Samples(200), Samples(100));
-
-        let lanes: Vec<_> = holds.active_lanes(Samples(150)).collect();
-        assert_eq!(lanes, vec![Lane::Left]);
-        assert_eq!(holds.release(Lane::Left, Samples(160)), Some(Samples(200)));
-        assert_eq!(holds.release(Lane::Left, Samples(170)), None);
-
-        holds.start(Lane::Down, Samples(300), Samples(200));
-        assert_eq!(holds.complete_elapsed(Samples(299)), Vec::<Lane>::new());
-        assert_eq!(holds.complete_elapsed(Samples(300)), vec![Lane::Down]);
-        assert_eq!(holds.complete_elapsed(Samples(301)), Vec::<Lane>::new());
     }
 }

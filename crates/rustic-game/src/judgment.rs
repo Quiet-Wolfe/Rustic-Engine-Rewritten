@@ -66,6 +66,8 @@ pub const PBOT1_SICK_THRESHOLD: f64 = 45.0;
 pub const PBOT1_GOOD_THRESHOLD: f64 = 90.0;
 pub const PBOT1_BAD_THRESHOLD: f64 = 135.0;
 pub const GHOST_MISS_SCORE: i64 = -10;
+pub const HEALTH_HOLD_BONUS_PER_SECOND: f32 = 0.12;
+pub const SCORE_HOLD_BONUS_PER_SECOND: f64 = 250.0;
 pub const SCORE_HOLD_DROP_PENALTY_PER_SECOND: f64 = -125.0;
 pub const HOLD_DROP_PENALTY_THRESHOLD_MS: f64 = 160.0;
 
@@ -162,8 +164,10 @@ mod tests {
         assert!((health_delta(Judgment::Shit) - -0.02).abs() < 1e-6);
         assert!((health_delta(Judgment::Miss) - -0.08).abs() < 1e-6);
         assert!((late_note_health_delta() - -0.08).abs() < 1e-6);
+        assert!((HEALTH_HOLD_BONUS_PER_SECOND - 0.12).abs() < 1e-6);
         assert_eq!(note_miss_score_delta(), -100);
         assert_eq!(ghost_miss_score_delta(), -10);
+        assert_eq!(SCORE_HOLD_BONUS_PER_SECOND, 250.0);
         assert_eq!(hold_drop_score_delta(160.0), None);
         assert_eq!(hold_drop_score_delta(1000.0), Some(-125));
     }

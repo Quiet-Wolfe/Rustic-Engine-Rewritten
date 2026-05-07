@@ -13,6 +13,7 @@
 use crate::judgment::{
     combo_breaks, ghost_miss_health_delta, ghost_miss_score_delta, health_delta,
     hold_drop_score_delta, note_miss_score_delta, score_for_timing, Judgment, JudgmentWindows,
+    HEALTH_HOLD_BONUS_PER_SECOND, SCORE_HOLD_BONUS_PER_SECOND,
 };
 use crate::note::Lane;
 use crate::state::{PlayState, MAX_HEALTH};
@@ -123,6 +124,22 @@ impl PlayState {
         self.score += delta;
         self.combo = 0;
         Some(delta)
+    }
+
+    /// v0.8.5 gives score and health every frame while a hit hold note still
+    /// has remaining length.
+    pub fn register_hold_tick(&mut self, elapsed_samples: i64, sample_rate: u32) -> i64 {
+        if elapsed_samples <= 0 {
+            return 0;
+        }
+        let elapsed_secs = elapsed_samples as f64 / f64::from(sample_rate.max(1));
+        self.apply_health(HEALTH_HOLD_BONUS_PER_SECOND * elapsed_secs as f32);
+
+        self.hold_score_carry += SCORE_HOLD_BONUS_PER_SECOND * elapsed_secs;
+        let delta = self.hold_score_carry.trunc() as i64;
+        self.hold_score_carry -= delta as f64;
+        self.score += delta;
+        delta
     }
 
     /// Try to consume a player keypress against the closest unresolved
@@ -373,6 +390,24 @@ mod tests {
         assert_eq!(delta, None);
         assert_eq!(s.score, 500);
         assert_eq!(s.combo, 7);
+    }
+
+    #[test]
+    fn hold_tick_adds_continuous_score_and_health_with_fractional_carry() {
+        let mut s = PlayState::new();
+
+        let first = s.register_hold_tick(1_600, 48_000);
+        let second = s.register_hold_tick(1_600, 48_000);
+        let rest = s.register_hold_tick(44_800, 48_000);
+
+        assert_eq!(first, 8);
+        assert_eq!(second, 8);
+        assert_eq!(rest, 234);
+        assert_eq!(s.score, 250);
+        assert!(s.hold_score_carry.abs() < 1e-9);
+        assert!((s.health - (INITIAL_HEALTH + 0.12)).abs() < 1e-6);
+        assert_eq!(s.combo, 0);
+        assert_eq!(s.misses, 0);
     }
 
     #[test]
