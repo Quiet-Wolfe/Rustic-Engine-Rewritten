@@ -44,6 +44,7 @@ pub struct NoteSkin {
     static_frames: [SparrowFrame; 4],
     press_frames: [Vec<SparrowFrame>; 4],
     confirm_frames: [Vec<SparrowFrame>; 4],
+    confirm_hold_frames: [Vec<SparrowFrame>; 4],
     tap_frames: [SparrowFrame; 4],
     hold_frames: [SparrowFrame; 4],
     hold_end_frames: [SparrowFrame; 4],
@@ -234,17 +235,37 @@ impl NoteSkin {
             ReceptorState::Pressed { started_at } => {
                 animated_note_frame(&self.press_frames[index], cursor, sample_rate, started_at)
             }
-            ReceptorState::Confirm { started_at } => {
-                animated_note_frame(&self.confirm_frames[index], cursor, sample_rate, started_at)
+            ReceptorState::Confirm { started_at, hold } => {
+                if hold
+                    && cursor.0.saturating_sub(started_at.0)
+                        >= self.confirm_animation_duration(sample_rate).0
+                {
+                    animated_note_frame(
+                        &self.confirm_hold_frames[index],
+                        cursor,
+                        sample_rate,
+                        Samples(started_at.0 + self.confirm_animation_duration(sample_rate).0),
+                    )
+                } else {
+                    animated_note_frame(
+                        &self.confirm_frames[index],
+                        cursor,
+                        sample_rate,
+                        started_at,
+                    )
+                }
             }
         }
     }
 
     pub fn confirm_duration(&self, sample_rate: u32) -> Samples {
-        let frame_count = self.confirm_frames.iter().map(Vec::len).max().unwrap_or(1);
-        let animation =
-            animation_duration_samples(sample_rate, RECEPTOR_ANIMATION_FPS, frame_count);
+        let animation = self.confirm_animation_duration(sample_rate);
         Samples(animation.0 + (f64::from(sample_rate) * CONFIRM_HOLD_TIME_SECS).round() as i64)
+    }
+
+    fn confirm_animation_duration(&self, sample_rate: u32) -> Samples {
+        let frame_count = self.confirm_frames.iter().map(Vec::len).max().unwrap_or(1);
+        animation_duration_samples(sample_rate, RECEPTOR_ANIMATION_FPS, frame_count)
     }
 }
 
@@ -323,6 +344,12 @@ pub fn load_note_skin(
             cloned_animation_frames(&strumline.atlas, "confirmDown0")?,
             cloned_animation_frames(&strumline.atlas, "confirmUp0")?,
             cloned_animation_frames(&strumline.atlas, "confirmRight0")?,
+        ],
+        confirm_hold_frames: [
+            cloned_animation_frames(&strumline.atlas, "confirmHoldLeft0")?,
+            cloned_animation_frames(&strumline.atlas, "confirmHoldDown0")?,
+            cloned_animation_frames(&strumline.atlas, "confirmHoldUp0")?,
+            cloned_animation_frames(&strumline.atlas, "confirmHoldRight0")?,
         ],
         tap_frames: [
             cloned_first_frame(&tap.atlas, "noteLeft0")?,
@@ -565,6 +592,8 @@ mod tests {
                 <SubTexture name="confirmLeft0002" x="665" y="0" width="216" height="218"/>
                 <SubTexture name="confirmLeft0003" x="881" y="0" width="217" height="217"/>
                 <SubTexture name="confirmLeft0004" x="881" y="0" width="217" height="217"/>
+                <SubTexture name="confirmHoldLeft0001" x="1098" y="0" width="217" height="217"/>
+                <SubTexture name="confirmHoldLeft0002" x="1315" y="0" width="223" height="224"/>
             </TextureAtlas>
             "#,
         )
@@ -600,6 +629,11 @@ mod tests {
             .into_iter()
             .cloned()
             .collect();
+        let confirm_hold_frames: Vec<_> = strumline
+            .animation_frames("confirmHoldLeft0", &[])
+            .into_iter()
+            .cloned()
+            .collect();
         let tap_frame = tap.first_animation_frame("noteLeft0", &[]).unwrap().clone();
         let hold_frame = hold
             .first_animation_frame("purple hold piece", &[])
@@ -626,6 +660,7 @@ mod tests {
             static_frames: std::array::from_fn(|_| static_frame.clone()),
             press_frames: std::array::from_fn(|_| press_frames.clone()),
             confirm_frames: std::array::from_fn(|_| confirm_frames.clone()),
+            confirm_hold_frames: std::array::from_fn(|_| confirm_hold_frames.clone()),
             tap_frames: std::array::from_fn(|_| tap_frame.clone()),
             hold_frames: std::array::from_fn(|_| hold_frame.clone()),
             hold_end_frames: std::array::from_fn(|_| hold_end_frame.clone()),
@@ -674,6 +709,26 @@ mod tests {
     #[test]
     fn confirm_duration_includes_og_hold_timer() {
         assert_eq!(test_note_skin().confirm_duration(48_000), Samples(15_200));
+    }
+
+    #[test]
+    fn hold_confirm_switches_to_confirm_hold_after_confirm_animation() {
+        let skin = test_note_skin();
+        let state = ReceptorState::Confirm {
+            started_at: Samples(0),
+            hold: true,
+        };
+
+        assert_eq!(
+            skin.receptor_frame(Lane::Left, state, Samples(7_999), 48_000)
+                .name,
+            "confirmLeft0004"
+        );
+        assert_eq!(
+            skin.receptor_frame(Lane::Left, state, Samples(8_000), 48_000)
+                .name,
+            "confirmHoldLeft0001"
+        );
     }
 
     #[test]

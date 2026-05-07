@@ -12,13 +12,14 @@ pub struct HeldLanes {
     pressed_started: [Samples; 4],
     confirm_started: [Samples; 4],
     confirm_until: [Samples; 4],
+    hold_confirming: [bool; 4],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReceptorState {
     Static,
     Pressed { started_at: Samples },
-    Confirm { started_at: Samples },
+    Confirm { started_at: Samples, hold: bool },
 }
 
 impl HeldLanes {
@@ -48,6 +49,7 @@ impl HeldLanes {
         let index = lane_index(lane);
         self.confirm_started[index] = started_at;
         self.confirm_until[index] = Samples(started_at.0 + duration.0.max(0));
+        self.hold_confirming[index] = false;
     }
 
     pub fn hold_confirm(&mut self, lane: Lane, cursor: Samples, duration: Samples) {
@@ -55,6 +57,7 @@ impl HeldLanes {
         if !self.is_confirming(lane, cursor) {
             self.confirm_started[index] = cursor;
         }
+        self.hold_confirming[index] = true;
         let until = Samples(cursor.0 + duration.0.max(0));
         self.confirm_until[index] = self.confirm_until[index].max(until);
     }
@@ -63,6 +66,7 @@ impl HeldLanes {
         let index = lane_index(lane);
         self.confirm_started[index] = Samples(0);
         self.confirm_until[index] = Samples(0);
+        self.hold_confirming[index] = false;
     }
 
     pub fn play_press(&mut self, lane: Lane, started_at: Samples) {
@@ -83,6 +87,7 @@ impl HeldLanes {
         if self.is_confirming(lane, cursor) {
             ReceptorState::Confirm {
                 started_at: self.confirm_started[index],
+                hold: self.hold_confirming[index],
             }
         } else if self.pressed[index] {
             ReceptorState::Pressed {
@@ -190,7 +195,8 @@ mod tests {
         assert_eq!(
             held.receptor_state(Lane::Left, Samples(55)),
             ReceptorState::Confirm {
-                started_at: Samples(50)
+                started_at: Samples(50),
+                hold: false
             }
         );
         assert_eq!(
@@ -210,7 +216,8 @@ mod tests {
         assert_eq!(
             held.receptor_state(Lane::Left, Samples(120)),
             ReceptorState::Confirm {
-                started_at: Samples(50)
+                started_at: Samples(50),
+                hold: true
             }
         );
         assert!(held.is_confirming(Lane::Left, Samples(180)));
