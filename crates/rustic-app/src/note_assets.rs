@@ -662,6 +662,7 @@ mod tests {
             rustic_core::ids::NoteId::new(0),
             Lane::Down,
             false,
+            false,
             800.0,
             100.0,
             225.0,

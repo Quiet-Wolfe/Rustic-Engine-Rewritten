@@ -392,6 +392,9 @@ impl App {
         };
 
         for view in play_state.hold_trail_views(cursor, sample_rate) {
+            if view.head_resolved && !self.held_lanes.is_held(view.lane) {
+                continue;
+            }
             for cmd in note_skin.hold_trail_commands(&view) {
                 if cmd.world_pos.y + cmd.size.y >= -200.0 {
                     self.cmds.push(cmd);

@@ -21,6 +21,6 @@ behavior on purpose.
 - Receptor hold-confirm behavior now extends while sustain ticks resolve, but
   it is still a simplified state model compared to v0.8.5's
   `StrumlineNote.holdConfirm()` transition into `confirm-hold`.
-- Hold trails, hold covers, and note splashes use the v0.8.5 assets. Dropped
-  and missed hold trails are still visually simplified; v0.8.5 hides or
-  clips them based on `SustainTrail.missedNote`.
+- Hold trails, hold covers, and note splashes use the v0.8.5 assets. Hold
+  trail clipping is still quad-tiled rather than a literal `drawTriangles`
+  port of `SustainTrail`.

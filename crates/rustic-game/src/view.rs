@@ -37,17 +37,27 @@ pub struct HoldTrailView {
     pub id: NoteId,
     pub lane: Lane,
     pub opponent: bool,
+    pub head_resolved: bool,
     pub x: f32,
     pub y: f32,
     pub height: f32,
 }
 
 impl HoldTrailView {
-    pub fn new(id: NoteId, lane: Lane, opponent: bool, x: f32, y: f32, height: f32) -> Self {
+    pub fn new(
+        id: NoteId,
+        lane: Lane,
+        opponent: bool,
+        head_resolved: bool,
+        x: f32,
+        y: f32,
+        height: f32,
+    ) -> Self {
         Self {
             id,
             lane,
             opponent,
+            head_resolved,
             x,
             y,
             height,
@@ -133,6 +143,7 @@ impl PlayState {
                 id: note.id,
                 lane: note.lane,
                 opponent: note.opponent,
+                head_resolved: self.resolved_notes.contains(&note.id),
                 x: note_x(note.lane, !note.opponent),
                 y: STRUM_LINE_Y - INITIAL_OFFSET + approach_offset + STRUMLINE_SIZE * 0.5,
                 height,
@@ -222,12 +233,15 @@ mod tests {
 
         let incoming = state.hold_trail_views(Samples(0), 48_000);
         assert_eq!(incoming.len(), 1);
+        assert!(!incoming[0].head_resolved);
         assert_eq!(incoming[0].x, 688.0);
         assert!((incoming[0].height - 225.0).abs() < 1e-4);
         assert!((incoming[0].y - 554.6).abs() < 1e-3);
 
+        state.resolved_notes.push(rustic_core::ids::NoteId::new(0));
         let clipped = state.hold_trail_views(Samples(60_000), 48_000);
         assert_eq!(clipped.len(), 1);
+        assert!(clipped[0].head_resolved);
         assert!((clipped[0].height - 112.5).abs() < 1e-4);
         assert!((clipped[0].y - 104.6).abs() < 1e-3);
     }
