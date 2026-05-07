@@ -250,7 +250,9 @@ pub struct ChartEvent {
 #[non_exhaustive]
 pub enum ChartEventKind {
     FocusCamera {
-        target: Option<u8>,
+        target: Option<i8>,
+        x: f32,
+        y: f32,
     },
     PlayAnimation {
         target: String,
@@ -459,6 +461,8 @@ fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
     match event.name.as_str() {
         "FocusCamera" => ChartEventKind::FocusCamera {
             target: focus_camera_target(&event.value),
+            x: event_float(&event.value, "x"),
+            y: event_float(&event.value, "y"),
         },
         "PlayAnimation" => parse_play_animation_event(event),
         _ => ChartEventKind::Unknown {
@@ -467,11 +471,15 @@ fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
     }
 }
 
-fn focus_camera_target(value: &Value) -> Option<u8> {
+fn focus_camera_target(value: &Value) -> Option<i8> {
     value
-        .as_u64()
-        .or_else(|| value.get("char").and_then(Value::as_u64))
-        .and_then(|target| u8::try_from(target).ok())
+        .as_i64()
+        .or_else(|| value.get("char").and_then(Value::as_i64))
+        .and_then(|target| i8::try_from(target).ok())
+}
+
+fn event_float(value: &Value, key: &str) -> f32 {
+    value.get(key).and_then(Value::as_f64).unwrap_or_default() as f32
 }
 
 fn parse_play_animation_event(event: &VSliceEvent) -> ChartEventKind {
@@ -727,7 +735,11 @@ mod tests {
         assert_eq!(p.chart.events[0].time_ms, 0.0);
         assert_eq!(
             p.chart.events[0].kind,
-            ChartEventKind::FocusCamera { target: Some(1) }
+            ChartEventKind::FocusCamera {
+                target: Some(1),
+                x: 0.0,
+                y: 0.0
+            }
         );
         assert_eq!(
             p.chart.events[1].kind,

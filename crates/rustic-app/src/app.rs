@@ -9,6 +9,7 @@
 use crate::active_holds::ActiveHolds;
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::boot::{init_logging, install_panic_hook};
+use crate::camera_events::focus_camera;
 use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
@@ -19,7 +20,9 @@ use crate::lane_state::{lane_for_action, HeldLanes};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
-use crate::scene_assets::{load_default_scene, load_preview_play_state, CharacterSet};
+use crate::scene_assets::{
+    load_default_scene, load_preview_play_state, CameraFocusPoints, CharacterSet,
+};
 use crate::screen::ScreenStack;
 use crate::song_audio::load_bopeebo_stems;
 use anyhow::Result;
@@ -67,6 +70,7 @@ struct App {
     audio_output: Option<AudioOutput>,
     cameras: CameraRegistry,
     camera_fx: CameraFx,
+    camera_focus: CameraFocusPoints,
     static_cmds: RenderCommandList,
     cmds: RenderCommandList,
     atlases: HashMap<AssetId, Texture>,
@@ -121,6 +125,7 @@ impl App {
             audio_output,
             cameras: CameraRegistry::with_default_fnf(),
             camera_fx: CameraFx::default(),
+            camera_focus: CameraFocusPoints::default(),
             static_cmds: RenderCommandList::new(),
             cmds: RenderCommandList::new(),
             atlases: HashMap::new(),
@@ -199,6 +204,7 @@ impl App {
                 self.hud_skin = scene.hud_skin;
                 self.popup_skin = scene.popup_skin;
                 self.countdown_skin = scene.countdown_skin;
+                self.camera_focus = scene.camera_focus;
                 self.camera_fx.reset(&mut self.cameras, scene.camera_zoom);
                 let sample_rate = self.play_sample_rate();
                 match load_preview_play_state(sample_rate) {
@@ -476,14 +482,25 @@ impl App {
     }
 
     fn apply_song_event(&mut self, kind: &ChartEventKind, cursor: Samples) {
-        if let ChartEventKind::PlayAnimation {
-            target,
-            animation,
-            force,
-        } = kind
-        {
-            self.character_anim
-                .play_chart_animation(target, animation, cursor, *force);
+        match kind {
+            ChartEventKind::FocusCamera { target, x, y } => {
+                focus_camera(
+                    &mut self.cameras,
+                    self.camera_focus,
+                    *target,
+                    glam::vec2(*x, *y),
+                );
+            }
+            ChartEventKind::PlayAnimation {
+                target,
+                animation,
+                force,
+            } => {
+                self.character_anim
+                    .play_chart_animation(target, animation, cursor, *force);
+            }
+            ChartEventKind::Unknown { .. } => {}
+            _ => {}
         }
     }
 

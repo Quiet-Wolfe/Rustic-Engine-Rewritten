@@ -26,6 +26,7 @@ use std::collections::HashMap;
 pub const SAMPLE_RATE: u32 = 48_000;
 pub struct LoadedScene {
     pub camera_zoom: f32,
+    pub camera_focus: CameraFocusPoints,
     pub commands: RenderCommandList,
     pub textures: HashMap<AssetId, Texture>,
     pub characters: Option<CharacterSet>,
@@ -35,6 +36,24 @@ pub struct LoadedScene {
     pub hud_skin: Option<HudSkin>,
     pub popup_skin: Option<PopupSkin>,
     pub countdown_skin: Option<CountdownSkin>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CameraFocusPoints {
+    pub player: glam::Vec2,
+    pub opponent: glam::Vec2,
+    pub girlfriend: glam::Vec2,
+}
+
+impl Default for CameraFocusPoints {
+    fn default() -> Self {
+        let center = glam::vec2(1280.0 * 0.5, 720.0 * 0.5);
+        Self {
+            player: center,
+            opponent: center,
+            girlfriend: center,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -74,6 +93,14 @@ impl CharacterSet {
         sample_rate: u32,
     ) -> Option<Samples> {
         self.player.animation_duration(animation_name, sample_rate)
+    }
+
+    pub fn camera_focus_points(&self) -> CameraFocusPoints {
+        CameraFocusPoints {
+            player: self.player.camera_focus_point(),
+            opponent: self.opponent.camera_focus_point(),
+            girlfriend: self.girlfriend.camera_focus_point(),
+        }
     }
 }
 
@@ -138,6 +165,20 @@ impl CharacterSprite {
             pose.frames.len(),
         ))
     }
+
+    fn camera_focus_point(&self) -> glam::Vec2 {
+        let pose = &self.poses[self.initial_pose];
+        let frame = &pose.frames[0];
+        let source_size = glam::vec2(frame.frame_width as f32, frame.frame_height as f32);
+        glam::vec2(
+            self.slot.position.x
+                + self.character.position.x
+                + source_size.x * self.character.scale * 0.5,
+            self.slot.position.y
+                + self.character.position.y
+                + source_size.y * self.character.scale * 0.5,
+        ) + glam::vec2(self.slot.camera_offset.x, self.slot.camera_offset.y)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -166,6 +207,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
 
     let mut scene = LoadedScene {
         camera_zoom: stage.camera_zoom,
+        camera_focus: CameraFocusPoints::default(),
         commands: RenderCommandList::new(),
         textures: HashMap::new(),
         characters: None,
@@ -180,9 +222,9 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
     for object in &stage.objects {
         load_stage_object(device, queue, &resolver, object, &mut scene)?;
     }
-    scene.characters = Some(load_stage_characters(
-        device, queue, &resolver, &stage, &mut scene,
-    )?);
+    let characters = load_stage_characters(device, queue, &resolver, &stage, &mut scene)?;
+    scene.camera_focus = characters.camera_focus_points();
+    scene.characters = Some(characters);
     scene.note_skin = Some(load_note_skin(
         device,
         queue,

@@ -280,7 +280,11 @@ mod tests {
             state.resolve_song_events(Samples(4_800)),
             vec![SongEvent {
                 at: Samples(4_800),
-                kind: ChartEventKind::FocusCamera { target: Some(1) }
+                kind: ChartEventKind::FocusCamera {
+                    target: Some(1),
+                    x: 0.0,
+                    y: 0.0
+                }
             }]
         );
         assert_eq!(

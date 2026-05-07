@@ -7,6 +7,7 @@ pub mod active_holds;
 pub mod app;
 pub mod audio_fallback;
 pub mod boot;
+pub mod camera_events;
 pub mod camera_fx;
 pub mod character_anim;
 pub mod countdown_assets;
