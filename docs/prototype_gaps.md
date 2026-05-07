@@ -12,9 +12,9 @@ behavior on purpose.
   use the wall-clock preview cursor when CPAL output is disabled, errors, or
   times out. `RUSTIC_AUDIO=off` forces this path, and
   `RUSTIC_AUDIO_OPEN_TIMEOUT_MS` tunes the bounded probe.
-- Text should use a fallback system monospace font until the OG VCR font asset
-  is present in the asset tree. This keeps HUD/menu work unblocked, but the
-  fallback font is not a fidelity match.
+- OG VCR font assets are present in `assets/source/fonts`. Text rendering is
+  not wired yet; until it is, any text UI should fall back to a system
+  monospace font rather than blocking gameplay work.
 
 ## Known Visual/Timing Gaps
 
