@@ -1,15 +1,17 @@
-//! FNF base-engine chart JSON parser.
+//! FNF chart JSON parser.
 // LINT-ALLOW: long-file source-referenced chart tests stay beside lane parsing.
+//!
+//! Runtime chart loading now targets Funkin' v0.8.5 v-slice chart/metadata
+//! pairs through `ParsedSong::parse_vslice`. The older SwagSong parser remains
+//! here as transitional compatibility for original prototype assets and tests;
+//! do not treat its `50fccded` citations as current fidelity proof.
 //!
 //! ref: 50fccded:source/Song.hx:10-21      // SwagSong typedef
 //! ref: 50fccded:source/Section.hx:3-12    // SwagSection typedef
 //! ref: 50fccded:source/Song.hx:70-75      // parseJSONshit / validScore=true
 //! ref: 50fccded:source/PlayState.hx:1014-1018  // mustHit lane-flip rule
 //!
-//! Baseline pin: see `docs/fnf_baseline.md` (commit `50fccded`, tag
-//! `v0.2.7.1`, 2021-02-14). Source lives at `references/Funkin/`.
-//!
-//! Wire format (from `parseJSONshit`):
+//! Legacy SwagSong wire format (from `parseJSONshit`):
 //!
 //! ```json
 //! {
