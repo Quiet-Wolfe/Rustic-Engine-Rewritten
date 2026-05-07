@@ -10,6 +10,7 @@ use crate::boot::{init_logging, install_panic_hook};
 use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
+use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, HeldLanes};
@@ -77,11 +78,13 @@ struct App {
     character_anim: CharacterAnimState,
     note_skin: Option<NoteSkin>,
     note_splash_skin: Option<NoteSplashSkin>,
+    hold_cover_skin: Option<HoldCoverSkin>,
     hud_skin: Option<HudSkin>,
     popup_skin: Option<PopupSkin>,
     countdown_skin: Option<CountdownSkin>,
     score_popups: ScorePopups,
     note_splashes: NoteSplashes,
+    hold_covers: HoldCovers,
     held_lanes: HeldLanes,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -128,11 +131,13 @@ impl App {
             character_anim: CharacterAnimState::default(),
             note_skin: None,
             note_splash_skin: None,
+            hold_cover_skin: None,
             hud_skin: None,
             popup_skin: None,
             countdown_skin: None,
             score_popups: ScorePopups::default(),
             note_splashes: NoteSplashes::default(),
+            hold_covers: HoldCovers::default(),
             held_lanes: HeldLanes::default(),
             play_state: None,
             song_start: now,
@@ -192,6 +197,7 @@ impl App {
                 self.characters = scene.characters;
                 self.note_skin = scene.note_skin;
                 self.note_splash_skin = scene.note_splash_skin;
+                self.hold_cover_skin = scene.hold_cover_skin;
                 self.hud_skin = scene.hud_skin;
                 self.popup_skin = scene.popup_skin;
                 self.countdown_skin = scene.countdown_skin;
@@ -407,6 +413,14 @@ impl App {
                 self.cmds.push(cmd);
             }
         }
+        if let Some(hold_cover_skin) = &self.hold_cover_skin {
+            for cmd in self
+                .hold_covers
+                .commands(hold_cover_skin, cursor, sample_rate)
+            {
+                self.cmds.push(cmd);
+            }
+        }
         if let Some(hud_skin) = &self.hud_skin {
             for cmd in hud_skin.commands_with_icon_scale(
                 play_state.health,
@@ -472,6 +486,9 @@ impl App {
                             .push(outcome.judgment, outcome.combo_popup, cursor);
                         if outcome.judgment == Judgment::Sick {
                             self.note_splashes.push(lane, cursor);
+                        }
+                        if let Some(hold_end_at) = outcome.hold_end_at {
+                            self.hold_covers.start(lane, cursor, hold_end_at);
                         }
                     }
                 } else {
@@ -544,6 +561,7 @@ impl App {
             .unwrap_or(Samples(i64::from(sample_rate)));
         self.character_anim.player_first_death(cursor);
         self.held_lanes = HeldLanes::default();
+        self.hold_covers = HoldCovers::default();
         self.set_vocals_gain(0.0);
         if let Err(e) = self.mixer.edit(|mixer| {
             mixer.pause();
@@ -709,6 +727,11 @@ impl ApplicationHandler for App {
                             .map(|lane| self.held_lanes.is_held(lane))
                             .unwrap_or(false);
                     self.held_lanes.apply(&evt);
+                    if event.state == ElementState::Released {
+                        if let Some(lane) = lane_for_action(action) {
+                            self.hold_covers.end(lane, song_cursor);
+                        }
+                    }
                     self.screens.input(&evt);
                     self.handle_gameplay_input(&evt, already_held);
                     if event.state == ElementState::Pressed

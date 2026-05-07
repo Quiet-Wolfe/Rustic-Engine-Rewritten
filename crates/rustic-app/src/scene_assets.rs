@@ -6,6 +6,7 @@
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
 use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
+use crate::hold_cover_assets::{load_hold_cover_assets, HoldCoverSkin};
 use crate::hud_assets::{load_hud_assets, HudSkin};
 use crate::note_assets::{load_note_skin, NoteSkin};
 use crate::note_splash_assets::{load_note_splash_assets, NoteSplashSkin};
@@ -30,6 +31,7 @@ pub struct LoadedScene {
     pub characters: Option<CharacterSet>,
     pub note_skin: Option<NoteSkin>,
     pub note_splash_skin: Option<NoteSplashSkin>,
+    pub hold_cover_skin: Option<HoldCoverSkin>,
     pub hud_skin: Option<HudSkin>,
     pub popup_skin: Option<PopupSkin>,
     pub countdown_skin: Option<CountdownSkin>,
@@ -169,6 +171,7 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         characters: None,
         note_skin: None,
         note_splash_skin: None,
+        hold_cover_skin: None,
         hud_skin: None,
         popup_skin: None,
         countdown_skin: None,
@@ -187,6 +190,12 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
         &mut scene.textures,
     )?);
     scene.note_splash_skin = Some(load_note_splash_assets(
+        device,
+        queue,
+        &resolver,
+        &mut scene.textures,
+    )?);
+    scene.hold_cover_skin = Some(load_hold_cover_assets(
         device,
         queue,
         &resolver,

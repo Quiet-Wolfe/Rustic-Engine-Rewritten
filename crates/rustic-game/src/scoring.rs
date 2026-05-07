@@ -24,6 +24,7 @@ use rustic_core::time::Samples;
 pub struct HitOutcome {
     pub judgment: Judgment,
     pub is_sustain: bool,
+    pub hold_end_at: Option<Samples>,
     pub combo_break: bool,
     pub combo_popup: Option<u32>,
 }
@@ -145,12 +146,16 @@ impl PlayState {
 
         let (idx, abs_diff_ms) = best?;
         let id = self.notes[idx].id;
+        let hold_end_at = (self.notes[idx].sustain_samples > 0).then_some(Samples(
+            self.notes[idx].hit_at.0 + self.notes[idx].sustain_samples,
+        ));
         self.resolved_notes.push(id);
 
         let hit = self.register_timed_hit(abs_diff_ms);
         Some(HitOutcome {
             judgment: hit.judgment,
             is_sustain: false,
+            hold_end_at,
             combo_break: hit.combo_break,
             combo_popup: hit.combo_popup,
         })
@@ -396,6 +401,19 @@ mod tests {
         let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
         assert_eq!(j.map(|outcome| outcome.judgment), Some(Judgment::Sick));
         assert_eq!(s.resolved_notes.len(), 1);
+    }
+
+    #[test]
+    fn hold_head_hit_reports_hold_end_cursor() {
+        let mut s = PlayState::new();
+        add_hold_head(&mut s, 0, Lane::Left, 48_000, 24_000);
+
+        let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
+
+        assert_eq!(
+            j.and_then(|outcome| outcome.hold_end_at),
+            Some(Samples(72_000))
+        );
     }
 
     #[test]
