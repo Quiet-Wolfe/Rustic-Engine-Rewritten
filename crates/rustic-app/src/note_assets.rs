@@ -1,4 +1,4 @@
-//! Funkin' v0.8.5 note, receptor, and legacy sustain-piece rendering.
+//! Funkin' v0.8.5 note, receptor, and hold-trail rendering.
 // LINT-ALLOW: long-file note atlas wiring plus placement unit tests
 
 use crate::lane_state::ReceptorState;
@@ -9,7 +9,7 @@ use rustic_asset::{
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
 use rustic_core::time::Samples;
-use rustic_game::{Lane, NoteView};
+use rustic_game::{HoldTrailView, Lane, NoteView};
 use rustic_render::{DrawCommand, FilterMode, Texture};
 use std::collections::HashMap;
 
@@ -20,6 +20,9 @@ const STRUMLINE_SIZE: f32 = 104.0;
 const NOTE_SPACING: f32 = STRUMLINE_SIZE + 8.0;
 const NOTE_NUDGE: f32 = 2.0;
 const NOTE_ASSET_SCALE: f32 = 0.7;
+const HOLD_TRAIL_SEGMENTS: f32 = 8.0;
+const HOLD_TRAIL_END_OFFSET: f32 = 0.5;
+const HOLD_TRAIL_BOTTOM_CLIP: f32 = 0.9;
 const RECEPTOR_ANIMATION_FPS: u16 = 24;
 const CONFIRM_HOLD_TIME_SECS: f64 = 0.15;
 const LANES: [Lane; 4] = [Lane::Left, Lane::Down, Lane::Up, Lane::Right];
@@ -35,6 +38,9 @@ pub struct NoteSkin {
     hold_texture_id: AssetId,
     hold_texture_width: u32,
     hold_texture_height: u32,
+    hold_trail_texture_id: AssetId,
+    hold_trail_texture_width: u32,
+    hold_trail_texture_height: u32,
     static_frames: [SparrowFrame; 4],
     press_frames: [Vec<SparrowFrame>; 4],
     confirm_frames: [Vec<SparrowFrame>; 4],
@@ -67,6 +73,76 @@ impl NoteSkin {
         if view.is_sustain {
             cmd.color.w = 0.6;
         }
+        cmd
+    }
+
+    pub fn hold_trail_commands(&self, view: &HoldTrailView) -> Vec<DrawCommand> {
+        // ref: bdedc0aa:source/funkin/play/notes/SustainTrail.hx:290-393
+        let segment_width = self.hold_trail_texture_width as f32 / HOLD_TRAIL_SEGMENTS;
+        let scaled_width = segment_width * NOTE_ASSET_SCALE;
+        let scaled_texture_height = self.hold_trail_texture_height as f32 * NOTE_ASSET_SCALE;
+        let bottom_height = scaled_texture_height * HOLD_TRAIL_END_OFFSET;
+        let tail_height = (view.height - bottom_height).max(0.0);
+        let extra_cap = scaled_texture_height * (HOLD_TRAIL_BOTTOM_CLIP - HOLD_TRAIL_END_OFFSET);
+        let cap_height = (view.height + extra_cap)
+            .min(scaled_texture_height * HOLD_TRAIL_BOTTOM_CLIP)
+            .max(0.0);
+        let x = view.x + STRUMLINE_SIZE * 0.5 - scaled_width * 0.5;
+        let lane_u = lane_index(view.lane) as f32 * 0.25;
+        let u_width = 1.0 / HOLD_TRAIL_SEGMENTS;
+        let mut commands = Vec::new();
+
+        if tail_height > 0.1 {
+            let mut remaining = tail_height;
+            let mut y = view.y;
+            let mut first_height = tail_height % scaled_texture_height;
+            if first_height <= 0.1 {
+                first_height = scaled_texture_height;
+            }
+            while remaining > 0.1 {
+                let h = remaining.min(first_height);
+                first_height = scaled_texture_height;
+                let mut cmd = self.hold_trail_rect(
+                    glam::vec2(x, y),
+                    glam::vec2(scaled_width, h),
+                    glam::vec2(lane_u, 1.0 - h / scaled_texture_height),
+                    glam::vec2(lane_u + u_width, 1.0),
+                );
+                cmd.z = 0;
+                commands.push(cmd);
+                y += h;
+                remaining -= h;
+            }
+        }
+
+        if cap_height > 0.1 {
+            let mut cmd = self.hold_trail_rect(
+                glam::vec2(x, view.y + tail_height),
+                glam::vec2(scaled_width, cap_height),
+                glam::vec2(lane_u + u_width, 0.0),
+                glam::vec2(lane_u + u_width * 2.0, HOLD_TRAIL_BOTTOM_CLIP),
+            );
+            cmd.z = 0;
+            commands.push(cmd);
+        }
+
+        commands
+    }
+
+    fn hold_trail_rect(
+        &self,
+        world_pos: glam::Vec2,
+        size: glam::Vec2,
+        uv_min: glam::Vec2,
+        uv_max: glam::Vec2,
+    ) -> DrawCommand {
+        let mut cmd = DrawCommand::sprite(self.hold_trail_texture_id, world_pos, size);
+        cmd.camera = CameraId(1);
+        cmd.pivot = glam::Vec2::ZERO;
+        cmd.layer = RenderLayer::Notes;
+        cmd.filter = FilterMode::Linear;
+        cmd.uv_min = uv_min;
+        cmd.uv_max = uv_max;
         cmd
     }
 
@@ -205,6 +281,14 @@ pub fn load_note_skin(
         "images/NOTE_assets.xml",
         FilterMode::Linear,
     )?;
+    let hold_trail = load_png_texture(
+        device,
+        queue,
+        resolver,
+        textures,
+        "images/NOTE_hold_assets.png",
+        FilterMode::Linear,
+    )?;
 
     Ok(NoteSkin {
         tap_texture_id: tap.texture_id,
@@ -216,6 +300,9 @@ pub fn load_note_skin(
         hold_texture_id: hold.texture_id,
         hold_texture_width: hold.texture_width,
         hold_texture_height: hold.texture_height,
+        hold_trail_texture_id: hold_trail.texture_id,
+        hold_trail_texture_width: hold_trail.texture_width,
+        hold_trail_texture_height: hold_trail.texture_height,
         static_frames: [
             cloned_first_frame(&strumline.atlas, "staticLeft0")?,
             cloned_first_frame(&strumline.atlas, "staticDown0")?,
@@ -260,6 +347,35 @@ struct LoadedSparrowTexture {
     texture_id: AssetId,
     texture_width: u32,
     texture_height: u32,
+}
+
+struct LoadedTexture {
+    texture_id: AssetId,
+    texture_width: u32,
+    texture_height: u32,
+}
+
+fn load_png_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+    texture_path: &str,
+    filter: FilterMode,
+) -> Result<LoadedTexture> {
+    let texture_path = AssetPath::new(texture_path)?;
+    let image = load_png(resolver, &texture_path)
+        .with_context(|| format!("load {}", texture_path.as_str()))?;
+    let texture_id = asset_id_for_path(&texture_path);
+    let texture =
+        Texture::from_png_image(device, queue, &image, filter, Some(texture_path.as_str()));
+    textures.insert(texture_id, texture);
+
+    Ok(LoadedTexture {
+        texture_id,
+        texture_width: image.width,
+        texture_height: image.height,
+    })
 }
 
 fn load_sparrow_texture(
@@ -483,6 +599,9 @@ mod tests {
             hold_texture_id: AssetId::new(3),
             hold_texture_width: 2048,
             hold_texture_height: 1024,
+            hold_trail_texture_id: AssetId::new(4),
+            hold_trail_texture_width: 416,
+            hold_trail_texture_height: 87,
             static_frames: std::array::from_fn(|_| static_frame.clone()),
             press_frames: std::array::from_fn(|_| press_frames.clone()),
             confirm_frames: std::array::from_fn(|_| confirm_frames.clone()),
@@ -528,6 +647,32 @@ mod tests {
     #[test]
     fn confirm_duration_includes_og_hold_timer() {
         assert_eq!(test_note_skin().confirm_duration(48_000), Samples(15_200));
+    }
+
+    #[test]
+    fn hold_trail_commands_tile_tail_and_cap_from_note_hold_assets() {
+        let skin = test_note_skin();
+        let view = HoldTrailView::new(
+            rustic_core::ids::NoteId::new(0),
+            Lane::Down,
+            false,
+            800.0,
+            100.0,
+            225.0,
+        );
+
+        let commands = skin.hold_trail_commands(&view);
+
+        assert_eq!(commands.len(), 5);
+        assert_eq!(commands[0].texture, AssetId::new(4));
+        assert!((commands[0].world_pos.x - 833.8).abs() < 1e-3);
+        assert_eq!(commands[0].world_pos.y, 100.0);
+        assert!((commands[0].size.y - 11.85).abs() < 1e-3);
+        assert_eq!(commands[0].uv_min.x, 0.25);
+        assert_eq!(commands[0].uv_max.x, 0.375);
+        assert_eq!(commands[4].uv_min.x, 0.375);
+        assert_eq!(commands[4].uv_max.x, 0.5);
+        assert_eq!(commands[4].uv_max.y, HOLD_TRAIL_BOTTOM_CLIP);
     }
 
     #[test]

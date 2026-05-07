@@ -24,4 +24,4 @@ pub use judgment::{
 pub use note::{notes_from_chart, Lane, Note};
 pub use progress::ResolvedOpponentNote;
 pub use state::{PlayState, DEATH_HEALTH, INITIAL_HEALTH, MAX_HEALTH};
-pub use view::{note_x, NoteView};
+pub use view::{note_x, HoldTrailView, NoteView};

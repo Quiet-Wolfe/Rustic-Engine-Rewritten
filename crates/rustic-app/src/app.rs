@@ -393,6 +393,13 @@ impl App {
             return;
         };
 
+        for view in play_state.hold_trail_views(cursor, sample_rate) {
+            for cmd in note_skin.hold_trail_commands(&view) {
+                if cmd.world_pos.y + cmd.size.y >= -200.0 {
+                    self.cmds.push(cmd);
+                }
+            }
+        }
         for cmd in note_skin.receptor_commands(cursor, sample_rate, |lane| {
             self.held_lanes.receptor_state(lane, cursor)
         }) {
@@ -400,6 +407,9 @@ impl App {
         }
 
         for view in play_state.note_views(cursor, sample_rate) {
+            if view.is_sustain {
+                continue;
+            }
             let cmd = note_skin.command_for_view(&view);
             if cmd.world_pos.y + cmd.size.y >= -200.0 {
                 self.cmds.push(cmd);

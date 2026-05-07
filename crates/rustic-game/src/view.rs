@@ -1,6 +1,6 @@
 //! Headless gameplay view models for notes.
 //!
-//! ref: bdedc0aa:source/funkin/play/notes/Strumline.hx:35-45,1172-1174
+//! ref: bdedc0aa:source/funkin/play/notes/Strumline.hx:35-45,741-745,1172-1218
 //! ref: bdedc0aa:source/funkin/play/PlayState.hx:2233-2252
 //! ref: bdedc0aa:source/funkin/util/Constants.hx:347,632-637
 
@@ -12,10 +12,12 @@ use rustic_core::time::Samples;
 pub const FNF_WIDTH: f32 = 1280.0;
 pub const FNF_HEIGHT: f32 = 720.0;
 pub const STRUM_LINE_Y: f32 = 24.0;
+pub const STRUMLINE_SIZE: f32 = 104.0;
 pub const NOTE_SWAG_WIDTH: f32 = 104.0 + 8.0;
 pub const NOTE_BASE_X: f32 = 48.0;
 pub const NOTE_SPAWN_LEAD_MS: f32 = 1500.0;
 pub const NOTE_SCROLL_FACTOR: f32 = 0.45;
+const INITIAL_OFFSET: f32 = -0.275 * STRUMLINE_SIZE;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
@@ -27,6 +29,30 @@ pub struct NoteView {
     pub is_sustain_end: bool,
     pub x: f32,
     pub y: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
+pub struct HoldTrailView {
+    pub id: NoteId,
+    pub lane: Lane,
+    pub opponent: bool,
+    pub x: f32,
+    pub y: f32,
+    pub height: f32,
+}
+
+impl HoldTrailView {
+    pub fn new(id: NoteId, lane: Lane, opponent: bool, x: f32, y: f32, height: f32) -> Self {
+        Self {
+            id,
+            lane,
+            opponent,
+            x,
+            y,
+            height,
+        }
+    }
 }
 
 impl PlayState {
@@ -61,6 +87,55 @@ impl PlayState {
                 is_sustain_end: note.is_sustain_end,
                 x: note_x(note.lane, !note.opponent),
                 y,
+            });
+        }
+
+        out
+    }
+
+    /// Visible v0.8.5 hold-trail strips, derived from hold heads rather
+    /// than the legacy per-step sustain children.
+    pub fn hold_trail_views(&self, cursor: Samples, sample_rate: u32) -> Vec<HoldTrailView> {
+        let sample_rate = sample_rate.max(1) as f32;
+        let song_ms = cursor.0 as f32 * 1000.0 / sample_rate;
+        let rounded_speed = round_decimal(self.scroll_speed, 2);
+        let scroll = NOTE_SCROLL_FACTOR * rounded_speed;
+        let mut out = Vec::new();
+
+        for note in &self.notes {
+            if note.is_sustain || note.sustain_samples <= 0 {
+                continue;
+            }
+
+            let note_ms = note.hit_at.0 as f32 * 1000.0 / sample_rate;
+            let sustain_ms = note.sustain_samples as f32 * 1000.0 / sample_rate;
+            let end_ms = note_ms + sustain_ms;
+            if end_ms <= song_ms || note_ms - song_ms >= NOTE_SPAWN_LEAD_MS {
+                continue;
+            }
+
+            let remaining_ms = if song_ms > note_ms {
+                end_ms - song_ms
+            } else {
+                sustain_ms
+            };
+            let height = remaining_ms * scroll;
+            if height <= 0.1 {
+                continue;
+            }
+
+            let approach_offset = if song_ms > note_ms {
+                0.0
+            } else {
+                (note_ms - song_ms) * scroll
+            };
+            out.push(HoldTrailView {
+                id: note.id,
+                lane: note.lane,
+                opponent: note.opponent,
+                x: note_x(note.lane, !note.opponent),
+                y: STRUM_LINE_Y - INITIAL_OFFSET + approach_offset + STRUMLINE_SIZE * 0.5,
+                height,
             });
         }
 
@@ -133,6 +208,28 @@ mod tests {
         assert_eq!(views.len(), 1);
         assert!(views[0].is_sustain);
         assert!(views[0].is_sustain_end);
+    }
+
+    #[test]
+    fn hold_trail_views_use_hold_heads_and_clip_after_strum() {
+        let mut state = PlayState::new();
+        let mut hold = note(0, Lane::Left, 48_000, false);
+        hold.sustain_samples = 24_000;
+        state.notes.push(hold);
+        let mut child = note(1, Lane::Left, 60_000, false);
+        child.is_sustain = true;
+        state.notes.push(child);
+
+        let incoming = state.hold_trail_views(Samples(0), 48_000);
+        assert_eq!(incoming.len(), 1);
+        assert_eq!(incoming[0].x, 688.0);
+        assert!((incoming[0].height - 225.0).abs() < 1e-4);
+        assert!((incoming[0].y - 554.6).abs() < 1e-3);
+
+        let clipped = state.hold_trail_views(Samples(60_000), 48_000);
+        assert_eq!(clipped.len(), 1);
+        assert!((clipped[0].height - 112.5).abs() < 1e-4);
+        assert!((clipped[0].y - 104.6).abs() < 1e-3);
     }
 
     #[test]
