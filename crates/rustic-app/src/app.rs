@@ -1,11 +1,3 @@
-//! Top-level winit application. See `PLAN.md` Sections 7 and 11.
-//!
-//! Uses winit 0.30's `ApplicationHandler`: window + surface are created
-//! lazily on `resumed` so the same code path works on Android (which
-//! also pauses/resumes the surface). Surface is `'static` because the
-//! window is held in an `Arc`.
-// LINT-ALLOW: long-file app event loop plus temporary gameplay preview wiring
-
 use crate::active_holds::ActiveHolds;
 use crate::app_types::{AppOptions, Runtime};
 use crate::audio_fallback::open_audio_output_or_fallback;
@@ -26,11 +18,12 @@ use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKi
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
+use crate::preview_song::PreviewSelection;
 use crate::scene_assets::{
-    load_default_scene, load_preview_play_state, CameraFocusPoints, CharacterSet,
+    load_default_scene, load_preview_play_state_for, CameraFocusPoints, CharacterSet,
 };
 use crate::screen::ScreenStack;
-use crate::song_audio::{load_preview_stems, play_sample_rate, set_vocals_gain};
+use crate::song_audio::{load_preview_stems_for, play_sample_rate, set_vocals_gain};
 use anyhow::Result;
 use rustic_asset::ChartEventKind;
 use rustic_audio::{AudioOutput, SharedMixer};
@@ -50,7 +43,6 @@ use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowAttributes;
 
-/// Runtime state held inside the event loop.
 struct App {
     options: AppOptions,
     boot_instant: Instant,
@@ -79,6 +71,7 @@ struct App {
     active_holds: ActiveHolds,
     held_lanes: HeldLanes,
     opponent_receptors: AutoReceptors,
+    preview_selection: PreviewSelection,
     play_state: Option<PlayState>,
     song_start: Instant,
     song_start_cursor: Samples,
@@ -121,6 +114,7 @@ impl App {
             active_holds: ActiveHolds::default(),
             held_lanes: HeldLanes::default(),
             opponent_receptors: AutoReceptors::default(),
+            preview_selection: PreviewSelection::from_env(),
             play_state: None,
             song_start: now,
             song_start_cursor: Samples(0),
@@ -131,7 +125,6 @@ impl App {
             runtime: None,
         }
     }
-
     fn create_runtime(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
         let attrs = WindowAttributes::default()
             .with_title(self.options.title)
@@ -196,36 +189,7 @@ impl App {
                 self.base_camera_zoom = scene.camera_zoom;
                 self.camera_fx.reset(&mut self.cameras, scene.camera_zoom);
                 focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
-                let sample_rate = play_sample_rate(&self.mixer);
-                match load_preview_play_state(sample_rate) {
-                    Ok(play_state) => {
-                        self.song_start_cursor =
-                            countdown_start_cursor(sample_rate, play_state.bpm);
-                        self.song_start = Instant::now();
-                        self.song_started = false;
-                        self.game_over = None;
-                        if self.audio_output.is_some() {
-                            if let Err(e) = load_preview_stems(&self.mixer, Samples(0)) {
-                                tracing::warn!(target: "rustic.audio", "preview stems unavailable: {e:#}");
-                            } else if let Err(e) = self.mixer.edit(|mixer| {
-                                mixer.pause();
-                                Ok(())
-                            }) {
-                                tracing::warn!(target: "rustic.audio", "pause countdown audio: {e:#}");
-                            }
-                        } else {
-                            tracing::warn!(
-                                target: "rustic.audio",
-                                "preview stems skipped because audio output is unavailable"
-                            );
-                        }
-                        self.play_state = Some(play_state);
-                        self.rebuild_frame_commands();
-                    }
-                    Err(e) => {
-                        tracing::warn!(target: "rustic.asset", "preview chart unavailable: {e:#}");
-                    }
-                }
+                self.load_selected_song();
             }
             Err(e) => {
                 tracing::warn!(target: "rustic.asset", "default scene assets unavailable: {e:#}");
@@ -235,7 +199,62 @@ impl App {
         self.runtime = Some(runtime);
         Ok(())
     }
-
+    fn load_selected_song(&mut self) {
+        let sample_rate = play_sample_rate(&self.mixer);
+        match load_preview_play_state_for(self.preview_selection, sample_rate) {
+            Ok(play_state) => {
+                let bpm = play_state.bpm;
+                self.play_state = Some(play_state);
+                self.reset_song_runtime(bpm);
+                self.load_selected_stems();
+                self.rebuild_frame_commands();
+            }
+            Err(e) => tracing::warn!(target: "rustic.asset", "preview chart unavailable: {e:#}"),
+        }
+    }
+    fn load_selected_stems(&mut self) {
+        if self.audio_output.is_none() {
+            tracing::warn!(target: "rustic.audio", "preview stems skipped: no audio output");
+            return;
+        }
+        if let Err(e) = load_preview_stems_for(&self.mixer, self.preview_selection, Samples(0)) {
+            tracing::warn!(target: "rustic.audio", "preview stems unavailable: {e:#}");
+        } else if let Err(e) = self.mixer.edit(|mixer| {
+            mixer.pause();
+            Ok(())
+        }) {
+            tracing::warn!(target: "rustic.audio", "pause countdown audio: {e:#}");
+        }
+    }
+    fn reset_song_runtime(&mut self, bpm: f64) {
+        self.song_start_cursor = countdown_start_cursor(play_sample_rate(&self.mixer), bpm);
+        self.song_start = Instant::now();
+        self.song_started = false;
+        self.game_over = None;
+        self.countdown_audio.reset();
+        self.character_anim.reset_song();
+        (
+            self.score_popups,
+            self.note_splashes,
+            self.hold_covers,
+            self.active_holds,
+            self.held_lanes,
+            self.opponent_receptors,
+        ) = Default::default();
+        self.camera_fx
+            .reset(&mut self.cameras, self.base_camera_zoom);
+        focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
+        set_vocals_gain(&self.mixer, 1.0);
+    }
+    fn handle_preview_selection_input(&mut self, action: InputAction) -> bool {
+        self.preview_selection = match action {
+            InputAction::UiLeft => self.preview_selection.next_song(),
+            InputAction::UiRight => self.preview_selection.next_difficulty(),
+            _ => return false,
+        };
+        self.load_selected_song();
+        true
+    }
     fn redraw(&mut self) {
         self.rebuild_frame_commands();
         let Some(rt) = self.runtime.as_mut() else {
@@ -281,7 +300,6 @@ impl App {
             a: 1.0,
         };
 
-        // 1. Sprite pass into the 1280x720 reference target.
         self.batcher.draw_to_reference(
             &rt.rs,
             &mut encoder,
@@ -291,7 +309,6 @@ impl App {
             self.cmds.as_slice(),
             bg,
         );
-        // 2. Composite reference -> swapchain with letterbox.
         rt.composite.encode(
             &mut encoder,
             &target,
@@ -302,7 +319,6 @@ impl App {
         rt.rs.queue.submit(Some(encoder.finish()));
         frame.present();
     }
-
     fn handle_resize(&mut self, w: u32, h: u32) {
         let Some(rt) = self.runtime.as_mut() else {
             return;
@@ -323,7 +339,6 @@ impl App {
             },
         );
     }
-
     fn rebuild_frame_commands(&mut self) {
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = if let Some(game_over) = self.game_over {
@@ -609,7 +624,6 @@ impl App {
             play_state.register_hold_tick(elapsed_samples, sample_rate);
         }
     }
-
     fn restart_song_after_game_over(&mut self) {
         // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:409-424
         if self.game_over.take().is_none() {
@@ -618,23 +632,8 @@ impl App {
         if let Some(play_state) = self.play_state.as_mut() {
             play_state.restart();
         }
-        let sample_rate = play_sample_rate(&self.mixer);
         let bpm = self.play_state.as_ref().map_or(100.0, |state| state.bpm);
-        self.song_start_cursor = countdown_start_cursor(sample_rate, bpm);
-        self.song_start = Instant::now();
-        self.song_started = false;
-        self.countdown_audio.reset();
-        self.character_anim.reset_song();
-        self.score_popups = ScorePopups::default();
-        self.note_splashes = NoteSplashes::default();
-        self.hold_covers = HoldCovers::default();
-        self.active_holds = ActiveHolds::default();
-        self.held_lanes = HeldLanes::default();
-        self.opponent_receptors = AutoReceptors::default();
-        self.camera_fx
-            .reset(&mut self.cameras, self.base_camera_zoom);
-        focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
-        set_vocals_gain(&self.mixer, 1.0);
+        self.reset_song_runtime(bpm);
         if let Err(e) = self.mixer.edit(|mixer| {
             mixer.seek(Samples(0))?;
             mixer.pause();
@@ -643,7 +642,6 @@ impl App {
             tracing::warn!(target: "rustic.audio", "reset game over audio: {e:#}");
         }
     }
-
     fn advance_song_clock(&mut self) -> Samples {
         if !self.song_started {
             let elapsed = self.song_start.elapsed().as_secs_f64();
@@ -672,7 +670,6 @@ impl App {
         let elapsed_samples = (elapsed * f64::from(play_sample_rate(&self.mixer))).round() as i64;
         Samples(elapsed_samples)
     }
-
     fn enter_game_over(&mut self, cursor: Samples) {
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:1441-1472
         if self.game_over.is_some() {
@@ -685,10 +682,12 @@ impl App {
             .and_then(|characters| characters.player_animation_duration("firstDeath", sample_rate))
             .unwrap_or(Samples(i64::from(sample_rate)));
         self.character_anim.player_first_death(cursor);
-        self.held_lanes = HeldLanes::default();
-        self.opponent_receptors = AutoReceptors::default();
-        self.hold_covers = HoldCovers::default();
-        self.active_holds = ActiveHolds::default();
+        (
+            self.held_lanes,
+            self.opponent_receptors,
+            self.hold_covers,
+            self.active_holds,
+        ) = Default::default();
         set_vocals_gain(&self.mixer, 0.0);
         if let Err(e) = self.mixer.edit(|mixer| {
             mixer.pause();
@@ -698,7 +697,6 @@ impl App {
         }
         self.game_over = Some(GameOverState::new(cursor, loop_after));
     }
-
     fn rebuild_game_over_commands(&mut self, cursor: Samples, sample_rate: u32) {
         let Some(game_over) = self.game_over.as_mut() else {
             return;
@@ -717,7 +715,6 @@ impl App {
         }
     }
 }
-
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.runtime.is_some() {
@@ -728,7 +725,6 @@ impl ApplicationHandler for App {
             event_loop.exit();
         }
     }
-
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -746,6 +742,11 @@ impl ApplicationHandler for App {
                         || lane_for_action(action)
                             .map(|lane| self.held_lanes.is_held(lane))
                             .unwrap_or(false);
+                    if event.state == ElementState::Pressed
+                        && self.handle_preview_selection_input(action)
+                    {
+                        return;
+                    }
                     if event.state == ElementState::Pressed
                         && action == InputAction::Confirm
                         && self.game_over.is_some()
@@ -767,9 +768,7 @@ impl ApplicationHandler for App {
                     }
                     self.screens.input(&evt);
                     self.handle_gameplay_input(&evt, already_held);
-                    if event.state == ElementState::Pressed
-                        && action == rustic_core::InputAction::Back
-                    {
+                    if event.state == ElementState::Pressed && action == InputAction::Back {
                         event_loop.exit();
                     }
                 }
@@ -785,9 +784,6 @@ impl ApplicationHandler for App {
     }
 }
 
-/// Public entry point. Initializes logging + panic hook, builds the app
-/// state, runs the winit event loop. Returns when the user closes the
-/// window or the loop exits.
 pub fn run(options: AppOptions) -> Result<()> {
     init_logging();
     install_panic_hook();

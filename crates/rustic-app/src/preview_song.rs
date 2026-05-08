@@ -13,6 +13,8 @@ pub struct PreviewSong {
 }
 
 impl PreviewSong {
+    pub const ALL: [Self; 4] = [Self::TUTORIAL, Self::BOPEEBO, Self::FRESH, Self::DADBATTLE];
+
     pub fn from_env() -> Self {
         env::var(PREVIEW_SONG_ENV)
             .ok()
@@ -46,6 +48,10 @@ impl PreviewSong {
         format!("music/{}_Voices.ogg", self.audio_prefix)
     }
 
+    pub fn next(self) -> Self {
+        next_in(&Self::ALL, self)
+    }
+
     pub(crate) const TUTORIAL: Self = Self {
         id: 0,
         folder: "tutorial",
@@ -76,6 +82,8 @@ pub enum PreviewDifficulty {
 }
 
 impl PreviewDifficulty {
+    pub const ALL: [Self; 3] = [Self::Easy, Self::Normal, Self::Hard];
+
     pub fn from_env() -> Self {
         env::var(PREVIEW_DIFFICULTY_ENV)
             .ok()
@@ -98,6 +106,10 @@ impl PreviewDifficulty {
             Self::Normal => "normal",
             Self::Hard => "hard",
         }
+    }
+
+    pub fn next(self) -> Self {
+        next_in(&Self::ALL, self)
     }
 }
 
@@ -125,10 +137,32 @@ impl PreviewSelection {
                 .unwrap_or(PreviewDifficulty::Normal),
         }
     }
+
+    pub fn next_song(self) -> Self {
+        Self {
+            song: self.song.next(),
+            ..self
+        }
+    }
+
+    pub fn next_difficulty(self) -> Self {
+        Self {
+            difficulty: self.difficulty.next(),
+            ..self
+        }
+    }
 }
 
 fn normalized_key(value: &str) -> String {
     value.trim().to_ascii_lowercase().replace([' ', '_'], "-")
+}
+
+fn next_in<T: Copy + PartialEq, const N: usize>(values: &[T; N], current: T) -> T {
+    let index = values
+        .iter()
+        .position(|value| *value == current)
+        .unwrap_or(0);
+    values[(index + 1) % N]
 }
 
 #[cfg(test)]
@@ -194,6 +228,16 @@ mod tests {
                 song: PreviewSong::FRESH,
                 difficulty: PreviewDifficulty::Hard,
             }
+        );
+    }
+
+    #[test]
+    fn preview_selection_cycles_songs_and_difficulties() {
+        let selection = PreviewSelection::from_keys(Some("dadbattle"), Some("hard"));
+        assert_eq!(selection.next_song().song, PreviewSong::TUTORIAL);
+        assert_eq!(
+            selection.next_difficulty().difficulty,
+            PreviewDifficulty::Easy
         );
     }
 }

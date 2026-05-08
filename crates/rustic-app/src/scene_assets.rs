@@ -332,7 +332,10 @@ pub fn load_preview_play_state(sample_rate: u32) -> Result<PlayState> {
     load_preview_play_state_for(PreviewSelection::from_env(), sample_rate)
 }
 
-fn load_preview_play_state_for(selection: PreviewSelection, sample_rate: u32) -> Result<PlayState> {
+pub(crate) fn load_preview_play_state_for(
+    selection: PreviewSelection,
+    sample_rate: u32,
+) -> Result<PlayState> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
     let song = selection.song;
     let chart_path = AssetPath::new(song.chart_path())?;

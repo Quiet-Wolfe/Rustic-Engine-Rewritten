@@ -25,6 +25,8 @@ pub fn map_key(key: PhysicalKey) -> Option<InputAction> {
         KeyCode::Escape => InputAction::Back,
         KeyCode::F3 => InputAction::Debug,
         KeyCode::F5 => InputAction::Reset,
+        KeyCode::F6 => InputAction::UiLeft,
+        KeyCode::F7 => InputAction::UiRight,
         KeyCode::Pause => InputAction::Pause,
         _ => return None,
     })
@@ -42,4 +44,21 @@ pub fn build_event(
         ElementState::Released => InputState::Released,
     };
     NormalizedInputEvent::new(action, state, wall_clock_ns, song_cursor)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn function_keys_drive_preview_selection_actions() {
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::F6)),
+            Some(InputAction::UiLeft)
+        );
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::F7)),
+            Some(InputAction::UiRight)
+        );
+    }
 }
