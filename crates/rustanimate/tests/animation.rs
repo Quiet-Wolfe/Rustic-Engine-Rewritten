@@ -162,6 +162,34 @@ fn flattens_label_frames_in_draw_order() {
 }
 
 #[test]
+fn applies_compact_stage_instance_to_root_labels() {
+    let animation = Animation::parse(
+        br#"{
+          "AN": {
+            "N": "stage-instance-test",
+            "SN": "root",
+            "STI": { "SI": {
+              "SN": "root",
+              "MX": [1, 0, 0, 1, 7, 9],
+              "C": { "M": "AD", "AM": 0.5 }
+            } },
+            "TL": { "L": [
+              { "FR": [{ "N": "Idle", "I": 0, "DU": 1, "E": [] }] },
+              { "FR": [{ "I": 0, "DU": 1, "E": [
+                { "ASI": { "N": "part", "MX": [1, 0, 0, 1, 3, 4] } }
+              ] }] }
+            ] }
+          }
+        }"#,
+    )
+    .unwrap();
+
+    let parts = animation.flatten_label_frame("Idle", 0).unwrap();
+    assert_eq!(parts[0].matrix, [1.0, 0.0, 0.0, 1.0, 10.0, 13.0]);
+    assert_eq!(parts[0].color, [1.0, 1.0, 1.0, 0.5]);
+}
+
+#[test]
 fn flattens_inherited_color_transforms() {
     let animation = Animation::parse(
         br#"{
@@ -404,6 +432,38 @@ fn verbose_parser_applies_flxanimate_position_offsets() {
     assert_eq!(parts[0].matrix, [1.0, 0.0, 0.0, 1.0, 7.0, -3.0]);
     assert_eq!(parts[1].frame_name, "body-part");
     assert_eq!(parts[1].matrix, [1.0, 0.0, 0.0, 1.0, 14.0, 25.0]);
+}
+
+#[test]
+fn verbose_parser_applies_stage_instance_to_root_labels() {
+    let animation = Animation::parse(
+        br#"{
+          "ANIMATION": {
+            "SYMBOL_name": "root",
+            "StageInstance": { "SYMBOL_Instance": {
+              "SYMBOL_name": "root",
+              "Matrix3D": {
+                "m00": 1, "m01": 0,
+                "m10": 0, "m11": 1,
+                "m30": 11, "m31": 13
+              }
+            } },
+            "TIMELINE": { "LAYERS": [
+              { "Frames": [{ "name": "Idle", "index": 0, "duration": 1 }] },
+              { "Frames": [{ "index": 0, "duration": 1, "elements": [
+                { "ATLAS_SPRITE_instance": {
+                  "name": "direct",
+                  "Position": { "x": 2, "y": 3 }
+                } }
+              ] }] }
+            ] }
+          }
+        }"#,
+    )
+    .unwrap();
+
+    let parts = animation.flatten_label_frame("Idle", 0).unwrap();
+    assert_eq!(parts[0].matrix, [1.0, 0.0, 0.0, 1.0, 13.0, 16.0]);
 }
 
 #[test]

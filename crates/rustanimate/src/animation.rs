@@ -13,6 +13,8 @@ pub struct Animation {
     pub labels: Vec<AnimationLabel>,
     pub layers: Vec<TimelineLayer>,
     pub symbols: Vec<Symbol>,
+    pub stage_matrix: [f32; 6],
+    pub stage_color: [f32; 4],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,11 +100,16 @@ impl Animation {
             symbol_name,
             timeline,
             symbol_dictionary,
+            stage_instance,
         } = animation;
         let name = name.unwrap_or_default();
         let symbol_name = symbol_name.unwrap_or_default();
         let labels = timeline_labels(&timeline)?;
         let layers = timeline_layers(timeline)?;
+        let stage = stage_instance
+            .and_then(|stage| stage.symbol_instance)
+            .map(symbol_element)
+            .transpose()?;
         let symbols = symbol_dictionary
             .or(top_level_symbol_dictionary)
             .map(|dictionary| dictionary.symbols)
@@ -125,6 +132,12 @@ impl Animation {
             labels,
             layers,
             symbols,
+            stage_matrix: stage
+                .as_ref()
+                .map_or_else(identity_matrix, |stage| stage.matrix),
+            stage_color: stage
+                .as_ref()
+                .map_or_else(identity_color, |stage| stage.color),
         })
     }
 
@@ -155,8 +168,8 @@ impl Animation {
         self.flatten_layers(
             &self.layers,
             label.index.saturating_add(frame_offset),
-            identity_matrix(),
-            identity_color(),
+            self.stage_matrix,
+            self.stage_color,
             &mut Vec::new(),
             &mut parts,
         )?;
@@ -520,6 +533,8 @@ struct RawAnimation {
     timeline: RawTimeline,
     #[serde(rename = "SD")]
     symbol_dictionary: Option<RawSymbolDictionary>,
+    #[serde(rename = "STI")]
+    stage_instance: Option<RawStageInstance>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -568,6 +583,12 @@ struct RawElement {
     symbol_instance: Option<RawSymbolInstance>,
     #[serde(rename = "ASI")]
     atlas_instance: Option<RawAtlasInstance>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawStageInstance {
+    #[serde(rename = "SI")]
+    symbol_instance: Option<RawSymbolInstance>,
 }
 
 #[derive(Debug, Deserialize)]

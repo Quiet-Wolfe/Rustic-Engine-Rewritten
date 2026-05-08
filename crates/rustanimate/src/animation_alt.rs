@@ -14,6 +14,12 @@ pub(crate) fn parse(bytes: &[u8]) -> AnimateResult<Animation> {
     let symbol_name = raw.animation.symbol_name.unwrap_or_default();
     let labels = timeline_labels(&raw.animation.timeline)?;
     let layers = timeline_layers(raw.animation.timeline)?;
+    let stage = raw
+        .animation
+        .stage_instance
+        .and_then(|stage| stage.symbol_instance)
+        .map(symbol_element)
+        .transpose()?;
     let mut symbols = raw
         .symbol_dictionary
         .map(|dictionary| dictionary.symbols)
@@ -42,6 +48,8 @@ pub(crate) fn parse(bytes: &[u8]) -> AnimateResult<Animation> {
         labels,
         layers,
         symbols,
+        stage_matrix: stage.as_ref().map_or(ID_MATRIX, |stage| stage.matrix),
+        stage_color: stage.as_ref().map_or(ID_COLOR, |stage| stage.color),
     })
 }
 
@@ -198,6 +206,8 @@ struct RawAnimation {
     symbol_name: Option<String>,
     #[serde(rename = "TIMELINE")]
     timeline: RawTimeline,
+    #[serde(rename = "StageInstance")]
+    stage_instance: Option<RawStageInstance>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -243,6 +253,12 @@ struct RawElement {
     symbol_instance: Option<RawSymbolInstance>,
     #[serde(rename = "ATLAS_SPRITE_instance")]
     atlas_instance: Option<RawAtlasInstance>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawStageInstance {
+    #[serde(rename = "SYMBOL_Instance")]
+    symbol_instance: Option<RawSymbolInstance>,
 }
 
 #[derive(Debug, Deserialize)]
