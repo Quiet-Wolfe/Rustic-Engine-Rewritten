@@ -567,8 +567,8 @@ mod tests {
         "events": [
             { "t": 1200.0, "e": "PlayAnimation",
               "v": { "target": "bf", "anim": "hey", "force": true } },
-            { "t": 0.0, "e": "FocusCamera", "v": { "char": 1 } },
-            { "t": 2500.0, "e": "ZoomCamera", "v": { "zoom": 1.05 } },
+            { "t": 0.0, "e": "FocusCamera", "v": { "char": "1" } },
+            { "t": 2500.0, "e": "ZoomCamera", "v": { "zoom": "1.05" } },
             { "t": 3000.0, "e": "ScrollSpeed",
               "v": { "scroll": 1.2, "duration": 4, "strumline": "both", "absolute": false } },
             { "t": 3500.0, "e": "SetCameraBop",

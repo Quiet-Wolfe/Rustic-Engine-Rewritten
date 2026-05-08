@@ -79,6 +79,53 @@ fn sparrow_character_position_uses_stage_feet_origin() {
 }
 
 #[test]
+fn sparrow_camera_focus_uses_idle_visual_center() {
+    let atlas = SparrowAtlas::parse(
+        br#"<TextureAtlas imagePath="test.png">
+          <SubTexture name="idle0000" x="0" y="0" width="80" height="90"
+            frameX="-5" frameY="-7" frameWidth="100" frameHeight="200"/>
+        </TextureAtlas>"#,
+    )
+    .unwrap();
+    let character = CharacterDefinition::parse(
+        br#"{
+          "id": "test",
+          "atlas": "images/test.xml",
+          "cameraOffsets": [7, -9],
+          "offsets": [10, 20],
+          "scale": 2,
+          "animations": [{ "name": "idle", "prefix": "idle" }]
+        }"#,
+    )
+    .unwrap();
+    let stage = StageDefinition::parse(
+        br#"{"id":"stage","boyfriend":{
+          "position":{"x":300,"y":400},
+          "cameraOffset":{"x":-100,"y":-100}
+        }}"#,
+    )
+    .unwrap();
+    let animation = character.animations[0].clone();
+    let sprite = SparrowCharacterSprite {
+        texture_id: AssetId::new(1),
+        texture_width: 1,
+        texture_height: 1,
+        character,
+        slot: stage.boyfriend,
+        is_player: false,
+        z: 0,
+        filter: FilterMode::Nearest,
+        poses: vec![CharacterPose {
+            animation,
+            frames: vec![atlas.frames[0].clone()],
+        }],
+        initial_pose: 0,
+    };
+
+    assert_eq!(sprite.camera_focus_point(), glam::vec2(217.0, 111.0));
+}
+
+#[test]
 fn preview_play_state_uses_selected_difficulty() {
     let easy = load_preview_play_state_for(
         PreviewSelection {

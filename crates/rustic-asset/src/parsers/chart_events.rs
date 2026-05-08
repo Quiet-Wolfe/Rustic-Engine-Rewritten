@@ -69,25 +69,35 @@ fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
 }
 
 fn focus_camera_target(value: &Value) -> Option<i8> {
-    value
-        .as_i64()
-        .or_else(|| value.get("char").and_then(Value::as_i64))
+    value_i64(value)
+        .or_else(|| value.get("char").and_then(value_i64))
         .and_then(|target| i8::try_from(target).ok())
 }
 
 fn event_float(value: &Value, key: &str, default: f32) -> f32 {
     value
         .get(key)
-        .and_then(Value::as_f64)
+        .and_then(value_f64)
         .map(|value| value as f32)
         .unwrap_or(default)
 }
 
 fn event_float_or_scalar(value: &Value, key: &str, default: f32) -> f32 {
-    value
-        .as_f64()
+    value_f64(value)
         .map(|value| value as f32)
         .unwrap_or_else(|| event_float(value, key, default))
+}
+
+fn value_i64(value: &Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+}
+
+fn value_f64(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
 }
 
 fn event_ease_name(value: &Value) -> String {

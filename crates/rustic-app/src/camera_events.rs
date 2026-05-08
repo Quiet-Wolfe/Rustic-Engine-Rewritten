@@ -134,7 +134,7 @@ fn focus_target(focus: CameraFocusPoints, target: Option<i8>, offset: Vec2) -> O
         -1 => Vec2::ZERO,
         0 => focus.player,
         1 => focus.opponent,
-        2 => focus.girlfriend,
+        2 => focus.girlfriend?,
         _ => return None,
     };
     Some(base + offset)
@@ -151,7 +151,7 @@ mod tests {
         let focus = CameraFocusPoints {
             player: Vec2::new(10.0, 20.0),
             opponent: Vec2::new(30.0, 40.0),
-            girlfriend: Vec2::new(50.0, 60.0),
+            girlfriend: Some(Vec2::new(50.0, 60.0)),
         };
 
         focus_camera(
@@ -178,7 +178,7 @@ mod tests {
         let focus = CameraFocusPoints {
             player: Vec2::new(840.0, 360.0),
             opponent: Vec2::new(640.0, 360.0),
-            girlfriend: Vec2::new(640.0, 360.0),
+            girlfriend: Some(Vec2::new(640.0, 360.0)),
         };
 
         focus_camera(
@@ -201,13 +201,43 @@ mod tests {
     }
 
     #[test]
+    fn focus_camera_ignores_missing_girlfriend() {
+        let mut cameras = CameraRegistry::with_default_fnf();
+        let mut camera_fx = CameraFx::default();
+        let before = cameras
+            .get(rustic_core::ids::CameraId(0))
+            .map(|camera| camera.position);
+        let focus = CameraFocusPoints {
+            player: Vec2::new(840.0, 360.0),
+            opponent: Vec2::new(640.0, 360.0),
+            girlfriend: None,
+        };
+
+        focus_camera(
+            &mut cameras,
+            &mut camera_fx,
+            focus,
+            Some(2),
+            Vec2::ZERO,
+            true,
+        );
+
+        assert_eq!(
+            cameras
+                .get(rustic_core::ids::CameraId(0))
+                .map(|camera| camera.position),
+            before
+        );
+    }
+
+    #[test]
     fn initial_camera_focus_starts_on_opponent() {
         let mut cameras = CameraRegistry::with_default_fnf();
         let mut camera_fx = CameraFx::default();
         let focus = CameraFocusPoints {
             player: Vec2::new(840.0, 360.0),
             opponent: Vec2::new(320.0, 240.0),
-            girlfriend: Vec2::new(640.0, 360.0),
+            girlfriend: Some(Vec2::new(640.0, 360.0)),
         };
 
         focus_initial_camera(&mut cameras, &mut camera_fx, focus);
@@ -227,7 +257,7 @@ mod tests {
         let focus = CameraFocusPoints {
             player: Vec2::new(840.0, 360.0),
             opponent: Vec2::new(640.0, 360.0),
-            girlfriend: Vec2::new(640.0, 360.0),
+            girlfriend: Some(Vec2::new(640.0, 360.0)),
         };
 
         assert!(apply_camera_event(

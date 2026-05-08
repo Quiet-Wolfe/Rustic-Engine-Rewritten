@@ -49,7 +49,7 @@ pub struct LoadedScene {
 pub struct CameraFocusPoints {
     pub player: glam::Vec2,
     pub opponent: glam::Vec2,
-    pub girlfriend: glam::Vec2,
+    pub girlfriend: Option<glam::Vec2>,
 }
 
 impl Default for CameraFocusPoints {
@@ -58,7 +58,7 @@ impl Default for CameraFocusPoints {
         Self {
             player: center,
             opponent: center,
-            girlfriend: center,
+            girlfriend: None,
         }
     }
 }
@@ -107,10 +107,10 @@ impl CharacterSet {
         CameraFocusPoints {
             player: self.player.camera_focus_point(),
             opponent: self.opponent.camera_focus_point(),
-            girlfriend: self.girlfriend.as_ref().map_or_else(
-                || self.player.camera_focus_point(),
-                CharacterSprite::camera_focus_point,
-            ),
+            girlfriend: self
+                .girlfriend
+                .as_ref()
+                .map(CharacterSprite::camera_focus_point),
         }
     }
 
@@ -236,9 +236,11 @@ impl SparrowCharacterSprite {
     }
 
     fn camera_focus_point(&self) -> glam::Vec2 {
+        let frame = &self.poses[self.initial_pose].frames[0];
         glam::vec2(
             self.slot.position.x + self.character.position.x,
-            self.slot.position.y + self.character.position.y,
+            self.slot.position.y + self.character.position.y
+                - frame.frame_height as f32 * self.character.scale * 0.5,
         ) + glam::vec2(self.slot.camera_offset.x, self.slot.camera_offset.y)
             + glam::vec2(
                 self.character.camera_offset.x,

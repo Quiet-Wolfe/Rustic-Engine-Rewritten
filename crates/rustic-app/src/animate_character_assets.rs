@@ -21,6 +21,7 @@ pub(crate) struct AnimateCharacterSprite {
     character: CharacterDefinition,
     slot: StageCharacterSlot,
     origin: glam::Vec2,
+    visual_height: f32,
     is_player: bool,
     z: i32,
     filter: FilterMode,
@@ -66,7 +67,7 @@ impl AnimateCharacterSprite {
     pub(crate) fn camera_focus_point(&self) -> glam::Vec2 {
         glam::vec2(
             self.slot.position.x + self.character.position.x,
-            self.slot.position.y + self.character.position.y,
+            self.slot.position.y + self.character.position.y - self.visual_height * 0.5,
         ) + glam::vec2(self.slot.camera_offset.x, self.slot.camera_offset.y)
             + glam::vec2(
                 self.character.camera_offset.x,
@@ -177,12 +178,14 @@ pub(crate) fn load_animate_character_sprite(
         .iter()
         .position(|pose| pose.animation.name == initial_animation.name)
         .with_context(|| format!("resolve initial pose {}", character.id))?;
-    let origin = animate_character_origin(&poses[initial_pose], &assets, character.scale)?;
+    let (origin, visual_height) =
+        animate_character_origin(&poses[initial_pose], &assets, character.scale)?;
 
     Ok(AnimateCharacterSprite {
         character,
         slot,
         origin,
+        visual_height,
         is_player,
         z,
         filter,
@@ -425,13 +428,16 @@ fn animate_character_origin(
     pose: &AnimateCharacterPose,
     assets: &[LoadedAnimateAtlas],
     scale: f32,
-) -> Result<glam::Vec2> {
+) -> Result<(glam::Vec2, f32)> {
     let asset = &assets[pose.asset_index];
     let parts = pose.parts(asset, Samples(0), SAMPLE_RATE, Samples(0))?;
     let (min, max) =
         animate_parts_bounds(asset, &parts).context("resolve animate origin bounds")?;
     let size = max - min;
-    Ok((min + glam::vec2(size.x * 0.5, size.y)) * scale)
+    Ok((
+        (min + glam::vec2(size.x * 0.5, size.y)) * scale,
+        size.y * scale,
+    ))
 }
 
 fn animate_parts_bounds(
@@ -657,6 +663,7 @@ mod tests {
             character,
             slot: StageCharacterSlot::default(),
             origin: glam::Vec2::ZERO,
+            visual_height: 0.0,
             is_player: false,
             z: 0,
             filter: FilterMode::Nearest,
@@ -780,8 +787,9 @@ mod tests {
         let poses =
             animate_character_poses(&character, std::slice::from_ref(&asset), &asset_indices)
                 .unwrap();
-        let origin = animate_character_origin(&poses[0], &[asset], 1.0).unwrap();
+        let (origin, visual_height) = animate_character_origin(&poses[0], &[asset], 1.0).unwrap();
         assert!(origin.x.is_finite());
         assert!(origin.y > 0.0);
+        assert!(visual_height > 0.0);
     }
 }
