@@ -7,6 +7,7 @@
 // LINT-ALLOW: long-file app event loop plus temporary gameplay preview wiring
 
 use crate::active_holds::ActiveHolds;
+use crate::app_types::{AppOptions, Runtime};
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::bitmap_text_assets::BitmapTextSkin;
 use crate::boot::{init_logging, install_panic_hook};
@@ -14,6 +15,7 @@ use crate::camera_events::apply_camera_event;
 use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
+use crate::game_over::GameOverState;
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
 use crate::hud_bop::health_icon_scale;
@@ -36,7 +38,7 @@ use rustic_core::time::Samples;
 use rustic_game::{Judgment, PlayState};
 use rustic_render::{
     CameraRegistry, Composite, RenderCommandList, RenderState, SpriteBatcher, SpritePipeline,
-    SurfaceConfig, Texture,
+    Texture,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -44,25 +46,7 @@ use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::window::{Window, WindowAttributes};
-
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct AppOptions {
-    pub title: &'static str,
-    pub width: u32,
-    pub height: u32,
-}
-
-impl Default for AppOptions {
-    fn default() -> Self {
-        Self {
-            title: "RusticV3",
-            width: 1280,
-            height: 720,
-        }
-    }
-}
+use winit::window::WindowAttributes;
 
 /// Runtime state held inside the event loop.
 struct App {
@@ -73,6 +57,7 @@ struct App {
     cameras: CameraRegistry,
     camera_fx: CameraFx,
     camera_focus: CameraFocusPoints,
+    base_camera_zoom: f32,
     static_cmds: RenderCommandList,
     cmds: RenderCommandList,
     atlases: HashMap<AssetId, Texture>,
@@ -101,23 +86,6 @@ struct App {
     runtime: Option<Runtime>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct GameOverState {
-    song_cursor: Samples,
-    animation_started: Instant,
-    loop_at: Samples,
-    loop_started: bool,
-}
-
-struct Runtime {
-    window: Arc<Window>,
-    surface: wgpu::Surface<'static>,
-    surface_cfg: SurfaceConfig,
-    rs: RenderState,
-    pipeline: SpritePipeline,
-    composite: Composite,
-}
-
 impl App {
     fn new(options: AppOptions) -> Self {
         let now = Instant::now();
@@ -130,6 +98,7 @@ impl App {
             cameras: CameraRegistry::with_default_fnf(),
             camera_fx: CameraFx::default(),
             camera_focus: CameraFocusPoints::default(),
+            base_camera_zoom: 1.0,
             static_cmds: RenderCommandList::new(),
             cmds: RenderCommandList::new(),
             atlases: HashMap::new(),
@@ -218,6 +187,7 @@ impl App {
                 self.popup_skin = scene.popup_skin;
                 self.countdown_skin = scene.countdown_skin;
                 self.camera_focus = scene.camera_focus;
+                self.base_camera_zoom = scene.camera_zoom;
                 self.camera_fx.reset(&mut self.cameras, scene.camera_zoom);
                 let sample_rate = self.play_sample_rate();
                 match load_preview_play_state(sample_rate) {
@@ -350,7 +320,7 @@ impl App {
     fn rebuild_frame_commands(&mut self) {
         let sample_rate = self.play_sample_rate();
         let cursor = if let Some(game_over) = self.game_over {
-            game_over_cursor(game_over, sample_rate)
+            game_over.cursor(sample_rate)
         } else {
             self.advance_song_clock()
         };
@@ -624,6 +594,38 @@ impl App {
         }
     }
 
+    fn restart_song_after_game_over(&mut self) {
+        // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:409-424
+        if self.game_over.take().is_none() {
+            return;
+        }
+        if let Some(play_state) = self.play_state.as_mut() {
+            play_state.restart();
+        }
+        let sample_rate = self.play_sample_rate();
+        let bpm = self.play_state.as_ref().map_or(100.0, |state| state.bpm);
+        self.song_start_cursor = countdown_start_cursor(sample_rate, bpm);
+        self.song_start = Instant::now();
+        self.song_started = false;
+        self.character_anim.reset_song();
+        self.score_popups = ScorePopups::default();
+        self.note_splashes = NoteSplashes::default();
+        self.hold_covers = HoldCovers::default();
+        self.active_holds = ActiveHolds::default();
+        self.held_lanes = HeldLanes::default();
+        self.opponent_receptors = AutoReceptors::default();
+        self.camera_fx
+            .reset(&mut self.cameras, self.base_camera_zoom);
+        self.set_vocals_gain(1.0);
+        if let Err(e) = self.mixer.edit(|mixer| {
+            mixer.seek(Samples(0))?;
+            mixer.pause();
+            Ok(())
+        }) {
+            tracing::warn!(target: "rustic.audio", "reset game over audio: {e:#}");
+        }
+    }
+
     fn advance_song_clock(&mut self) -> Samples {
         if !self.song_started {
             let elapsed = self.song_start.elapsed().as_secs_f64();
@@ -688,21 +690,15 @@ impl App {
         }) {
             tracing::warn!(target: "rustic.audio", "pause game over audio: {e:#}");
         }
-        self.game_over = Some(GameOverState {
-            song_cursor: cursor,
-            animation_started: Instant::now(),
-            loop_at: Samples(cursor.0 + loop_after.0),
-            loop_started: false,
-        });
+        self.game_over = Some(GameOverState::new(cursor, loop_after));
     }
 
     fn rebuild_game_over_commands(&mut self, cursor: Samples, sample_rate: u32) {
         let Some(game_over) = self.game_over.as_mut() else {
             return;
         };
-        if !game_over.loop_started && cursor >= game_over.loop_at {
-            game_over.loop_started = true;
-            self.character_anim.player_death_loop(game_over.loop_at);
+        if let Some(loop_at) = game_over.start_loop_if_due(cursor) {
+            self.character_anim.player_death_loop(loop_at);
         }
 
         self.cmds.clear();
@@ -714,12 +710,6 @@ impl App {
             }
         }
     }
-}
-
-fn game_over_cursor(game_over: GameOverState, sample_rate: u32) -> Samples {
-    let elapsed = game_over.animation_started.elapsed().as_secs_f64();
-    let elapsed_samples = (elapsed * f64::from(sample_rate.max(1))).round() as i64;
-    Samples(game_over.song_cursor.0 + elapsed_samples)
 }
 
 impl ApplicationHandler for App {
@@ -750,6 +740,12 @@ impl ApplicationHandler for App {
                         || lane_for_action(action)
                             .map(|lane| self.held_lanes.is_held(lane))
                             .unwrap_or(false);
+                    if event.state == ElementState::Pressed
+                        && action == InputAction::Confirm
+                        && self.game_over.is_some()
+                    {
+                        self.restart_song_after_game_over();
+                    }
                     self.held_lanes.apply(&evt);
                     if event.state == ElementState::Released {
                         if let Some(lane) = lane_for_action(action) {

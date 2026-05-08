@@ -92,6 +92,12 @@ impl CharacterAnimState {
         self.timings = timings;
     }
 
+    pub fn reset_song(&mut self) {
+        let timings = self.timings;
+        *self = Self::default();
+        self.timings = timings;
+    }
+
     pub fn update(&mut self, cursor: Samples, sample_rate: u32, bpm: f64, player_holding: bool) {
         self.update_beat_dances(cursor, sample_rate, bpm);
         self.update_chart_animation_resets(cursor, sample_rate, bpm);
@@ -450,5 +456,24 @@ mod tests {
         state.player_death_loop(Samples(9_600));
         assert_eq!(state.poses().player.name, "deathLoop");
         assert_eq!(state.poses().player.started_at, Samples(9_600));
+    }
+
+    #[test]
+    fn reset_song_restores_starting_poses_and_keeps_loaded_timings() {
+        let mut state = CharacterAnimState::default();
+        let timings = CharacterAnimTimings {
+            player_sing_steps: 6.1,
+            opponent_sing_steps: 4.2,
+        };
+        state.set_timings(timings);
+        state.player_note_hit(Lane::Left, Samples(1_000), 48_000, 100.0);
+        state.opponent_note_hit(Lane::Right, Samples(1_000), 48_000, 100.0);
+
+        state.reset_song();
+
+        assert_eq!(state.poses().girlfriend.name, "danceRight");
+        assert_eq!(state.poses().opponent.name, "idle");
+        assert_eq!(state.poses().player.name, "idle");
+        assert_eq!(state.timings, timings);
     }
 }

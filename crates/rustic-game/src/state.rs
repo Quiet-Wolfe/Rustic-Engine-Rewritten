@@ -107,6 +107,24 @@ impl PlayState {
         };
     }
 
+    pub fn restart(&mut self) {
+        let song = self.song;
+        let bpm = self.bpm;
+        let scroll_speed = self.scroll_speed;
+        let notes = self.notes.clone();
+        let events = self.events.clone();
+        let windows = self.windows;
+        *self = Self {
+            song,
+            bpm,
+            scroll_speed,
+            notes,
+            events,
+            windows,
+            ..Self::default()
+        };
+    }
+
     pub fn resolve_song_events(&mut self, cursor: Samples) -> Vec<SongEvent> {
         let mut events = Vec::new();
         while let Some(event) = self.events.get(self.next_event_index) {
@@ -252,6 +270,39 @@ mod tests {
         assert!(state.events.is_empty());
         assert_eq!(state.score, 0);
         assert_eq!(state.combo, 0);
+        assert!((state.health - INITIAL_HEALTH).abs() < 1e-6);
+    }
+
+    #[test]
+    fn restart_preserves_chart_and_resets_song_progress() {
+        const CHART: &str = r#"{
+            "song": {
+                "song": "Bopeebo",
+                "bpm": 100.0,
+                "speed": 1.4,
+                "notes": [{"mustHitSection": true, "sectionNotes": [[1000.0, 0, 0]]}]
+            }
+        }"#;
+        let parsed = ParsedSong::parse(CHART.as_bytes()).unwrap();
+        let mut state = PlayState::from_chart(SongId::new(7), &parsed, 48_000);
+        state.score = 1234;
+        state.combo = 12;
+        state.health = 0.0;
+        state.misses = 4;
+        state.next_event_index = 1;
+        state.resolved_notes.push(NoteId::new(0));
+
+        state.restart();
+
+        assert_eq!(state.song, Some(SongId::new(7)));
+        assert_eq!(state.bpm, 100.0);
+        assert_eq!(state.scroll_speed, 1.4);
+        assert_eq!(state.notes.len(), 1);
+        assert_eq!(state.score, 0);
+        assert_eq!(state.combo, 0);
+        assert_eq!(state.misses, 0);
+        assert_eq!(state.next_event_index, 0);
+        assert!(state.resolved_notes.is_empty());
         assert!((state.health - INITIAL_HEALTH).abs() < 1e-6);
     }
 
