@@ -24,6 +24,19 @@ pub fn load_preview_stems(mixer: &SharedMixer, start_cursor: Samples) -> Result<
     Ok(())
 }
 
+pub fn play_sample_rate(mixer: &SharedMixer) -> u32 {
+    mixer.sample_rate().max(1)
+}
+
+pub fn set_vocals_gain(mixer: &SharedMixer, gain: f32) {
+    if let Err(e) = mixer.edit(|mixer| {
+        mixer.set_stem_gain(Stem::Vocals, gain);
+        Ok(())
+    }) {
+        tracing::warn!(target: "rustic.audio", "set vocals gain: {e:#}");
+    }
+}
+
 fn load_stem(resolver: &OverlayResolver, path: &str) -> Result<rustic_audio::SoundSource> {
     let path = AssetPath::new(path)?;
     let bytes = load_bytes(resolver, &path).with_context(|| format!("load {}", path.as_str()))?;

@@ -15,6 +15,7 @@ use crate::camera_events::apply_camera_event;
 use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
+use crate::countdown_audio::CountdownAudio;
 use crate::game_over::GameOverState;
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
@@ -28,10 +29,10 @@ use crate::scene_assets::{
     load_default_scene, load_preview_play_state, CameraFocusPoints, CharacterSet,
 };
 use crate::screen::ScreenStack;
-use crate::song_audio::load_preview_stems;
+use crate::song_audio::{load_preview_stems, play_sample_rate, set_vocals_gain};
 use anyhow::Result;
 use rustic_asset::ChartEventKind;
-use rustic_audio::{AudioOutput, SharedMixer, Stem};
+use rustic_audio::{AudioOutput, SharedMixer};
 use rustic_core::ids::AssetId;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
@@ -70,6 +71,7 @@ struct App {
     hud_skin: Option<HudSkin>,
     popup_skin: Option<PopupSkin>,
     countdown_skin: Option<CountdownSkin>,
+    countdown_audio: CountdownAudio,
     score_popups: ScorePopups,
     note_splashes: NoteSplashes,
     hold_covers: HoldCovers,
@@ -111,6 +113,7 @@ impl App {
             hud_skin: None,
             popup_skin: None,
             countdown_skin: None,
+            countdown_audio: CountdownAudio::default(),
             score_popups: ScorePopups::default(),
             note_splashes: NoteSplashes::default(),
             hold_covers: HoldCovers::default(),
@@ -186,10 +189,12 @@ impl App {
                 self.hud_skin = scene.hud_skin;
                 self.popup_skin = scene.popup_skin;
                 self.countdown_skin = scene.countdown_skin;
+                self.countdown_audio =
+                    CountdownAudio::load_default_or_warn(self.audio_output.is_some());
                 self.camera_focus = scene.camera_focus;
                 self.base_camera_zoom = scene.camera_zoom;
                 self.camera_fx.reset(&mut self.cameras, scene.camera_zoom);
-                let sample_rate = self.play_sample_rate();
+                let sample_rate = play_sample_rate(&self.mixer);
                 match load_preview_play_state(sample_rate) {
                     Ok(play_state) => {
                         self.song_start_cursor =
@@ -318,7 +323,7 @@ impl App {
     }
 
     fn rebuild_frame_commands(&mut self) {
-        let sample_rate = self.play_sample_rate();
+        let sample_rate = play_sample_rate(&self.mixer);
         let cursor = if let Some(game_over) = self.game_over {
             game_over.cursor(sample_rate)
         } else {
@@ -369,7 +374,7 @@ impl App {
             return;
         }
         if late_misses > 0 {
-            self.set_vocals_gain(0.0);
+            set_vocals_gain(&self.mixer, 0.0);
         }
         if let Some(bpm) = bpm {
             let had_opponent_hits = !opponent_hits.is_empty();
@@ -387,7 +392,7 @@ impl App {
             }
             if had_opponent_hits {
                 self.camera_fx.enable_zooming();
-                self.set_vocals_gain(1.0);
+                set_vocals_gain(&self.mixer, 1.0);
             }
             for event in song_events {
                 self.apply_song_event(&event.kind, cursor, sample_rate, bpm);
@@ -398,6 +403,10 @@ impl App {
                 bpm,
                 self.held_lanes.active_lanes().next().is_some(),
             );
+            if !self.song_started {
+                self.countdown_audio
+                    .tick_or_warn(&self.mixer, cursor, sample_rate, bpm);
+            }
             self.camera_fx
                 .update(&mut self.cameras, cursor, sample_rate, bpm);
         }
@@ -519,7 +528,7 @@ impl App {
         if self.game_over.is_some() {
             return;
         }
-        let sample_rate = self.play_sample_rate();
+        let sample_rate = play_sample_rate(&self.mixer);
         let confirm_duration = confirm_duration_or_default(self.note_skin.as_ref(), sample_rate);
         let gameplay_event =
             NormalizedInputEvent::new(event.action, event.state, event.wall_clock_ns, cursor);
@@ -567,7 +576,7 @@ impl App {
             }
         }
         if restore_vocals {
-            self.set_vocals_gain(1.0);
+            set_vocals_gain(&self.mixer, 1.0);
         }
         if should_enter_game_over {
             self.enter_game_over(cursor);
@@ -575,7 +584,7 @@ impl App {
     }
 
     fn register_hold_drop(&mut self, cursor: Samples, hold_end_at: Samples) {
-        let sample_rate = self.play_sample_rate();
+        let sample_rate = play_sample_rate(&self.mixer);
         let remaining_samples = hold_end_at.0.saturating_sub(cursor.0);
         let dropped = self
             .play_state
@@ -583,12 +592,12 @@ impl App {
             .and_then(|play_state| play_state.register_hold_drop(remaining_samples, sample_rate))
             .is_some();
         if dropped {
-            self.set_vocals_gain(0.0);
+            set_vocals_gain(&self.mixer, 0.0);
         }
     }
 
     fn register_hold_tick(&mut self, elapsed_samples: i64) {
-        let sample_rate = self.play_sample_rate();
+        let sample_rate = play_sample_rate(&self.mixer);
         if let Some(play_state) = self.play_state.as_mut() {
             play_state.register_hold_tick(elapsed_samples, sample_rate);
         }
@@ -602,11 +611,12 @@ impl App {
         if let Some(play_state) = self.play_state.as_mut() {
             play_state.restart();
         }
-        let sample_rate = self.play_sample_rate();
+        let sample_rate = play_sample_rate(&self.mixer);
         let bpm = self.play_state.as_ref().map_or(100.0, |state| state.bpm);
         self.song_start_cursor = countdown_start_cursor(sample_rate, bpm);
         self.song_start = Instant::now();
         self.song_started = false;
+        self.countdown_audio.reset();
         self.character_anim.reset_song();
         self.score_popups = ScorePopups::default();
         self.note_splashes = NoteSplashes::default();
@@ -616,7 +626,7 @@ impl App {
         self.opponent_receptors = AutoReceptors::default();
         self.camera_fx
             .reset(&mut self.cameras, self.base_camera_zoom);
-        self.set_vocals_gain(1.0);
+        set_vocals_gain(&self.mixer, 1.0);
         if let Err(e) = self.mixer.edit(|mixer| {
             mixer.seek(Samples(0))?;
             mixer.pause();
@@ -629,7 +639,8 @@ impl App {
     fn advance_song_clock(&mut self) -> Samples {
         if !self.song_started {
             let elapsed = self.song_start.elapsed().as_secs_f64();
-            let elapsed_samples = (elapsed * f64::from(self.play_sample_rate())).round() as i64;
+            let elapsed_samples =
+                (elapsed * f64::from(play_sample_rate(&self.mixer))).round() as i64;
             let cursor = Samples(self.song_start_cursor.0 + elapsed_samples);
             if cursor.0 < 0 {
                 return cursor;
@@ -650,21 +661,8 @@ impl App {
             return self.mixer.sample_cursor();
         }
         let elapsed = self.song_start.elapsed().as_secs_f64();
-        let elapsed_samples = (elapsed * f64::from(self.play_sample_rate())).round() as i64;
+        let elapsed_samples = (elapsed * f64::from(play_sample_rate(&self.mixer))).round() as i64;
         Samples(elapsed_samples)
-    }
-
-    fn play_sample_rate(&self) -> u32 {
-        self.mixer.sample_rate().max(1)
-    }
-
-    fn set_vocals_gain(&self, gain: f32) {
-        if let Err(e) = self.mixer.edit(|mixer| {
-            mixer.set_stem_gain(Stem::Vocals, gain);
-            Ok(())
-        }) {
-            tracing::warn!(target: "rustic.audio", "set vocals gain: {e:#}");
-        }
     }
 
     fn enter_game_over(&mut self, cursor: Samples) {
@@ -672,7 +670,7 @@ impl App {
         if self.game_over.is_some() {
             return;
         }
-        let sample_rate = self.play_sample_rate();
+        let sample_rate = play_sample_rate(&self.mixer);
         let loop_after = self
             .characters
             .as_ref()
@@ -683,7 +681,7 @@ impl App {
         self.opponent_receptors = AutoReceptors::default();
         self.hold_covers = HoldCovers::default();
         self.active_holds = ActiveHolds::default();
-        self.set_vocals_gain(0.0);
+        set_vocals_gain(&self.mixer, 0.0);
         if let Err(e) = self.mixer.edit(|mixer| {
             mixer.pause();
             Ok(())

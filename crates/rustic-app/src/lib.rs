@@ -15,6 +15,7 @@ pub mod camera_events;
 pub mod camera_fx;
 pub mod character_anim;
 pub mod countdown_assets;
+pub mod countdown_audio;
 pub mod game_over;
 pub mod hold_cover_assets;
 pub mod hud_assets;
