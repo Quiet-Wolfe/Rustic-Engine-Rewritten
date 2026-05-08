@@ -9,6 +9,7 @@ const DEFAULT_BOP_INTENSITY: f32 = 1.015;
 const DEFAULT_ZOOM_RATE: f32 = 4.0;
 const DEFAULT_ZOOM_OFFSET: f32 = 0.0;
 const DEFAULT_HUD_CAMERA_ZOOM: f32 = 1.0;
+const DEFAULT_CAMERA_FOLLOW_RATE: f32 = 0.04;
 const STEPS_PER_BEAT: f32 = 4.0;
 const MAX_RELATIVE_CAM_ZOOM: f32 = 1.35;
 
@@ -24,6 +25,8 @@ pub(crate) struct CameraFx {
     zooming: bool,
     last_step: i64,
     last_update_cursor: Option<Samples>,
+    follow_target: glam::Vec2,
+    follow_initialized: bool,
     zoom_tween: Option<CameraZoomTween>,
 }
 
@@ -65,6 +68,8 @@ impl Default for CameraFx {
             zooming: false,
             last_step: -1,
             last_update_cursor: None,
+            follow_target: glam::Vec2::new(640.0, 360.0),
+            follow_initialized: false,
             zoom_tween: None,
         }
     }
@@ -82,12 +87,29 @@ impl CameraFx {
         self.zooming = false;
         self.last_step = -1;
         self.last_update_cursor = None;
+        self.follow_target = glam::Vec2::new(640.0, 360.0);
+        self.follow_initialized = false;
         self.zoom_tween = None;
         if let Some(camera) = cameras.get_mut(CameraId(0)) {
             camera.zoom = default_game_zoom;
         }
         if let Some(camera) = cameras.get_mut(CameraId(1)) {
             camera.zoom = DEFAULT_HUD_CAMERA_ZOOM;
+        }
+    }
+
+    pub(crate) fn focus_camera(
+        &mut self,
+        cameras: &mut CameraRegistry,
+        target: glam::Vec2,
+        snap: bool,
+    ) {
+        self.follow_target = target;
+        self.follow_initialized = true;
+        if snap {
+            if let Some(camera) = cameras.get_mut(CameraId(0)) {
+                camera.position = target;
+            }
         }
     }
 
@@ -146,6 +168,7 @@ impl CameraFx {
     ) {
         self.update_zoom_tween(cursor);
         let dt_frames = self.update_dt_frames(cursor, sample_rate);
+        self.update_follow(cameras, dt_frames);
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:1223-1229,1855-1861
         if self.zooming && self.camera_zoom_rate > 0.0 {
             self.camera_bop_multiplier = camera_bop_decay(self.camera_bop_multiplier, dt_frames);
@@ -161,6 +184,18 @@ impl CameraFx {
             .unwrap_or(0);
         self.last_update_cursor = Some(cursor);
         dt_samples as f32 * 60.0 / sample_rate.max(1) as f32
+    }
+
+    fn update_follow(&self, cameras: &mut CameraRegistry, dt_frames: f32) {
+        if !self.follow_initialized {
+            return;
+        }
+        let Some(camera) = cameras.get_mut(CameraId(0)) else {
+            return;
+        };
+        // ref: bdedc0aa:source/funkin/util/Constants.hx:640-644
+        let ratio = (DEFAULT_CAMERA_FOLLOW_RATE * dt_frames).clamp(0.0, 1.0);
+        camera.position = camera.position.lerp(self.follow_target, ratio);
     }
 
     fn update_zoom_tween(&mut self, cursor: Samples) {
