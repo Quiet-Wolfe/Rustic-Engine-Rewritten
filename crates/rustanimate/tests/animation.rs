@@ -358,6 +358,55 @@ fn parses_matrix3d_as_affine() {
 }
 
 #[test]
+fn verbose_parser_applies_flxanimate_position_offsets() {
+    let animation = Animation::parse(
+        br#"{
+          "ANIMATION": {
+            "SYMBOL_name": "root",
+            "TIMELINE": { "LAYERS": [{
+              "Frames": [{
+                "index": 0,
+                "duration": 1,
+                "elements": [
+                  { "ATLAS_SPRITE_instance": {
+                    "name": "direct",
+                    "Position": { "x": 7, "y": -3 }
+                  } },
+                  { "SYMBOL_Instance": {
+                    "SYMBOL_name": "body",
+                    "bitmap": { "Position": { "x": 4, "y": 5 } },
+                    "Matrix3D": {
+                      "m00": 1, "m01": 0,
+                      "m10": 0, "m11": 1,
+                      "m30": 10, "m31": 20
+                    }
+                  } }
+                ]
+              }]
+            }] }
+          },
+          "SYMBOL_DICTIONARY": { "Symbols": [{
+            "SYMBOL_name": "body",
+            "TIMELINE": { "LAYERS": [{
+              "Frames": [{
+                "index": 0,
+                "duration": 1,
+                "elements": [{ "ATLAS_SPRITE_instance": { "name": "body-part" } }]
+              }]
+            }] }
+          }] }
+        }"#,
+    )
+    .unwrap();
+
+    let parts = animation.flatten_symbol_frame("root", 0).unwrap();
+    assert_eq!(parts[0].frame_name, "direct");
+    assert_eq!(parts[0].matrix, [1.0, 0.0, 0.0, 1.0, 7.0, -3.0]);
+    assert_eq!(parts[1].frame_name, "body-part");
+    assert_eq!(parts[1].matrix, [1.0, 0.0, 0.0, 1.0, 14.0, 25.0]);
+}
+
+#[test]
 fn rejects_empty_element_atlas_frame_names() {
     let bad = br#"{
       "AN": {

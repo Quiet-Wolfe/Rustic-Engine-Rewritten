@@ -133,8 +133,9 @@ fn symbol_element(instance: RawSymbolInstance) -> AnimateResult<Element> {
     if instance.symbol_name.trim().is_empty() {
         return Err(AnimateError::Atlas("element symbol name is empty".into()));
     }
+    let position = instance.bitmap.and_then(|bitmap| bitmap.position);
     Ok(Element {
-        matrix: instance.matrix.map(matrix3d_to_affine).unwrap_or(ID_MATRIX),
+        matrix: matrix_with_position(instance.matrix, position),
         color: ID_COLOR,
         kind: ElementKind::Symbol(SymbolInstance {
             symbol_name: instance.symbol_name,
@@ -158,12 +159,22 @@ fn atlas_element(instance: RawAtlasInstance) -> AnimateResult<Element> {
         ));
     }
     Ok(Element {
-        matrix: instance.matrix.map(matrix3d_to_affine).unwrap_or(ID_MATRIX),
+        matrix: matrix_with_position(instance.matrix, instance.position),
         color: ID_COLOR,
         kind: ElementKind::Atlas(AtlasInstance {
             frame_name: instance.name,
         }),
     })
+}
+
+fn matrix_with_position(matrix: Option<RawMatrix3d>, position: Option<RawPoint>) -> [f32; 6] {
+    let mut matrix = matrix.map(matrix3d_to_affine).unwrap_or(ID_MATRIX);
+    // ref: references/flxanimate/flxanimate/animate/FlxElement.hx:160-174
+    if let Some(position) = position {
+        matrix[4] += position.x;
+        matrix[5] += position.y;
+    }
+    matrix
 }
 
 fn matrix3d_to_affine(matrix: RawMatrix3d) -> [f32; 6] {
@@ -248,13 +259,23 @@ struct RawSymbolInstance {
     transform_point: RawPoint,
     #[serde(rename = "Matrix3D")]
     matrix: Option<RawMatrix3d>,
+    #[serde(alias = "BM")]
+    bitmap: Option<RawBitmap>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawAtlasInstance {
     name: String,
+    #[serde(rename = "Position", alias = "POS")]
+    position: Option<RawPoint>,
     #[serde(rename = "Matrix3D")]
     matrix: Option<RawMatrix3d>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawBitmap {
+    #[serde(rename = "Position", alias = "POS")]
+    position: Option<RawPoint>,
 }
 
 #[derive(Debug, Default, Deserialize)]
