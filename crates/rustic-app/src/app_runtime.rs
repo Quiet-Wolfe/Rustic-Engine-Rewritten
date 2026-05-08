@@ -28,7 +28,7 @@ pub(crate) fn create_runtime(
         &surface,
         inner.width,
         inner.height,
-        wgpu::PresentMode::AutoVsync,
+        wgpu::PresentMode::Fifo,
     )?;
     let pipeline = SpritePipeline::new(&rs.device, wgpu::TextureFormat::Rgba8UnormSrgb);
     let composite = Composite::new(&rs, surface_cfg.format);

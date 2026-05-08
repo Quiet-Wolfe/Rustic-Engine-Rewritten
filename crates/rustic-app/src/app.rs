@@ -261,7 +261,7 @@ impl App {
                         present_mode: rt.surface_cfg.present_mode,
                         alpha_mode: wgpu::CompositeAlphaMode::Auto,
                         view_formats: vec![],
-                        desired_maximum_frame_latency: 2,
+                        desired_maximum_frame_latency: 1,
                     },
                 );
                 return;
@@ -322,7 +322,7 @@ impl App {
                 present_mode: rt.surface_cfg.present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
-                desired_maximum_frame_latency: 2,
+                desired_maximum_frame_latency: 1,
             },
         );
     }
