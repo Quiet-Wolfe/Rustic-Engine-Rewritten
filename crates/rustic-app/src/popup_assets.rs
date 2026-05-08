@@ -236,8 +236,18 @@ fn popup_position(base: glam::Vec2, motion: PopupMotion, age_secs: f32) -> glam:
     )
 }
 
-fn combo_digits(combo: u32) -> [u32; 3] {
-    [combo % 10, (combo % 100) / 10, combo / 100]
+fn combo_digits(combo: u32) -> Vec<u32> {
+    // ref: bdedc0aa:source/funkin/play/components/PopUpStuff.hx:74-80
+    let mut digits = Vec::new();
+    let mut value = combo;
+    while value != 0 {
+        digits.push(value % 10);
+        value /= 10;
+    }
+    while digits.len() < 3 {
+        digits.push(0);
+    }
+    digits
 }
 
 fn popup_alpha(age_secs: f32, fade_start: f32) -> f32 {
@@ -386,6 +396,28 @@ mod tests {
         );
         assert!(commands[1].world_pos.x > commands[2].world_pos.x);
         assert!(commands[2].world_pos.x > commands[3].world_pos.x);
+    }
+
+    #[test]
+    fn combo_digits_expand_beyond_three_digits_like_og() {
+        let mut popups = ScorePopups::default();
+        popups.push(Judgment::Sick, Some(1000), Samples(0));
+
+        let commands = popups.commands(&skin(), Samples(0), 48_000, 100.0);
+
+        assert_eq!(
+            commands
+                .iter()
+                .map(|command| command.texture)
+                .collect::<Vec<_>>(),
+            vec![
+                AssetId::new(1),
+                AssetId::new(10),
+                AssetId::new(10),
+                AssetId::new(10),
+                AssetId::new(11),
+            ]
+        );
     }
 
     #[test]
