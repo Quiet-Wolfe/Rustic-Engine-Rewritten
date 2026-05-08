@@ -133,6 +133,7 @@ impl AnimateCharacterSprite {
         cmd.uv_min = frame.uv_min;
         cmd.uv_max = frame.uv_max;
         cmd.uv_rotated = frame.rotated;
+        cmd.color = glam::vec4(part.color[0], part.color[1], part.color[2], part.color[3]);
         if effective_flip_x(&self.character, self.is_player) {
             std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
         }
@@ -715,5 +716,76 @@ mod tests {
         assert!(!frame_names
             .iter()
             .any(|name| ["36", "37", "38"].contains(name)));
+    }
+
+    #[test]
+    fn command_for_part_applies_animate_color_transform() {
+        let character = CharacterDefinition::parse(
+            br#"{
+                "id": "test",
+                "assetPath": "shared:characters/test",
+                "animations": [{ "name": "idle", "prefix": "Idle" }]
+            }"#,
+        )
+        .unwrap();
+        let animation = AnimateAnimation::parse(
+            br#"{
+                "AN": {
+                    "N": "Test",
+                    "SN": "Root",
+                    "TL": { "L": [
+                        { "FR": [{ "N": "Idle", "I": 0, "DU": 1, "E": [] }] },
+                        { "FR": [{
+                            "I": 0,
+                            "DU": 1,
+                            "E": [{
+                                "ASI": {
+                                    "N": "part",
+                                    "C": { "M": "AD", "RM": 0.2, "GM": 0.4, "BM": 0.6, "AM": 0.8 }
+                                }
+                            }]
+                        }] }
+                    ] }
+                }
+            }"#,
+        )
+        .unwrap();
+        let atlas = AnimateAtlas::parse_spritemap(
+            br#"{
+                "ATLAS": {
+                    "SPRITES": [
+                        { "SPRITE": { "name": "part", "x": 0, "y": 0, "w": 16, "h": 24 } }
+                    ],
+                    "meta": { "size": { "w": 16, "h": 24 } }
+                }
+            }"#,
+        )
+        .unwrap();
+        let sprite = AnimateCharacterSprite {
+            poses: vec![pose(character.animations[0].clone(), 1)],
+            character,
+            slot: StageCharacterSlot::default(),
+            is_player: false,
+            z: 0,
+            filter: FilterMode::Nearest,
+            assets: vec![LoadedAnimateAtlas {
+                texture_id: AssetId::new(1),
+                flat_labels: None,
+                animation,
+                atlas,
+            }],
+            initial_pose: 0,
+        };
+        let part = sprite.assets[0]
+            .animation
+            .flatten_label_frame("Idle", 0)
+            .unwrap()
+            .remove(0);
+
+        let cmd = sprite
+            .command_for_part(&sprite.poses[0], &sprite.assets[0], &part)
+            .unwrap();
+
+        assert_eq!(cmd.color, glam::vec4(0.2, 0.4, 0.6, 0.8));
     }
 }

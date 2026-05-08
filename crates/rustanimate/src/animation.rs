@@ -49,6 +49,7 @@ pub struct TimelineFrame {
 #[non_exhaustive]
 pub struct Element {
     pub matrix: [f32; 6],
+    pub color: [f32; 4],
     pub kind: ElementKind,
 }
 
@@ -79,6 +80,7 @@ pub struct AtlasInstance {
 pub struct DrawPart {
     pub frame_name: String,
     pub matrix: [f32; 6],
+    pub color: [f32; 4],
 }
 
 impl Animation {
@@ -154,6 +156,7 @@ impl Animation {
             &self.layers,
             label.index.saturating_add(frame_offset),
             identity_matrix(),
+            identity_color(),
             &mut Vec::new(),
             &mut parts,
         )?;
@@ -173,6 +176,7 @@ impl Animation {
             symbol,
             frame_index,
             identity_matrix(),
+            identity_color(),
             &mut Vec::new(),
             &mut parts,
         )?;
@@ -184,6 +188,7 @@ impl Animation {
         symbol: &Symbol,
         frame_index: u32,
         parent_matrix: [f32; 6],
+        parent_color: [f32; 4],
         stack: &mut Vec<String>,
         parts: &mut Vec<DrawPart>,
     ) -> AnimateResult<()> {
@@ -195,7 +200,14 @@ impl Animation {
         }
         stack.push(symbol.name.clone());
         let frame_index = frame_index.min(symbol.duration().saturating_sub(1));
-        let result = self.flatten_layers(&symbol.layers, frame_index, parent_matrix, stack, parts);
+        let result = self.flatten_layers(
+            &symbol.layers,
+            frame_index,
+            parent_matrix,
+            parent_color,
+            stack,
+            parts,
+        );
         stack.pop();
         result
     }
@@ -205,6 +217,7 @@ impl Animation {
         layers: &[TimelineLayer],
         frame_index: u32,
         parent_matrix: [f32; 6],
+        parent_color: [f32; 4],
         stack: &mut Vec<String>,
         parts: &mut Vec<DrawPart>,
     ) -> AnimateResult<()> {
@@ -214,7 +227,14 @@ impl Animation {
             };
             let frame_offset = frame_index.saturating_sub(frame.index);
             for element in &frame.elements {
-                self.flatten_element(element, frame_offset, parent_matrix, stack, parts)?;
+                self.flatten_element(
+                    element,
+                    frame_offset,
+                    parent_matrix,
+                    parent_color,
+                    stack,
+                    parts,
+                )?;
             }
         }
         Ok(())
@@ -225,15 +245,18 @@ impl Animation {
         element: &Element,
         frame_offset: u32,
         parent_matrix: [f32; 6],
+        parent_color: [f32; 4],
         stack: &mut Vec<String>,
         parts: &mut Vec<DrawPart>,
     ) -> AnimateResult<()> {
         let matrix = compose_affine(parent_matrix, element.matrix);
+        let color = multiply_color(parent_color, element.color);
         match &element.kind {
             ElementKind::Atlas(instance) => {
                 parts.push(DrawPart {
                     frame_name: instance.frame_name.clone(),
                     matrix,
+                    color,
                 });
                 Ok(())
             }
@@ -245,7 +268,7 @@ impl Animation {
                     ))
                 })?;
                 let frame_index = symbol_frame_index(instance, symbol.duration(), frame_offset);
-                self.flatten_symbol(symbol, frame_index, matrix, stack, parts)
+                self.flatten_symbol(symbol, frame_index, matrix, color, stack, parts)
             }
         }
     }
@@ -389,6 +412,24 @@ fn compose_affine(parent: [f32; 6], child: [f32; 6]) -> [f32; 6] {
     ]
 }
 
+fn multiply_color(parent: [f32; 4], child: [f32; 4]) -> [f32; 4] {
+    [
+        parent[0] * child[0],
+        parent[1] * child[1],
+        parent[2] * child[2],
+        parent[3] * child[3],
+    ]
+}
+
+fn color_multiplier(color: RawColorTransform) -> [f32; 4] {
+    [
+        color.red_multiplier,
+        color.green_multiplier,
+        color.blue_multiplier,
+        color.alpha_multiplier,
+    ]
+}
+
 fn frame_elements(elements: Vec<RawElement>) -> AnimateResult<Vec<Element>> {
     let mut parsed = Vec::new();
     for element in elements {
@@ -412,6 +453,10 @@ fn symbol_element(instance: RawSymbolInstance) -> AnimateResult<Element> {
     }
     Ok(Element {
         matrix: instance_matrix(instance.matrix, instance.matrix3d),
+        color: instance
+            .color
+            .map(color_multiplier)
+            .unwrap_or_else(identity_color),
         kind: ElementKind::Symbol(SymbolInstance {
             symbol_name: instance.symbol_name,
             first_frame: normalize_symbol_first_frame(
@@ -435,6 +480,10 @@ fn atlas_element(instance: RawAtlasInstance) -> AnimateResult<Element> {
     }
     Ok(Element {
         matrix: instance_matrix(instance.matrix, instance.matrix3d),
+        color: instance
+            .color
+            .map(color_multiplier)
+            .unwrap_or_else(identity_color),
         kind: ElementKind::Atlas(AtlasInstance {
             frame_name: instance.frame_name,
         }),
@@ -533,6 +582,8 @@ struct RawSymbolInstance {
     matrix: Option<[f32; 6]>,
     #[serde(rename = "M3D")]
     matrix3d: Option<[f32; 16]>,
+    #[serde(rename = "C")]
+    color: Option<RawColorTransform>,
     #[serde(rename = "TRP", default)]
     transform_point: RawPoint,
     #[serde(rename = "LP")]
@@ -547,6 +598,20 @@ struct RawAtlasInstance {
     matrix: Option<[f32; 6]>,
     #[serde(rename = "M3D")]
     matrix3d: Option<[f32; 16]>,
+    #[serde(rename = "C")]
+    color: Option<RawColorTransform>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawColorTransform {
+    #[serde(rename = "RM", default = "one")]
+    red_multiplier: f32,
+    #[serde(rename = "GM", default = "one")]
+    green_multiplier: f32,
+    #[serde(rename = "BM", default = "one")]
+    blue_multiplier: f32,
+    #[serde(rename = "AM", default = "one")]
+    alpha_multiplier: f32,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -559,4 +624,12 @@ struct RawPoint {
 
 fn identity_matrix() -> [f32; 6] {
     [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+}
+
+fn identity_color() -> [f32; 4] {
+    [1.0, 1.0, 1.0, 1.0]
+}
+
+fn one() -> f32 {
+    1.0
 }

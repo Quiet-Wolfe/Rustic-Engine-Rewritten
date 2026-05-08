@@ -50,6 +50,7 @@ impl DrawPart {
         Self {
             frame_name: frame_name.into(),
             matrix,
+            color: ID_COLOR,
         }
     }
 }
@@ -134,6 +135,7 @@ fn symbol_element(instance: RawSymbolInstance) -> AnimateResult<Element> {
     }
     Ok(Element {
         matrix: instance.matrix.map(matrix3d_to_affine).unwrap_or(ID_MATRIX),
+        color: ID_COLOR,
         kind: ElementKind::Symbol(SymbolInstance {
             symbol_name: instance.symbol_name,
             first_frame: normalize_symbol_first_frame(
@@ -157,6 +159,7 @@ fn atlas_element(instance: RawAtlasInstance) -> AnimateResult<Element> {
     }
     Ok(Element {
         matrix: instance.matrix.map(matrix3d_to_affine).unwrap_or(ID_MATRIX),
+        color: ID_COLOR,
         kind: ElementKind::Atlas(AtlasInstance {
             frame_name: instance.name,
         }),
@@ -273,6 +276,7 @@ struct RawMatrix3d {
 }
 
 const ID_MATRIX: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+const ID_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

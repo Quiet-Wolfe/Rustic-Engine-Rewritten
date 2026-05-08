@@ -132,6 +132,7 @@ fn parses_animation_labels_and_symbols() {
         element.matrix,
         [0.994, -0.105, 0.105, 0.994, 354.55, -165.35]
     );
+    assert_eq!(element.color, [1.0, 1.0, 1.0, 1.0]);
     let ElementKind::Symbol(instance) = &element.kind else {
         panic!("expected symbol instance");
     };
@@ -158,6 +159,49 @@ fn flattens_label_frames_in_draw_order() {
     assert_eq!(parts[0].matrix, [2.0, 0.0, 0.0, 2.0, 10.0, 21.0]);
     assert_eq!(parts[1].frame_name, "front0");
     assert_eq!(parts[1].matrix, [1.0, 0.0, 0.0, 1.0, 13.0, 24.0]);
+}
+
+#[test]
+fn flattens_inherited_color_transforms() {
+    let animation = Animation::parse(
+        br#"{
+          "AN": {
+            "N": "color-transform-test",
+            "SN": "root",
+            "TL": { "L": [
+              { "FR": [{ "N": "Idle", "I": 0, "DU": 1, "E": [] }] },
+              { "FR": [{
+                "I": 0,
+                "DU": 1,
+                "E": [{
+                  "SI": {
+                    "SN": "body",
+                    "C": { "M": "AD", "RM": 0.8, "AM": 0.5 }
+                  }
+                }]
+              }] }
+            ] },
+            "SD": { "S": [{
+              "SN": "body",
+              "TL": { "L": [{ "FR": [{
+                "I": 0,
+                "DU": 1,
+                "E": [{
+                  "ASI": {
+                    "N": "part",
+                    "C": { "M": "AD", "GM": 0.7, "AM": 0.25 }
+                  }
+                }]
+              }] }] }
+            }] }
+          }
+        }"#,
+    )
+    .unwrap();
+
+    let parts = animation.flatten_label_frame("Idle", 0).unwrap();
+    assert_eq!(parts[0].frame_name, "part");
+    assert_eq!(parts[0].color, [0.8, 0.7, 1.0, 0.125]);
 }
 
 #[test]
