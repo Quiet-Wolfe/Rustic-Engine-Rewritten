@@ -50,7 +50,9 @@ impl CountdownImage {
             (FNF_HEIGHT - self.size.y) * 0.5 + eased * 100.0,
         );
         let mut cmd = DrawCommand::sprite(self.texture_id, world_pos, self.size);
-        cmd.camera = CameraId(0);
+        // ref: bdedc0aa:source/funkin/play/Countdown.hx:241-247
+        cmd.camera = CameraId(1);
+        cmd.pivot = glam::Vec2::ZERO;
         cmd.layer = RenderLayer::Overlay;
         cmd.filter = FilterMode::Linear;
         cmd.color.w = 1.0 - eased;
@@ -169,5 +171,14 @@ mod tests {
     #[test]
     fn countdown_starts_at_minus_five_crochets() {
         assert_eq!(countdown_start_cursor(48_000, 100.0), Samples(-144_000));
+    }
+
+    #[test]
+    fn countdown_uses_hud_camera_and_top_left_centering() {
+        let command = skin().commands(Samples(-86_400), 48_000, 100.0)[0].clone();
+
+        assert_eq!(command.camera, CameraId(1));
+        assert_eq!(command.pivot, glam::Vec2::ZERO);
+        assert_eq!(command.world_pos, glam::vec2(590.0, 335.0));
     }
 }

@@ -498,7 +498,10 @@ impl App {
             }
         }
         if let Some(popup_skin) = &self.popup_skin {
-            for cmd in self.score_popups.commands(popup_skin, cursor, sample_rate) {
+            for cmd in self
+                .score_popups
+                .commands(popup_skin, cursor, sample_rate, play_state.bpm)
+            {
                 self.cmds.push(cmd);
             }
         }

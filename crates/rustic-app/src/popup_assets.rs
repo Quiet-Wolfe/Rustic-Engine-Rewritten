@@ -11,13 +11,10 @@ use std::collections::HashMap;
 
 const FNF_WIDTH: f32 = 1280.0;
 const FNF_HEIGHT: f32 = 720.0;
-const COOL_TEXT_X: f32 = FNF_WIDTH * 0.55;
-const RATING_SCALE: f32 = 0.7;
-const DIGIT_SCALE: f32 = 0.5;
-const DIGIT_SPACING: f32 = 43.0;
-const POPUP_LIFETIME_SECS: f32 = 0.8;
+const RATING_SCALE: f32 = 0.65;
+const DIGIT_SCALE: f32 = 0.45;
+const COMBO_DIGIT_SPACING: f32 = 36.0;
 const POPUP_FADE_SECS: f32 = 0.2;
-const POPUP_RISE_PIXELS: f32 = 70.0;
 
 #[derive(Debug, Clone)]
 pub struct PopupSkin {
@@ -60,10 +57,18 @@ impl ScorePopups {
         skin: &PopupSkin,
         cursor: Samples,
         sample_rate: u32,
+        bpm: f64,
     ) -> Vec<DrawCommand> {
-        let lifetime = (POPUP_LIFETIME_SECS * sample_rate as f32).round() as i64;
-        self.active
-            .retain(|popup| cursor.0.saturating_sub(popup.started_at.0) <= lifetime);
+        let beat_secs = 60.0 / bpm.max(1.0) as f32;
+        self.active.retain(|popup| {
+            let max_delay = if popup.combo.is_some() {
+                beat_secs * 2.0
+            } else {
+                beat_secs
+            };
+            let lifetime = ((max_delay + POPUP_FADE_SECS) * sample_rate as f32).round() as i64;
+            cursor.0.saturating_sub(popup.started_at.0) <= lifetime
+        });
 
         let mut commands = Vec::new();
         for popup in &self.active {
@@ -72,13 +77,20 @@ impl ScorePopups {
             }
             let age_samples = cursor.0 - popup.started_at.0;
             let age_secs = age_samples as f32 / sample_rate.max(1) as f32;
-            let alpha = popup_alpha(age_secs);
-            let rise = (age_secs / POPUP_LIFETIME_SECS).clamp(0.0, 1.0) * POPUP_RISE_PIXELS;
 
             if let Some(rating) = skin.rating(popup.judgment) {
+                let alpha = popup_alpha(age_secs, beat_secs);
+                let seed = popup_seed(popup, 0);
+                let motion = PopupMotion {
+                    velocity: glam::vec2(
+                        -random_int(seed, 0, 10),
+                        -random_int(seed >> 8, 140, 175),
+                    ),
+                    acceleration_y: 550.0,
+                };
                 commands.push(sprite_command(
                     rating,
-                    glam::vec2(COOL_TEXT_X - 40.0, centered_y(rating) - 60.0 - rise),
+                    popup_position(rating_base(rating), motion, age_secs),
                     RATING_SCALE,
                     alpha,
                     20,
@@ -88,14 +100,19 @@ impl ScorePopups {
             if let Some(combo) = popup.combo {
                 for (index, digit) in combo_digits(combo).into_iter().enumerate() {
                     let image = skin.digits[digit as usize];
+                    let seed = popup_seed(popup, 1 + index as u64);
+                    let motion = PopupMotion {
+                        velocity: glam::vec2(
+                            random_float(seed, -5.0, 5.0),
+                            -random_int(seed >> 8, 130, 150),
+                        ),
+                        acceleration_y: random_int(seed >> 16, 250, 300),
+                    };
                     commands.push(sprite_command(
                         image,
-                        glam::vec2(
-                            COOL_TEXT_X + DIGIT_SPACING * index as f32 - 90.0,
-                            centered_y(image) + 80.0 - rise,
-                        ),
+                        popup_position(combo_base(index), motion, age_secs),
                         DIGIT_SCALE,
-                        alpha,
+                        popup_alpha(age_secs, beat_secs * 2.0),
                         21 + index as i32,
                     ));
                 }
@@ -180,7 +197,8 @@ fn sprite_command(
     z: i32,
 ) -> DrawCommand {
     let mut cmd = DrawCommand::sprite(image.texture_id, world_pos, image.size * scale);
-    cmd.camera = CameraId(0);
+    // ref: bdedc0aa:source/funkin/play/PlayState.hx:2348-2350
+    cmd.camera = CameraId(1);
     cmd.pivot = glam::Vec2::ZERO;
     cmd.layer = RenderLayer::Overlay;
     cmd.z = z;
@@ -189,20 +207,82 @@ fn sprite_command(
     cmd
 }
 
-fn centered_y(image: PopupImage) -> f32 {
-    (FNF_HEIGHT - image.size.y) * 0.5
+#[derive(Debug, Clone, Copy)]
+struct PopupMotion {
+    velocity: glam::Vec2,
+    acceleration_y: f32,
+}
+
+fn rating_base(image: PopupImage) -> glam::Vec2 {
+    // ref: bdedc0aa:source/funkin/play/components/PopUpStuff.hx:40-43
+    glam::vec2(
+        FNF_WIDTH * 0.474 - image.size.x * RATING_SCALE * 0.5,
+        FNF_HEIGHT * 0.45 - 60.0 - image.size.y * RATING_SCALE * 0.5,
+    )
+}
+
+fn combo_base(index: usize) -> glam::Vec2 {
+    // ref: bdedc0aa:source/funkin/play/components/PopUpStuff.hx:93-94
+    glam::vec2(
+        FNF_WIDTH * 0.507 - COMBO_DIGIT_SPACING * (index as f32 + 1.0) - 65.0,
+        FNF_HEIGHT * 0.44,
+    )
+}
+
+fn popup_position(base: glam::Vec2, motion: PopupMotion, age_secs: f32) -> glam::Vec2 {
+    base + glam::vec2(
+        motion.velocity.x * age_secs,
+        motion.velocity.y * age_secs + 0.5 * motion.acceleration_y * age_secs * age_secs,
+    )
 }
 
 fn combo_digits(combo: u32) -> [u32; 3] {
-    [combo / 100, (combo % 100) / 10, combo % 10]
+    [combo % 10, (combo % 100) / 10, combo / 100]
 }
 
-fn popup_alpha(age_secs: f32) -> f32 {
-    let fade_start = POPUP_LIFETIME_SECS - POPUP_FADE_SECS;
+fn popup_alpha(age_secs: f32, fade_start: f32) -> f32 {
     if age_secs <= fade_start {
         1.0
     } else {
         1.0 - ((age_secs - fade_start) / POPUP_FADE_SECS).clamp(0.0, 1.0)
+    }
+}
+
+fn random_int(seed: u64, min: u32, max: u32) -> f32 {
+    let span = max.saturating_sub(min).saturating_add(1);
+    min as f32
+        + (random_unit(seed) * span as f32)
+            .floor()
+            .min(span as f32 - 1.0)
+}
+
+fn random_float(seed: u64, min: f32, max: f32) -> f32 {
+    min + (max - min) * random_unit(seed)
+}
+
+fn random_unit(mut seed: u64) -> f32 {
+    seed ^= seed >> 12;
+    seed ^= seed << 25;
+    seed ^= seed >> 27;
+    let value = seed.wrapping_mul(0x2545_f491_4f6c_dd1d);
+    ((value >> 40) as f32) / ((1u64 << 24) as f32)
+}
+
+fn popup_seed(popup: &ScorePopup, salt: u64) -> u64 {
+    (popup.started_at.0 as u64)
+        ^ ((popup.combo.unwrap_or(0) as u64) << 17)
+        ^ (judgment_seed(popup.judgment) << 29)
+        ^ salt.wrapping_mul(0x9e37_79b9_7f4a_7c15)
+}
+
+fn judgment_seed(judgment: Judgment) -> u64 {
+    match judgment {
+        Judgment::Sick => 1,
+        Judgment::Good => 2,
+        Judgment::Bad => 3,
+        Judgment::Shit => 4,
+        Judgment::Miss => 5,
+        _ => 6,
     }
 }
 
@@ -254,13 +334,14 @@ mod tests {
         let mut popups = ScorePopups::default();
         popups.push(Judgment::Sick, Some(0), Samples(100));
 
-        let commands = popups.commands(&skin(), Samples(100), 48_000);
+        let commands = popups.commands(&skin(), Samples(100), 48_000, 100.0);
 
         assert_eq!(commands.len(), 4);
         assert_eq!(commands[0].texture, AssetId::new(1));
         assert_eq!(commands[1].texture, AssetId::new(10));
         assert_eq!(commands[2].texture, AssetId::new(10));
         assert_eq!(commands[3].texture, AssetId::new(10));
+        assert!(commands.iter().all(|command| command.camera == CameraId(1)));
     }
 
     #[test]
@@ -268,7 +349,7 @@ mod tests {
         let mut popups = ScorePopups::default();
         popups.push(Judgment::Good, None, Samples(0));
 
-        let commands = popups.commands(&skin(), Samples(0), 48_000);
+        let commands = popups.commands(&skin(), Samples(0), 48_000, 100.0);
 
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].texture, AssetId::new(2));
@@ -279,8 +360,56 @@ mod tests {
         let mut popups = ScorePopups::default();
         popups.push(Judgment::Bad, Some(10), Samples(0));
 
-        let commands = popups.commands(&skin(), Samples(48_000), 48_000);
+        let commands = popups.commands(&skin(), Samples(96_000), 48_000, 100.0);
 
         assert!(commands.is_empty());
+    }
+
+    #[test]
+    fn combo_digits_render_least_significant_first_like_og() {
+        let mut popups = ScorePopups::default();
+        popups.push(Judgment::Sick, Some(123), Samples(0));
+
+        let commands = popups.commands(&skin(), Samples(0), 48_000, 100.0);
+
+        assert_eq!(
+            commands
+                .iter()
+                .map(|command| command.texture)
+                .collect::<Vec<_>>(),
+            vec![
+                AssetId::new(1),
+                AssetId::new(13),
+                AssetId::new(12),
+                AssetId::new(11)
+            ]
+        );
+        assert!(commands[1].world_pos.x > commands[2].world_pos.x);
+        assert!(commands[2].world_pos.x > commands[3].world_pos.x);
+    }
+
+    #[test]
+    fn popup_motion_uses_velocity_then_gravity() {
+        let mut popups = ScorePopups::default();
+        popups.push(Judgment::Sick, Some(123), Samples(0));
+
+        let start = popups.commands(&skin(), Samples(0), 48_000, 100.0);
+        let rising = popups.commands(&skin(), Samples(12_000), 48_000, 100.0);
+        let falling = popups.commands(&skin(), Samples(38_400), 48_000, 100.0);
+
+        assert!(rising[0].world_pos.y < start[0].world_pos.y);
+        assert!(falling[0].world_pos.y > start[0].world_pos.y);
+        assert_ne!(rising[1].world_pos.y, rising[2].world_pos.y);
+    }
+
+    #[test]
+    fn rating_fades_before_combo_digits() {
+        let mut popups = ScorePopups::default();
+        popups.push(Judgment::Sick, Some(10), Samples(0));
+
+        let commands = popups.commands(&skin(), Samples(38_400), 48_000, 100.0);
+
+        assert!(commands[0].color.w < 1.0);
+        assert_eq!(commands[1].color.w, 1.0);
     }
 }
