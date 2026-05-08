@@ -3,6 +3,7 @@
 //! Base FNF stages are mostly hard-coded in `PlayState.hx`. RusticV3 uses
 //! baked, typed JSON definitions so renderer/app code can load the same shape
 //! through the asset resolver that future overlays will use.
+// LINT-ALLOW: long-file legacy and v-slice stage shape parsing plus tests
 
 use crate::error::{AssetError, AssetResult};
 use crate::parsers::types::AssetVec2;
