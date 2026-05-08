@@ -179,4 +179,19 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn tutorial_vslice_stems_load_as_split_sources() {
+        let mixer = SharedMixer::new(Mixer::new(48_000));
+        let selection = PreviewSelection::from_keys(Some("tutorial"), Some("normal"));
+
+        load_preview_stems_for(&mixer, selection, Samples(0)).unwrap();
+
+        mixer
+            .edit(|mixer| {
+                assert_eq!(mixer.voice_count(), 3);
+                Ok(())
+            })
+            .unwrap();
+    }
 }
