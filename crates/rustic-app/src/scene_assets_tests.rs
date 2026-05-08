@@ -100,3 +100,18 @@ fn preview_play_state_uses_selected_difficulty() {
     assert_eq!(hard.scroll_speed, 1.6);
     assert!(hard.notes.len() > easy.notes.len());
 }
+
+#[test]
+fn preview_song_metadata_preserves_tutorial_gf_opponent() {
+    let chart = load_preview_song_for(PreviewSelection {
+        song: PreviewSong::TUTORIAL,
+        difficulty: PreviewDifficulty::Normal,
+    })
+    .expect("tutorial chart metadata");
+
+    assert_eq!(chart.chart.player2, "gf");
+    assert_eq!(chart.chart.girlfriend, "");
+    assert_eq!(chart.chart.stage, "mainStage");
+    assert_eq!(stage_asset_id(&chart.chart.stage), "stage");
+    assert_eq!(character_id(&chart.chart.girlfriend), None);
+}

@@ -20,7 +20,8 @@ use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::preview_song::PreviewSelection;
 use crate::scene_assets::{
-    load_default_scene, load_preview_play_state_for, CameraFocusPoints, CharacterSet,
+    load_preview_play_state_for, load_preview_scene_for, CameraFocusPoints, CharacterSet,
+    LoadedScene,
 };
 use crate::screen::ScreenStack;
 use crate::song_audio::{load_preview_stems_for, play_sample_rate, set_vocals_gain};
@@ -134,8 +135,6 @@ impl App {
             ));
         let window = Arc::new(event_loop.create_window(attrs)?);
 
-        // wgpu Instance must be built before we make the surface so we
-        // can pass `compatible_surface` to the adapter request.
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()
@@ -154,7 +153,6 @@ impl App {
         )?;
         let pipeline = SpritePipeline::new(&rs.device, wgpu::TextureFormat::Rgba8UnormSrgb);
         let composite = Composite::new(&rs, surface_cfg.format);
-
         let runtime = Runtime {
             window,
             surface,
@@ -163,43 +161,50 @@ impl App {
             pipeline,
             composite,
         };
-
-        match load_default_scene(&runtime.rs.device, &runtime.rs.queue) {
-            Ok(scene) => {
-                let anim_timings = scene
-                    .characters
-                    .as_ref()
-                    .map(CharacterSet::anim_timings)
-                    .unwrap_or_default();
-                self.cmds = scene.commands;
-                self.static_cmds = self.cmds.clone();
-                self.atlases = scene.textures;
-                self.characters = scene.characters;
-                self.character_anim.set_timings(anim_timings);
-                self.bitmap_text_skin = scene.bitmap_text_skin;
-                self.note_skin = scene.note_skin;
-                self.note_splash_skin = scene.note_splash_skin;
-                self.hold_cover_skin = scene.hold_cover_skin;
-                self.hud_skin = scene.hud_skin;
-                self.popup_skin = scene.popup_skin;
-                self.countdown_skin = scene.countdown_skin;
-                self.countdown_audio =
-                    CountdownAudio::load_default_or_warn(self.audio_output.is_some());
-                self.camera_focus = scene.camera_focus;
-                self.base_camera_zoom = scene.camera_zoom;
-                self.camera_fx.reset(&mut self.cameras, scene.camera_zoom);
-                focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
-                self.load_selected_song();
-            }
-            Err(e) => {
-                tracing::warn!(target: "rustic.asset", "default scene assets unavailable: {e:#}");
-            }
-        }
-
         self.runtime = Some(runtime);
+        self.load_selected_song();
         Ok(())
     }
+    fn apply_scene(&mut self, scene: LoadedScene) {
+        let anim_timings = scene
+            .characters
+            .as_ref()
+            .map(CharacterSet::anim_timings)
+            .unwrap_or_default();
+        self.cmds = scene.commands;
+        self.static_cmds = self.cmds.clone();
+        self.atlases = scene.textures;
+        self.characters = scene.characters;
+        self.character_anim.set_timings(anim_timings);
+        self.bitmap_text_skin = scene.bitmap_text_skin;
+        self.note_skin = scene.note_skin;
+        self.note_splash_skin = scene.note_splash_skin;
+        self.hold_cover_skin = scene.hold_cover_skin;
+        self.hud_skin = scene.hud_skin;
+        self.popup_skin = scene.popup_skin;
+        self.countdown_skin = scene.countdown_skin;
+        self.countdown_audio = CountdownAudio::load_default_or_warn(self.audio_output.is_some());
+        self.camera_focus = scene.camera_focus;
+        self.base_camera_zoom = scene.camera_zoom;
+        self.camera_fx.reset(&mut self.cameras, scene.camera_zoom);
+        focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
+    }
+    fn load_selected_scene(&mut self) {
+        let Some(runtime) = self.runtime.as_ref() else {
+            return;
+        };
+        let scene = load_preview_scene_for(
+            &runtime.rs.device,
+            &runtime.rs.queue,
+            self.preview_selection,
+        );
+        match scene {
+            Ok(scene) => self.apply_scene(scene),
+            Err(e) => tracing::warn!(target: "rustic.asset", "preview scene unavailable: {e:#}"),
+        }
+    }
     fn load_selected_song(&mut self) {
+        self.load_selected_scene();
         let sample_rate = play_sample_rate(&self.mixer);
         match load_preview_play_state_for(self.preview_selection, sample_rate) {
             Ok(play_state) => {
@@ -293,12 +298,6 @@ impl App {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("rustic.frame.encoder"),
             });
-        let bg = wgpu::Color {
-            r: 0.07,
-            g: 0.07,
-            b: 0.10,
-            a: 1.0,
-        };
 
         self.batcher.draw_to_reference(
             &rt.rs,
@@ -307,7 +306,12 @@ impl App {
             &self.cameras,
             &self.atlases,
             self.cmds.as_slice(),
-            bg,
+            wgpu::Color {
+                r: 0.07,
+                g: 0.07,
+                b: 0.10,
+                a: 1.0,
+            },
         );
         rt.composite.encode(
             &mut encoder,

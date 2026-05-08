@@ -20,8 +20,8 @@ use crate::preview_song::PreviewSelection;
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_character, load_png, load_sparrow, load_stage, load_vslice_chart, AssetPath,
-    CharacterAnimation, CharacterDefinition, CharacterRenderType, OverlayResolver, SparrowAtlas,
-    SparrowFrame, StageCharacterSlot, StageDefinition, StageObject,
+    CharacterAnimation, CharacterDefinition, CharacterRenderType, OverlayResolver, ParsedSong,
+    SparrowAtlas, SparrowFrame, StageCharacterSlot, StageDefinition, StageObject,
 };
 use rustic_core::ids::{AssetId, SongId};
 use rustic_core::render::RenderLayer;
@@ -65,7 +65,7 @@ impl Default for CameraFocusPoints {
 
 #[derive(Debug, Clone)]
 pub struct CharacterSet {
-    girlfriend: CharacterSprite,
+    girlfriend: Option<CharacterSprite>,
     opponent: CharacterSprite,
     player: CharacterSprite,
 }
@@ -78,10 +78,9 @@ impl CharacterSet {
         sample_rate: u32,
     ) -> Vec<DrawCommand> {
         let mut commands = Vec::new();
-        commands.extend(
-            self.girlfriend
-                .commands(poses.girlfriend, cursor, sample_rate),
-        );
+        if let Some(girlfriend) = &self.girlfriend {
+            commands.extend(girlfriend.commands(poses.girlfriend, cursor, sample_rate));
+        }
         commands.extend(self.opponent.commands(poses.opponent, cursor, sample_rate));
         commands.extend(self.player.commands(poses.player, cursor, sample_rate));
         commands
@@ -108,7 +107,10 @@ impl CharacterSet {
         CameraFocusPoints {
             player: self.player.camera_focus_point(),
             opponent: self.opponent.camera_focus_point(),
-            girlfriend: self.girlfriend.camera_focus_point(),
+            girlfriend: self.girlfriend.as_ref().map_or_else(
+                || self.player.camera_focus_point(),
+                CharacterSprite::camera_focus_point,
+            ),
         }
     }
 
@@ -116,8 +118,16 @@ impl CharacterSet {
         CharacterAnimTimings {
             player_sing_steps: self.player.definition().sing_time,
             opponent_sing_steps: self.opponent.definition().sing_time,
-            girlfriend_combo_timings: count_animation_timings(&self.girlfriend, "combo"),
-            girlfriend_drop_timings: count_animation_timings(&self.girlfriend, "drop"),
+            girlfriend_combo_timings: self
+                .girlfriend
+                .as_ref()
+                .map(|sprite| count_animation_timings(sprite, "combo"))
+                .unwrap_or_default(),
+            girlfriend_drop_timings: self
+                .girlfriend
+                .as_ref()
+                .map(|sprite| count_animation_timings(sprite, "drop"))
+                .unwrap_or_default(),
         }
     }
 }
@@ -259,8 +269,48 @@ impl CharacterPose {
 
 pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<LoadedScene> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
-    let stage_path = AssetPath::new("data/stages/stage.json")?;
-    let stage = load_stage(&resolver, &stage_path).context("load default stage definition")?;
+    load_scene_for_ids(device, queue, &resolver, "stage", Some("gf"), "dad", "bf")
+}
+
+pub(crate) fn load_preview_scene_for(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    selection: PreviewSelection,
+) -> Result<LoadedScene> {
+    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let chart = load_preview_song_for(selection)?;
+    load_scene_for_chart(device, queue, &resolver, &chart)
+}
+
+fn load_scene_for_chart(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    parsed: &ParsedSong,
+) -> Result<LoadedScene> {
+    let chart = &parsed.chart;
+    load_scene_for_ids(
+        device,
+        queue,
+        resolver,
+        stage_asset_id(&chart.stage),
+        character_id(&chart.girlfriend),
+        &chart.player2,
+        &chart.player1,
+    )
+}
+
+fn load_scene_for_ids(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    stage_id: &str,
+    girlfriend_id: Option<&str>,
+    opponent_id: &str,
+    player_id: &str,
+) -> Result<LoadedScene> {
+    let stage_path = AssetPath::new(format!("data/stages/{stage_id}.json"))?;
+    let stage = load_stage(resolver, &stage_path).context("load default stage definition")?;
 
     let mut scene = LoadedScene {
         camera_zoom: stage.camera_zoom,
@@ -278,9 +328,18 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
     };
 
     for object in &stage.objects {
-        load_stage_object(device, queue, &resolver, object, &mut scene)?;
+        load_stage_object(device, queue, resolver, object, &mut scene)?;
     }
-    let characters = load_stage_characters(device, queue, &resolver, &stage, &mut scene)?;
+    let characters = load_stage_characters(
+        device,
+        queue,
+        resolver,
+        &stage,
+        girlfriend_id,
+        opponent_id,
+        player_id,
+        &mut scene,
+    )?;
     scene.camera_focus = characters.camera_focus_points();
     scene.characters = Some(characters);
     scene.bitmap_text_skin = Some(load_bitmap_text_assets(
@@ -332,22 +391,43 @@ pub fn load_preview_play_state(sample_rate: u32) -> Result<PlayState> {
     load_preview_play_state_for(PreviewSelection::from_env(), sample_rate)
 }
 
-pub(crate) fn load_preview_play_state_for(
-    selection: PreviewSelection,
-    sample_rate: u32,
-) -> Result<PlayState> {
+pub(crate) fn load_preview_song_for(selection: PreviewSelection) -> Result<ParsedSong> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
     let song = selection.song;
     let chart_path = AssetPath::new(song.chart_path())?;
     let metadata_path = AssetPath::new(song.metadata_path())?;
     let difficulty = selection.difficulty.as_str();
-    let chart = load_vslice_chart(&resolver, &chart_path, &metadata_path, difficulty)
-        .with_context(|| format!("load {} + {} [{}]", chart_path, metadata_path, difficulty))?;
+    load_vslice_chart(&resolver, &chart_path, &metadata_path, difficulty)
+        .with_context(|| format!("load {} + {} [{}]", chart_path, metadata_path, difficulty))
+}
+
+pub(crate) fn load_preview_play_state_for(
+    selection: PreviewSelection,
+    sample_rate: u32,
+) -> Result<PlayState> {
+    let song = selection.song;
+    let chart = load_preview_song_for(selection)?;
     Ok(PlayState::from_chart(
         SongId::new(song.id),
         &chart,
         sample_rate,
     ))
+}
+
+fn stage_asset_id(stage: &str) -> &str {
+    match stage {
+        "mainStage" | "mainStageErect" => "stage",
+        other => other,
+    }
+}
+
+fn character_id(id: &str) -> Option<&str> {
+    let trimmed = id.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
 }
 
 fn load_stage_object(
@@ -388,23 +468,30 @@ fn load_stage_characters(
     queue: &wgpu::Queue,
     resolver: &OverlayResolver,
     stage: &StageDefinition,
+    girlfriend_id: Option<&str>,
+    opponent_id: &str,
+    player_id: &str,
     scene: &mut LoadedScene,
 ) -> Result<CharacterSet> {
-    let girlfriend = load_character_slot(
-        device,
-        queue,
-        resolver,
-        "data/characters/gf.json",
-        stage.girlfriend,
-        false,
-        0,
-        scene,
-    )?;
+    let girlfriend = girlfriend_id
+        .map(|id| {
+            load_character_slot(
+                device,
+                queue,
+                resolver,
+                id,
+                stage.girlfriend,
+                false,
+                0,
+                scene,
+            )
+        })
+        .transpose()?;
     let opponent = load_character_slot(
         device,
         queue,
         resolver,
-        "data/characters/dad.json",
+        opponent_id,
         stage.opponent,
         false,
         1,
@@ -414,7 +501,7 @@ fn load_stage_characters(
         device,
         queue,
         resolver,
-        "data/characters/bf.json",
+        player_id,
         stage.boyfriend,
         true,
         2,
@@ -432,13 +519,13 @@ fn load_character_slot(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     resolver: &OverlayResolver,
-    character_path: &str,
+    character_id: &str,
     slot: StageCharacterSlot,
     is_player: bool,
     z: i32,
     scene: &mut LoadedScene,
 ) -> Result<CharacterSprite> {
-    let character_path = AssetPath::new(character_path)?;
+    let character_path = AssetPath::new(format!("data/characters/{character_id}.json"))?;
     let character = load_character(resolver, &character_path)
         .with_context(|| format!("load {}", character_path.as_str()))?;
     match character.render_type {
