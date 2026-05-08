@@ -18,11 +18,12 @@ pub mod watcher;
 pub use error::{AssetError, AssetResult};
 pub use loaders::{
     load_animate_animation, load_animate_spritemap, load_bitmap_font, load_bytes, load_character,
-    load_chart, load_png, load_sparrow, load_stage, load_text_list, load_vslice_chart,
+    load_chart, load_level, load_png, load_sparrow, load_stage, load_text_list, load_vslice_chart,
 };
 pub use parsers::character::{CharacterAnimation, CharacterDefinition, CharacterRenderType};
 pub use parsers::chart::{Chart, ChartEvent, ChartEventKind, ChartNote, ChartSection, ParsedSong};
 pub use parsers::font::{BitmapFont, BitmapFontPage, BitmapGlyph};
+pub use parsers::level::{LevelDefinition, LevelPropDefinition};
 pub use parsers::png::PngImage;
 pub use parsers::sparrow::{SparrowAtlas, SparrowFrame};
 pub use parsers::stage::{

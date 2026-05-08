@@ -5,8 +5,8 @@
 
 use crate::error::{AssetError, AssetResult};
 use crate::parsers::{
-    character::CharacterDefinition, chart::ParsedSong, font::BitmapFont, png::PngImage,
-    sparrow::SparrowAtlas, stage::StageDefinition, text_list::TextList,
+    character::CharacterDefinition, chart::ParsedSong, font::BitmapFont, level::LevelDefinition,
+    png::PngImage, sparrow::SparrowAtlas, stage::StageDefinition, text_list::TextList,
 };
 use crate::path::AssetPath;
 use crate::resolver::AssetResolver;
@@ -74,6 +74,12 @@ pub fn load_stage(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult
     let src = resolver.resolve(path)?;
     let bytes = src.read_all()?;
     StageDefinition::parse(&bytes)
+}
+
+pub fn load_level(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult<LevelDefinition> {
+    let src = resolver.resolve(path)?;
+    let bytes = src.read_all()?;
+    LevelDefinition::parse(&bytes)
 }
 
 pub fn load_text_list(resolver: &dyn AssetResolver, path: &AssetPath) -> AssetResult<TextList> {
@@ -171,6 +177,13 @@ mod tests {
     const STAGE_JSON: &str = r#"{
         "id": "stage",
         "objects": [{ "id": "stageback", "image": "images/stageback.png" }]
+    }"#;
+
+    const LEVEL_JSON: &str = r#"{
+        "name": "DADDY DEAREST",
+        "titleAsset": "storymenu/titles/week1",
+        "props": [{ "assetPath": "storymenu/props/dad", "offsets": [100, 60] }],
+        "songs": ["bopeebo", "fresh", "dadbattle"]
     }"#;
 
     const FREEPLAY_LIST: &str = "Tutorial\nBopeebo\nFresh\nDadbattle\n";
@@ -320,6 +333,18 @@ mod tests {
     }
 
     #[test]
+    fn load_level_through_resolver() {
+        let mut resolver = OverlayResolver::new();
+        let mut overlay = InMemoryLayer::new();
+        overlay.insert(ap("data/levels/week1.json"), LEVEL_JSON.as_bytes().to_vec());
+        resolver.push_overlay(overlay);
+
+        let level = load_level(&resolver, &ap("data/levels/week1.json")).unwrap();
+        assert_eq!(level.title_asset, "storymenu/titles/week1");
+        assert_eq!(level.songs, vec!["bopeebo", "fresh", "dadbattle"]);
+    }
+
+    #[test]
     fn load_text_list_through_resolver() {
         let mut resolver = OverlayResolver::new();
         let mut overlay = InMemoryLayer::new();
@@ -398,6 +423,11 @@ mod tests {
         let stage = load_stage(&resolver, &ap("data/stages/stage.json")).unwrap();
         assert_eq!(stage.id, "stage");
         assert_eq!(stage.objects.len(), 3);
+
+        let tutorial = load_level(&resolver, &ap("data/levels/tutorial.json")).unwrap();
+        assert_eq!(tutorial.songs, vec!["tutorial"]);
+        let week1 = load_level(&resolver, &ap("data/levels/week1.json")).unwrap();
+        assert_eq!(week1.songs, vec!["bopeebo", "fresh", "dadbattle"]);
 
         let songs = load_text_list(&resolver, &ap("data/freeplaySonglist.txt")).unwrap();
         assert_eq!(
