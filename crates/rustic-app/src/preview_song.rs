@@ -13,7 +13,7 @@ pub struct PreviewSong {
 }
 
 impl PreviewSong {
-    pub const ALL: [Self; 4] = [Self::TUTORIAL, Self::BOPEEBO, Self::FRESH, Self::DADBATTLE];
+    pub const CYCLABLE_WEEK1: [Self; 3] = [Self::BOPEEBO, Self::FRESH, Self::DADBATTLE];
 
     pub fn from_env() -> Self {
         env::var(PREVIEW_SONG_ENV)
@@ -49,7 +49,7 @@ impl PreviewSong {
     }
 
     pub fn next(self) -> Self {
-        next_in(&Self::ALL, self)
+        next_in(&Self::CYCLABLE_WEEK1, self)
     }
 
     pub(crate) const TUTORIAL: Self = Self {
@@ -158,11 +158,10 @@ fn normalized_key(value: &str) -> String {
 }
 
 fn next_in<T: Copy + PartialEq, const N: usize>(values: &[T; N], current: T) -> T {
-    let index = values
-        .iter()
-        .position(|value| *value == current)
-        .unwrap_or(0);
-    values[(index + 1) % N]
+    match values.iter().position(|value| *value == current) {
+        Some(index) => values[(index + 1) % N],
+        None => values[0],
+    }
 }
 
 #[cfg(test)]
@@ -234,10 +233,16 @@ mod tests {
     #[test]
     fn preview_selection_cycles_songs_and_difficulties() {
         let selection = PreviewSelection::from_keys(Some("dadbattle"), Some("hard"));
-        assert_eq!(selection.next_song().song, PreviewSong::TUTORIAL);
+        assert_eq!(selection.next_song().song, PreviewSong::BOPEEBO);
         assert_eq!(
             selection.next_difficulty().difficulty,
             PreviewDifficulty::Easy
+        );
+        assert_eq!(
+            PreviewSelection::from_keys(Some("tutorial"), None)
+                .next_song()
+                .song,
+            PreviewSong::BOPEEBO
         );
     }
 }
