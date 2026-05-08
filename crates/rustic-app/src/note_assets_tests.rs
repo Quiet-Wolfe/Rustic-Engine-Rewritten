@@ -138,8 +138,8 @@ fn receptor_frames_center_the_source_frame_on_the_lane_slot() {
     assert_eq!(press_cmd.texture, AssetId::new(2));
     assert!((press_center.x - static_center.x).abs() < 1e-5);
     assert!((press_center.y - static_center.y).abs() < 1e-5);
-    assert!((confirm_center.x - static_center.x - CONFIRM_OFFSET).abs() < 1e-5);
-    assert!((confirm_center.y - static_center.y - CONFIRM_OFFSET).abs() < 1e-5);
+    assert!((confirm_center.x - static_center.x).abs() < 1e-5);
+    assert!((confirm_center.y - static_center.y).abs() < 1e-5);
 }
 
 fn command_source_center(cmd: &DrawCommand, frame: &SparrowFrame) -> glam::Vec2 {
