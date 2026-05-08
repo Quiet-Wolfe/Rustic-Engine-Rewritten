@@ -435,6 +435,58 @@ fn verbose_parser_applies_flxanimate_position_offsets() {
 }
 
 #[test]
+fn compact_parser_applies_flxanimate_position_offsets() {
+    let animation = Animation::parse(
+        br#"{
+          "AN": {
+            "N": "compact-position-test",
+            "SN": "root",
+            "TL": { "L": [
+              { "FR": [{ "N": "Idle", "I": 0, "DU": 1, "E": [] }] },
+              { "FR": [{
+                "I": 0,
+                "DU": 1,
+                "E": [
+                  { "ASI": {
+                    "N": "direct",
+                    "MX": [1, 0, 0, 1, 1, 2],
+                    "POS": { "x": 3, "y": 4 }
+                  } },
+                  { "SI": {
+                    "SN": "body",
+                    "FF": 0,
+                    "LP": "LP",
+                    "MX": [1, 0, 0, 1, 10, 20],
+                    "BM": { "POS": { "x": 2, "y": 3 } }
+                  } }
+                ]
+              }] }
+            ] },
+            "SD": { "S": [{
+              "SN": "body",
+              "TL": { "L": [{ "FR": [{
+                "I": 0,
+                "DU": 1,
+                "E": [{ "ASI": {
+                  "N": "body-part",
+                  "MX": [1, 0, 0, 1, 4, 5],
+                  "POS": { "x": 6, "y": 7 }
+                } }]
+              }] }] }
+            }] }
+          }
+        }"#,
+    )
+    .unwrap();
+
+    let parts = animation.flatten_label_frame("Idle", 0).unwrap();
+    assert_eq!(parts[0].frame_name, "direct");
+    assert_eq!(parts[0].matrix, [1.0, 0.0, 0.0, 1.0, 4.0, 6.0]);
+    assert_eq!(parts[1].frame_name, "body-part");
+    assert_eq!(parts[1].matrix, [1.0, 0.0, 0.0, 1.0, 22.0, 35.0]);
+}
+
+#[test]
 fn verbose_parser_applies_stage_instance_to_root_labels() {
     let animation = Animation::parse(
         br#"{

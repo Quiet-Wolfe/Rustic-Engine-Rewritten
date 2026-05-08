@@ -464,8 +464,9 @@ fn symbol_element(instance: RawSymbolInstance) -> AnimateResult<Element> {
     if instance.symbol_name.trim().is_empty() {
         return Err(AnimateError::Atlas("element symbol name is empty".into()));
     }
+    let position = instance.bitmap.and_then(|bitmap| bitmap.position);
     Ok(Element {
-        matrix: instance_matrix(instance.matrix, instance.matrix3d),
+        matrix: instance_matrix_with_position(instance.matrix, instance.matrix3d, position),
         color: instance
             .color
             .map(color_multiplier)
@@ -492,7 +493,11 @@ fn atlas_element(instance: RawAtlasInstance) -> AnimateResult<Element> {
         ));
     }
     Ok(Element {
-        matrix: instance_matrix(instance.matrix, instance.matrix3d),
+        matrix: instance_matrix_with_position(
+            instance.matrix,
+            instance.matrix3d,
+            instance.position,
+        ),
         color: instance
             .color
             .map(color_multiplier)
@@ -507,6 +512,19 @@ fn instance_matrix(matrix: Option<[f32; 6]>, matrix3d: Option<[f32; 16]>) -> [f3
     matrix
         .or_else(|| matrix3d.map(matrix3d_to_affine))
         .unwrap_or_else(identity_matrix)
+}
+
+fn instance_matrix_with_position(
+    matrix: Option<[f32; 6]>,
+    matrix3d: Option<[f32; 16]>,
+    position: Option<RawPoint>,
+) -> [f32; 6] {
+    let mut matrix = instance_matrix(matrix, matrix3d);
+    if let Some(position) = position {
+        matrix[4] += position.x;
+        matrix[5] += position.y;
+    }
+    matrix
 }
 
 fn matrix3d_to_affine(matrix: [f32; 16]) -> [f32; 6] {
@@ -609,6 +627,8 @@ struct RawSymbolInstance {
     transform_point: RawPoint,
     #[serde(rename = "LP")]
     loop_mode: Option<String>,
+    #[serde(rename = "BM", alias = "bitmap")]
+    bitmap: Option<RawBitmap>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -621,6 +641,8 @@ struct RawAtlasInstance {
     matrix3d: Option<[f32; 16]>,
     #[serde(rename = "C")]
     color: Option<RawColorTransform>,
+    #[serde(rename = "POS", alias = "Position")]
+    position: Option<RawPoint>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -633,6 +655,12 @@ struct RawColorTransform {
     blue_multiplier: f32,
     #[serde(rename = "AM", default = "one")]
     alpha_multiplier: f32,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawBitmap {
+    #[serde(rename = "POS", alias = "Position")]
+    position: Option<RawPoint>,
 }
 
 #[derive(Debug, Default, Deserialize)]
