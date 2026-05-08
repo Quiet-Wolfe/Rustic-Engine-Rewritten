@@ -26,6 +26,7 @@ pub struct DrawCommand {
     pub pivot: Vec2,
     pub scale: Vec2,
     pub rotation: f32,
+    pub scroll_factor: Vec2,
     /// Extra local affine transform `[a, b, c, d, tx, ty]` applied after
     /// pivot/scale/rotation and before camera projection.
     pub affine: [f32; 6],
@@ -50,6 +51,7 @@ impl DrawCommand {
             pivot: Vec2::splat(0.5),
             scale: Vec2::ONE,
             rotation: 0.0,
+            scroll_factor: Vec2::ONE,
             affine: Self::IDENTITY_AFFINE,
             color: Vec4::ONE,
         }

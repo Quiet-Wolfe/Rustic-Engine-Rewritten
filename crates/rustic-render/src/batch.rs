@@ -5,7 +5,7 @@
 //! single instanced draws.
 // LINT-ALLOW: long-file sprite batching plus instance layout tests
 
-use crate::camera::CameraRegistry;
+use crate::camera::{Camera, CameraRegistry};
 use crate::command::DrawCommand;
 use crate::filter::FilterMode;
 use crate::pipeline::{CameraUniform, SpritePipeline};
@@ -100,6 +100,14 @@ impl SpriteInstance {
             shader_location: 12,
         },
     ];
+}
+
+impl SpriteInstance {
+    fn from_command_for_camera(c: &DrawCommand, camera: &Camera) -> Self {
+        let mut instance = Self::from(c);
+        instance.world_pos = scrolled_world_pos(c, camera).to_array();
+        instance
+    }
 }
 
 impl From<&DrawCommand> for SpriteInstance {
@@ -235,8 +243,13 @@ impl SpriteBatcher {
         self.instances.clear();
         self.instances.reserve(order.len());
         for idx in &order {
-            self.instances
-                .push(SpriteInstance::from(&cmds[*idx as usize]));
+            let cmd = &cmds[*idx as usize];
+            self.instances.push(
+                cameras
+                    .get(cmd.camera)
+                    .map(|camera| SpriteInstance::from_command_for_camera(cmd, camera))
+                    .unwrap_or_else(|| SpriteInstance::from(cmd)),
+            );
         }
         self.upload_instances(rs);
 
@@ -356,6 +369,11 @@ impl SpriteBatcher {
     }
 }
 
+fn scrolled_world_pos(c: &DrawCommand, camera: &Camera) -> glam::Vec2 {
+    let center = glam::vec2(REFERENCE_WIDTH as f32 * 0.5, REFERENCE_HEIGHT as f32 * 0.5);
+    c.world_pos + (camera.position - center) * (glam::Vec2::ONE - c.scroll_factor)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -378,6 +396,7 @@ mod tests {
             pivot: Vec2::splat(0.5),
             scale: Vec2::ONE,
             rotation: 0.0,
+            scroll_factor: Vec2::ONE,
             affine: DrawCommand::IDENTITY_AFFINE,
             color: Vec4::ONE,
         }
@@ -394,6 +413,19 @@ mod tests {
         assert_eq!(instance.affine_x, [0.5, 0.25]);
         assert_eq!(instance.affine_y, [-0.75, 1.5]);
         assert_eq!(instance.affine_t, [12.0, -8.0]);
+    }
+
+    #[test]
+    fn sprite_instance_applies_scroll_factor_for_camera_position() {
+        let mut camera = crate::camera::Camera::new(CameraId(0), "game", 0);
+        camera.position = Vec2::new(740.0, 320.0);
+        let mut cmd = cmd(0, RenderLayer::Stage, 0, 1);
+        cmd.world_pos = Vec2::new(10.0, 20.0);
+        cmd.scroll_factor = Vec2::new(0.5, 1.25);
+
+        let instance = SpriteInstance::from_command_for_camera(&cmd, &camera);
+
+        assert_eq!(instance.world_pos, [60.0, 30.0]);
     }
 
     #[test]

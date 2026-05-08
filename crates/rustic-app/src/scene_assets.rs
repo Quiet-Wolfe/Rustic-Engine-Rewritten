@@ -371,6 +371,7 @@ fn load_stage_object(
     cmd.layer = object.layer;
     cmd.z = object.z;
     cmd.filter = filter;
+    cmd.scroll_factor = glam::vec2(object.scroll_factor.x, object.scroll_factor.y);
     scene.commands.push(cmd);
     Ok(())
 }
