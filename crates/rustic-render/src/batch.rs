@@ -280,13 +280,8 @@ impl SpriteBatcher {
         for run in &runs {
             // Rebind camera if it changed.
             if current_camera != Some(run.camera) {
-                if let Some(camera) = cameras.get(run.camera) {
-                    current_cam_bg = camera_bindings
-                        .iter()
-                        .find(|binding| binding.camera == camera.id)
-                        .map(|binding| &binding.bind_group);
-                    current_camera = Some(run.camera);
-                }
+                current_camera = Some(run.camera);
+                current_cam_bg = camera_binding_for_camera(run.camera, &camera_bindings);
             }
             let Some(cam_bg) = current_cam_bg else {
                 continue;
@@ -403,6 +398,16 @@ fn unique_run_cameras(runs: &[Run]) -> Vec<CameraId> {
         }
     }
     ids
+}
+
+fn camera_binding_for_camera(
+    camera: CameraId,
+    bindings: &[CameraBinding],
+) -> Option<&wgpu::BindGroup> {
+    bindings
+        .iter()
+        .find(|binding| binding.camera == camera)
+        .map(|binding| &binding.bind_group)
 }
 
 fn scrolled_world_pos(c: &DrawCommand, camera: &Camera) -> glam::Vec2 {
