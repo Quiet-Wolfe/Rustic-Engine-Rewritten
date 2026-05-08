@@ -12,8 +12,14 @@ const MISS_SING_TIME_MULTIPLIER: f64 = 2.0;
 pub struct CharacterAnimTimings {
     pub player_sing_steps: f64,
     pub opponent_sing_steps: f64,
-    pub girlfriend_combo_counts: [Option<u32>; COUNT_ANIM_SLOTS],
-    pub girlfriend_drop_counts: [Option<u32>; COUNT_ANIM_SLOTS],
+    pub girlfriend_combo_timings: CountAnimationTimings,
+    pub girlfriend_drop_timings: CountAnimationTimings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CountAnimationTiming {
+    pub count: u32,
+    pub duration_seconds: f64,
 }
 
 impl Default for CharacterAnimTimings {
@@ -22,13 +28,14 @@ impl Default for CharacterAnimTimings {
         Self {
             player_sing_steps: 8.0,
             opponent_sing_steps: 8.0,
-            girlfriend_combo_counts: [None; COUNT_ANIM_SLOTS],
-            girlfriend_drop_counts: [None; COUNT_ANIM_SLOTS],
+            girlfriend_combo_timings: [None; COUNT_ANIM_SLOTS],
+            girlfriend_drop_timings: [None; COUNT_ANIM_SLOTS],
         }
     }
 }
 
 pub const COUNT_ANIM_SLOTS: usize = 4;
+pub type CountAnimationTimings = [Option<CountAnimationTiming>; COUNT_ANIM_SLOTS];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CharacterPoseRequest {
@@ -53,6 +60,7 @@ pub struct CharacterAnimState {
     player_started: Samples,
     opponent_until: Samples,
     player_until: Samples,
+    girlfriend_count_duration_seconds: Option<f64>,
     timings: CharacterAnimTimings,
     last_beat: i64,
     gf_danced: bool,
@@ -69,6 +77,7 @@ impl Default for CharacterAnimState {
             player_started: Samples(0),
             opponent_until: Samples(0),
             player_until: Samples(0),
+            girlfriend_count_duration_seconds: None,
             timings: CharacterAnimTimings::default(),
             last_beat: -1,
             gf_danced: false,
@@ -122,7 +131,11 @@ impl CharacterAnimState {
 
     fn update_chart_animation_resets(&mut self, cursor: Samples, sample_rate: u32, bpm: f64) {
         let hold = hold_samples(sample_rate, bpm, CHART_ANIM_HOLD_STEPS);
-        if is_chart_special_pose(self.girlfriend_pose)
+        if is_girlfriend_count_pose(self.girlfriend_pose) {
+            if self.girlfriend_count_finished(cursor, sample_rate) {
+                self.dance_girlfriend(cursor);
+            }
+        } else if is_chart_special_pose(self.girlfriend_pose)
             && cursor.0.saturating_sub(self.girlfriend_started.0) >= hold
         {
             self.dance_girlfriend(cursor);
@@ -171,6 +184,7 @@ impl CharacterAnimState {
                 if force || self.girlfriend_pose != pose {
                     self.girlfriend_pose = pose;
                     self.girlfriend_started = cursor;
+                    self.girlfriend_count_duration_seconds = None;
                 }
                 true
             }
@@ -212,12 +226,10 @@ impl CharacterAnimState {
         // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:528-576
         match judgment {
             Judgment::Sick | Judgment::Good => {
-                if self
-                    .timings
-                    .girlfriend_combo_counts
-                    .contains(&Some(combo_count))
+                if let Some(timing) =
+                    exact_count_timing(&self.timings.girlfriend_combo_timings, combo_count)
                 {
-                    self.play_girlfriend_count_animation(combo_pose(combo_count), cursor);
+                    self.play_girlfriend_count_animation(combo_pose(timing.count), timing, cursor);
                 }
             }
             _ => self.girlfriend_combo_drop(combo_count, cursor),
@@ -226,18 +238,11 @@ impl CharacterAnimState {
 
     pub fn girlfriend_combo_drop(&mut self, combo_count: u32, cursor: Samples) {
         // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:639-654
-        let Some(drop) = self
-            .timings
-            .girlfriend_drop_counts
-            .iter()
-            .flatten()
-            .copied()
-            .filter(|count| combo_count >= *count)
-            .max()
+        let Some(drop) = highest_drop_timing(&self.timings.girlfriend_drop_timings, combo_count)
         else {
             return;
         };
-        self.play_girlfriend_count_animation(drop_pose(drop), cursor);
+        self.play_girlfriend_count_animation(drop_pose(drop.count), drop, cursor);
     }
 
     pub fn player_first_death(&mut self, cursor: Samples) {
@@ -281,13 +286,28 @@ impl CharacterAnimState {
             "danceLeft"
         };
         self.girlfriend_started = cursor;
+        self.girlfriend_count_duration_seconds = None;
     }
 
-    fn play_girlfriend_count_animation(&mut self, pose: Option<&'static str>, cursor: Samples) {
+    fn play_girlfriend_count_animation(
+        &mut self,
+        pose: Option<&'static str>,
+        timing: CountAnimationTiming,
+        cursor: Samples,
+    ) {
         if let Some(pose) = pose {
             self.girlfriend_pose = pose;
             self.girlfriend_started = cursor;
+            self.girlfriend_count_duration_seconds = Some(timing.duration_seconds);
         }
+    }
+
+    fn girlfriend_count_finished(&self, cursor: Samples, sample_rate: u32) -> bool {
+        let Some(seconds) = self.girlfriend_count_duration_seconds else {
+            return false;
+        };
+        let duration = (seconds.max(0.0) * f64::from(sample_rate.max(1))).ceil() as i64;
+        cursor.0.saturating_sub(self.girlfriend_started.0) >= duration.max(1)
     }
 }
 
@@ -314,6 +334,33 @@ fn is_chart_special_pose(pose: &str) -> bool {
         && !pose.starts_with("idle")
         && !pose.starts_with("sing")
         && !pose.starts_with("death")
+}
+
+fn is_girlfriend_count_pose(pose: &str) -> bool {
+    pose.starts_with("combo") || pose.starts_with("drop")
+}
+
+fn exact_count_timing(
+    timings: &CountAnimationTimings,
+    combo_count: u32,
+) -> Option<CountAnimationTiming> {
+    timings
+        .iter()
+        .flatten()
+        .copied()
+        .find(|timing| timing.count == combo_count)
+}
+
+fn highest_drop_timing(
+    timings: &CountAnimationTimings,
+    combo_count: u32,
+) -> Option<CountAnimationTiming> {
+    timings
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|timing| combo_count >= timing.count)
+        .max_by_key(|timing| timing.count)
 }
 
 fn sing_pose(lane: Lane) -> &'static str {
@@ -354,6 +401,13 @@ fn drop_pose(count: u32) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn count_timing(count: u32, duration_seconds: f64) -> CountAnimationTiming {
+        CountAnimationTiming {
+            count,
+            duration_seconds,
+        }
+    }
 
     #[test]
     fn opponent_sings_then_returns_to_idle_after_dad_hold_time() {
@@ -477,7 +531,7 @@ mod tests {
     fn girlfriend_plays_combo_animation_only_on_matching_good_hit_count() {
         let mut state = CharacterAnimState::default();
         state.set_timings(CharacterAnimTimings {
-            girlfriend_combo_counts: [Some(50), None, None, None],
+            girlfriend_combo_timings: [Some(count_timing(50, 0.5)), None, None, None],
             ..CharacterAnimTimings::default()
         });
 
@@ -493,7 +547,12 @@ mod tests {
     fn girlfriend_plays_highest_matching_drop_animation() {
         let mut state = CharacterAnimState::default();
         state.set_timings(CharacterAnimTimings {
-            girlfriend_drop_counts: [Some(10), Some(70), None, None],
+            girlfriend_drop_timings: [
+                Some(count_timing(10, 0.1)),
+                Some(count_timing(70, 0.5)),
+                None,
+                None,
+            ],
             ..CharacterAnimTimings::default()
         });
 
@@ -503,6 +562,22 @@ mod tests {
         state.girlfriend_combo_drop(70, Samples(200));
         assert_eq!(state.poses().girlfriend.name, "drop70");
         assert_eq!(state.poses().girlfriend.started_at, Samples(200));
+    }
+
+    #[test]
+    fn girlfriend_count_animation_returns_to_dance_after_source_duration() {
+        let mut state = CharacterAnimState::default();
+        state.set_timings(CharacterAnimTimings {
+            girlfriend_combo_timings: [Some(count_timing(50, 0.25)), None, None, None],
+            ..CharacterAnimTimings::default()
+        });
+
+        state.girlfriend_note_hit(Judgment::Sick, 50, Samples(1_000));
+        state.update(Samples(12_999), 48_000, 100.0, false);
+        assert_eq!(state.poses().girlfriend.name, "combo50");
+        state.update(Samples(13_000), 48_000, 100.0, false);
+        assert_eq!(state.poses().girlfriend.name, "danceRight");
+        assert_eq!(state.poses().girlfriend.started_at, Samples(13_000));
     }
 
     #[test]
@@ -557,8 +632,8 @@ mod tests {
         let timings = CharacterAnimTimings {
             player_sing_steps: 6.1,
             opponent_sing_steps: 4.2,
-            girlfriend_combo_counts: [Some(50), None, None, None],
-            girlfriend_drop_counts: [Some(70), None, None, None],
+            girlfriend_combo_timings: [Some(count_timing(50, 0.5)), None, None, None],
+            girlfriend_drop_timings: [Some(count_timing(70, 0.5)), None, None, None],
         };
         state.set_timings(timings);
         state.player_note_hit(Lane::Left, Samples(1_000), 48_000, 100.0);
