@@ -11,7 +11,7 @@ use crate::app_types::{AppOptions, Runtime};
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::bitmap_text_assets::BitmapTextSkin;
 use crate::boot::{init_logging, install_panic_hook};
-use crate::camera_events::apply_camera_event;
+use crate::camera_events::{apply_camera_event, focus_initial_camera as focus_initial};
 use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
@@ -195,6 +195,7 @@ impl App {
                 self.camera_focus = scene.camera_focus;
                 self.base_camera_zoom = scene.camera_zoom;
                 self.camera_fx.reset(&mut self.cameras, scene.camera_zoom);
+                focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
                 let sample_rate = play_sample_rate(&self.mixer);
                 match load_preview_play_state(sample_rate) {
                     Ok(play_state) => {
@@ -585,7 +586,6 @@ impl App {
             self.enter_game_over(cursor);
         }
     }
-
     fn register_hold_drop(&mut self, lane: Lane, cursor: Samples, hold_end_at: Samples) {
         let sample_rate = play_sample_rate(&self.mixer);
         let Some(play_state) = self.play_state.as_mut() else {
@@ -603,7 +603,6 @@ impl App {
         set_vocals_gain(&self.mixer, 0.0);
         play_miss_sfx(&self.mixer, cursor, MissNoteKind::Scoreable);
     }
-
     fn register_hold_tick(&mut self, elapsed_samples: i64) {
         let sample_rate = play_sample_rate(&self.mixer);
         if let Some(play_state) = self.play_state.as_mut() {
@@ -634,6 +633,7 @@ impl App {
         self.opponent_receptors = AutoReceptors::default();
         self.camera_fx
             .reset(&mut self.cameras, self.base_camera_zoom);
+        focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
         set_vocals_gain(&self.mixer, 1.0);
         if let Err(e) = self.mixer.edit(|mixer| {
             mixer.seek(Samples(0))?;

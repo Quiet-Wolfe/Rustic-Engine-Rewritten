@@ -120,6 +120,15 @@ pub(crate) fn focus_camera(
     }
 }
 
+pub(crate) fn focus_initial_camera(
+    cameras: &mut CameraRegistry,
+    camera_fx: &mut CameraFx,
+    focus: CameraFocusPoints,
+) {
+    // ref: bdedc0aa:source/funkin/play/PlayState.hx:2218-2221,939
+    focus_camera(cameras, camera_fx, focus, Some(1), Vec2::ZERO, true);
+}
+
 fn focus_target(focus: CameraFocusPoints, target: Option<i8>, offset: Vec2) -> Option<Vec2> {
     let base = match target.unwrap_or(0) {
         -1 => Vec2::ZERO,
@@ -189,6 +198,26 @@ mod tests {
             .unwrap_or_default();
         assert!(position.x > 640.0);
         assert!(position.x < 840.0);
+    }
+
+    #[test]
+    fn initial_camera_focus_starts_on_opponent() {
+        let mut cameras = CameraRegistry::with_default_fnf();
+        let mut camera_fx = CameraFx::default();
+        let focus = CameraFocusPoints {
+            player: Vec2::new(840.0, 360.0),
+            opponent: Vec2::new(320.0, 240.0),
+            girlfriend: Vec2::new(640.0, 360.0),
+        };
+
+        focus_initial_camera(&mut cameras, &mut camera_fx, focus);
+
+        assert_eq!(
+            cameras
+                .get(rustic_core::ids::CameraId(0))
+                .map(|camera| camera.position),
+            Some(focus.opponent)
+        );
     }
 
     #[test]
