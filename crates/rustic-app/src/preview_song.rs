@@ -13,7 +13,8 @@ pub struct PreviewSong {
 }
 
 impl PreviewSong {
-    pub const CYCLABLE_WEEK1: [Self; 3] = [Self::BOPEEBO, Self::FRESH, Self::DADBATTLE];
+    pub const CYCLABLE_WEEK1: [Self; 4] =
+        [Self::TUTORIAL, Self::BOPEEBO, Self::FRESH, Self::DADBATTLE];
 
     pub fn from_env() -> Self {
         env::var(PREVIEW_SONG_ENV)
@@ -233,7 +234,7 @@ mod tests {
     #[test]
     fn preview_selection_cycles_songs_and_difficulties() {
         let selection = PreviewSelection::from_keys(Some("dadbattle"), Some("hard"));
-        assert_eq!(selection.next_song().song, PreviewSong::BOPEEBO);
+        assert_eq!(selection.next_song().song, PreviewSong::TUTORIAL);
         assert_eq!(
             selection.next_difficulty().difficulty,
             PreviewDifficulty::Easy
