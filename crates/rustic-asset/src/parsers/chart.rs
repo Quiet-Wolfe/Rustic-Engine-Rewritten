@@ -49,6 +49,7 @@
 //! resolve stage from song name.
 
 use crate::error::{AssetError, AssetResult};
+use crate::parsers::stage::stage_id_for_song_name;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -130,6 +131,8 @@ struct VSlicePlayData {
     // ref: bdedc0aa:source/funkin/data/song/SongData.hx:457-465
     #[serde(default)]
     characters: VSliceCharacters,
+    #[serde(default = "default_vslice_stage")]
+    stage: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -139,6 +142,8 @@ struct VSliceCharacters {
     player: String,
     #[serde(default = "default_player2")]
     opponent: String,
+    #[serde(default)]
+    girlfriend: String,
 }
 
 impl Default for VSliceCharacters {
@@ -146,6 +151,7 @@ impl Default for VSliceCharacters {
         Self {
             player: default_player1(),
             opponent: default_player2(),
+            girlfriend: String::new(),
         }
     }
 }
@@ -175,6 +181,10 @@ fn default_player2() -> String {
 
 fn default_unknown() -> String {
     "Unknown".to_string()
+}
+
+fn default_vslice_stage() -> String {
+    "mainStage".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -295,6 +305,8 @@ pub struct Chart {
     pub needs_voices: bool,
     pub player1: String,
     pub player2: String,
+    pub girlfriend: String,
+    pub stage: String,
     /// Mirrors `parseJSONshit` setting `validScore = true` after
     /// load.
     /// ref: 50fccded:source/Song.hx:70-75
@@ -322,6 +334,8 @@ impl ParsedSong {
             needs_voices: raw.needs_voices,
             player1: raw.player1,
             player2: raw.player2,
+            girlfriend: "gf".to_string(),
+            stage: stage_id_for_song_name(&raw.song).to_string(),
             // ref: 50fccded:source/Song.hx:73 — parseJSONshit sets
             // validScore=true unconditionally after load.
             valid_score: true,
@@ -375,6 +389,8 @@ impl ParsedSong {
             needs_voices: true,
             player1: metadata.play_data.characters.player,
             player2: metadata.play_data.characters.opponent,
+            girlfriend: metadata.play_data.characters.girlfriend,
+            stage: metadata.play_data.stage,
             valid_score: true,
             sections: Vec::new(),
             events: chart_events::parse_vslice_events(&raw_chart),
@@ -576,7 +592,8 @@ mod tests {
             "characters": {
                 "player": "bf",
                 "opponent": "dad"
-            }
+            },
+            "stage": "mainStage"
         },
         "timeChanges": [{ "t": 0, "b": 0, "bpm": 100 }]
     }"#;
@@ -588,10 +605,11 @@ mod tests {
         assert_eq!(p.chart.bpm, 120.0);
         assert_eq!(p.chart.speed, 2.0);
         assert_eq!(p.chart.player1, "bf");
+        assert_eq!(p.chart.girlfriend, "gf");
+        assert_eq!(p.chart.stage, "stage");
         assert_eq!(p.chart.sections.len(), 2);
         assert_eq!(p.chart.notes.len(), 4);
 
-        // Sorted by time:
         let times: Vec<_> = p.chart.notes.iter().map(|n| n.time_ms).collect();
         assert_eq!(times, vec![1000.0, 1500.0, 2000.0, 2500.0]);
     }
@@ -656,6 +674,8 @@ mod tests {
         assert!(p.chart.needs_voices);
         assert_eq!(p.chart.player1, "bf");
         assert_eq!(p.chart.player2, "dad");
+        assert_eq!(p.chart.girlfriend, "gf");
+        assert_eq!(p.chart.stage, "stage");
         assert_eq!(p.chart.speed, 1.0);
     }
 
@@ -692,6 +712,8 @@ mod tests {
         assert!(p.chart.needs_voices);
         assert_eq!(p.chart.player1, "bf");
         assert_eq!(p.chart.player2, "dad");
+        assert_eq!(p.chart.girlfriend, "");
+        assert_eq!(p.chart.stage, "mainStage");
         assert!(p.chart.valid_score);
         assert!(p.chart.sections.is_empty());
         assert_eq!(p.chart.events.len(), 5);
