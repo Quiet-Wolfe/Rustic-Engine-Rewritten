@@ -9,9 +9,11 @@ use anyhow::{Context, Result};
 use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, SoundSource, Stem};
 use rustic_core::time::Samples;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 static MISS_NOTE_SOUNDS: OnceLock<Option<MissNoteSounds>> = OnceLock::new();
+static MISS_NOTE_ROLL: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MissNoteKind {
@@ -38,8 +40,9 @@ fn play_miss_note(mixer: &SharedMixer, cursor: Samples, kind: MissNoteKind) -> R
     let Some(sounds) = miss_note_sounds() else {
         return Ok(());
     };
-    let source = sounds.source(cursor)?;
-    let gain = miss_note_gain(kind, cursor);
+    let roll = miss_note_roll(cursor);
+    let source = sounds.source(roll)?;
+    let gain = miss_note_gain(kind, roll);
     mixer
         .edit(|mixer| {
             let id = mixer.add_source(Stem::Sfx, source)?;
@@ -79,8 +82,8 @@ impl MissNoteSounds {
         })
     }
 
-    fn source(&self, cursor: Samples) -> Result<SoundSource> {
-        let index = miss_note_index(cursor);
+    fn source(&self, roll: u64) -> Result<SoundSource> {
+        let index = miss_note_index(roll);
         streaming_vorbis_source(self.variants[index].clone())
             .with_context(|| format!("decode missnote{}", index + 1))
     }
@@ -95,13 +98,20 @@ fn miss_note_path(index: usize) -> Result<AssetPath> {
     AssetPath::new(format!("sounds/missnote{}.ogg", index + 1)).context("miss note sound path")
 }
 
-fn miss_note_index(cursor: Samples) -> usize {
-    cursor.0.rem_euclid(3) as usize
+fn miss_note_roll(cursor: Samples) -> u64 {
+    let cursor_bits = cursor.0 as u64;
+    MISS_NOTE_ROLL
+        .fetch_add(1, Ordering::Relaxed)
+        .wrapping_add(cursor_bits.rotate_left(13))
 }
 
-fn miss_note_gain(kind: MissNoteKind, cursor: Samples) -> f32 {
+fn miss_note_index(roll: u64) -> usize {
+    (roll % 3) as usize
+}
+
+fn miss_note_gain(kind: MissNoteKind, roll: u64) -> f32 {
     let (min, max) = kind.gain_range();
-    let unit = cursor.0.div_euclid(53).rem_euclid(101) as f32 / 100.0;
+    let unit = (roll % 101) as f32 / 100.0;
     min + (max - min) * unit
 }
 
@@ -118,17 +128,17 @@ mod tests {
 
     #[test]
     fn miss_note_index_uses_three_variants() {
-        assert_eq!(miss_note_index(Samples(0)), 0);
-        assert_eq!(miss_note_index(Samples(1)), 1);
-        assert_eq!(miss_note_index(Samples(2)), 2);
-        assert_eq!(miss_note_index(Samples(3)), 0);
+        assert_eq!(miss_note_index(0), 0);
+        assert_eq!(miss_note_index(1), 1);
+        assert_eq!(miss_note_index(2), 2);
+        assert_eq!(miss_note_index(3), 0);
     }
 
     #[test]
     fn miss_note_gain_matches_og_ranges() {
-        for cursor in [Samples(0), Samples(53), Samples(5_300), Samples(-53)] {
-            let note = miss_note_gain(MissNoteKind::Scoreable, cursor);
-            let ghost = miss_note_gain(MissNoteKind::Ghost, cursor);
+        for roll in [0, 1, 53, 5_300] {
+            let note = miss_note_gain(MissNoteKind::Scoreable, roll);
+            let ghost = miss_note_gain(MissNoteKind::Ghost, roll);
             assert!((0.5..=0.6).contains(&note));
             assert!((0.1..=0.2).contains(&ghost));
         }
