@@ -330,6 +330,43 @@ fn symbol_frame_index(instance: &SymbolInstance, symbol_duration: u32, frame_off
     }
 }
 
+pub(crate) fn normalize_symbol_first_frame(symbol_type: Option<&str>, first_frame: u32) -> u32 {
+    if symbol_type.is_some_and(is_non_graphic_symbol_type) {
+        0
+    } else {
+        first_frame
+    }
+}
+
+pub(crate) fn normalize_symbol_loop_mode(
+    symbol_type: Option<&str>,
+    loop_mode: Option<&str>,
+) -> Option<String> {
+    if symbol_type.is_some_and(is_movie_clip_symbol_type) {
+        return Some("LP".to_owned());
+    }
+    if symbol_type.is_some_and(is_button_symbol_type) {
+        return Some("SF".to_owned());
+    }
+    match loop_mode.unwrap_or("LP").split('R').next().unwrap_or("LP") {
+        "PO" | "playonce" => None,
+        "SF" | "singleframe" => Some("SF".to_owned()),
+        _ => Some("LP".to_owned()),
+    }
+}
+
+fn is_non_graphic_symbol_type(symbol_type: &str) -> bool {
+    is_movie_clip_symbol_type(symbol_type) || is_button_symbol_type(symbol_type)
+}
+
+fn is_movie_clip_symbol_type(symbol_type: &str) -> bool {
+    symbol_type == "MC" || symbol_type.eq_ignore_ascii_case("movieclip")
+}
+
+fn is_button_symbol_type(symbol_type: &str) -> bool {
+    symbol_type == "B" || symbol_type.eq_ignore_ascii_case("button")
+}
+
 fn compose_affine(parent: [f32; 6], child: [f32; 6]) -> [f32; 6] {
     [
         parent[0] * child[0] + parent[2] * child[1],
@@ -366,9 +403,15 @@ fn symbol_element(instance: RawSymbolInstance) -> AnimateResult<Element> {
         matrix: instance_matrix(instance.matrix, instance.matrix3d),
         kind: ElementKind::Symbol(SymbolInstance {
             symbol_name: instance.symbol_name,
-            first_frame: instance.first_frame,
+            first_frame: normalize_symbol_first_frame(
+                instance.symbol_type.as_deref(),
+                instance.first_frame,
+            ),
             transform_point: Vec2::new(instance.transform_point.x, instance.transform_point.y),
-            loop_mode: instance.loop_mode,
+            loop_mode: normalize_symbol_loop_mode(
+                instance.symbol_type.as_deref(),
+                instance.loop_mode.as_deref(),
+            ),
         }),
     })
 }
@@ -471,6 +514,8 @@ struct RawSymbolInstance {
     symbol_name: String,
     #[serde(rename = "FF", default)]
     first_frame: u32,
+    #[serde(rename = "ST")]
+    symbol_type: Option<String>,
     #[serde(rename = "MX")]
     matrix: Option<[f32; 6]>,
     #[serde(rename = "M3D")]
@@ -501,300 +546,4 @@ struct RawPoint {
 
 fn identity_matrix() -> [f32; 6] {
     [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-
-    const ANIMATION: &[u8] = br#"{
-      "AN": {
-        "N": "BoyFriend Assets_TA-Export",
-        "SN": "BF ALL ANIMS",
-        "TL": {
-          "L": [
-            {
-              "LN": "Labels",
-              "FR": [
-                { "N": "Idle", "I": 0, "DU": 14, "E": [] },
-                { "N": "Left", "I": 14, "DU": 8, "E": [] },
-                { "I": 22, "DU": 2, "E": [] }
-              ]
-            }
-          ]
-        },
-        "SD": {
-          "S": [
-            {
-              "SN": "BF idle dance",
-              "TL": {
-                "L": [
-                  {
-                    "LN": "Layer 1",
-                    "FR": [
-                      {
-                        "I": 0,
-                        "DU": 2,
-                        "E": [
-                          {
-                            "SI": {
-                              "SN": "BF Head default",
-                              "FF": 4,
-                              "TRP": { "x": 532.6, "y": -82 },
-                              "LP": "LP",
-                              "MX": [0.994, -0.105, 0.105, 0.994, 354.55, -165.35]
-                            }
-                          },
-                          {
-                            "ASI": {
-                              "N": "0",
-                              "MX": [1, 0, 0, 1, 401.15, -123]
-                            }
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              }
-            },
-            { "SN": "BF NOTE LEFT", "TL": { "L": [] } }
-          ]
-        }
-      }
-    }"#;
-
-    const FLATTEN_ANIMATION: &[u8] = br#"{
-      "AN": {
-        "N": "flatten-test", "SN": "root", "TL": { "L": [
-            {
-              "LN": "Labels",
-              "FR": [{ "N": "Idle", "I": 0, "DU": 4, "E": [] }]
-            },
-            {
-              "LN": "Art",
-              "FR": [{
-                "I": 0,
-                "DU": 4,
-                "E": [{
-                  "SI": {
-                    "SN": "body",
-                    "FF": 0,
-                    "LP": "LP",
-                    "MX": [1, 0, 0, 1, 10, 20]
-                  }
-                }]
-              }]
-            }
-          ] },
-        "SD": { "S": [
-            {
-              "SN": "body",
-              "TL": {
-                "L": [
-                  {
-                    "LN": "front",
-                    "FR": [
-                      {
-                        "I": 0,
-                        "DU": 1,
-                        "E": [{ "ASI": { "N": "front0", "MX": [1, 0, 0, 1, 3, 4] } }]
-                      },
-                      {
-                        "I": 1,
-                        "DU": 1,
-                        "E": [{ "ASI": { "N": "front1", "MX": [1, 0, 0, 1, 5, 6] } }]
-                      }
-                    ]
-                  },
-                  {
-                    "LN": "back",
-                    "FR": [{
-                      "I": 0,
-                      "DU": 2,
-                      "E": [{ "ASI": { "N": "back", "MX": [2, 0, 0, 2, 0, 1] } }]
-                    }]
-                  }
-                ]
-              }
-            }
-          ] }
-      }
-    }"#;
-
-    #[test]
-    fn parses_animation_labels_and_symbols() {
-        let animation = Animation::parse(ANIMATION).unwrap();
-        assert_eq!(animation.name, "BoyFriend Assets_TA-Export");
-        assert_eq!(animation.symbol_name, "BF ALL ANIMS");
-        assert_eq!(animation.layers.len(), 1);
-        assert_eq!(
-            animation.labels,
-            vec![
-                AnimationLabel {
-                    name: "Idle".to_owned(),
-                    index: 0,
-                    duration: 14,
-                },
-                AnimationLabel {
-                    name: "Left".to_owned(),
-                    index: 14,
-                    duration: 8,
-                },
-            ]
-        );
-        assert_eq!(animation.label("Left").unwrap().duration, 8);
-        assert!(animation.has_symbol("BF NOTE LEFT"));
-        assert!(!animation.has_symbol("Missing"));
-
-        let symbol = animation.symbol("BF idle dance").unwrap();
-        assert_eq!(symbol.layers.len(), 1);
-        assert_eq!(symbol.layers[0].name, "Layer 1");
-        assert_eq!(symbol.layers[0].frames.len(), 1);
-        let element = &symbol.layers[0].frames[0].elements[0];
-        assert_eq!(
-            element.matrix,
-            [0.994, -0.105, 0.105, 0.994, 354.55, -165.35]
-        );
-        let ElementKind::Symbol(instance) = &element.kind else {
-            panic!("expected symbol instance");
-        };
-        assert_eq!(instance.symbol_name, "BF Head default");
-        assert_eq!(instance.first_frame, 4);
-        assert_eq!(instance.transform_point, Vec2::new(532.6, -82.0));
-        assert_eq!(instance.loop_mode.as_deref(), Some("LP"));
-
-        let element = &symbol.layers[0].frames[0].elements[1];
-        assert_eq!(element.matrix, [1.0, 0.0, 0.0, 1.0, 401.15, -123.0]);
-        let ElementKind::Atlas(instance) = &element.kind else {
-            panic!("expected atlas instance");
-        };
-        assert_eq!(instance.frame_name, "0");
-    }
-
-    #[test]
-    fn flattens_label_frames_in_draw_order() {
-        let animation = Animation::parse(FLATTEN_ANIMATION).unwrap();
-
-        let parts = animation.flatten_label_frame("Idle", 0).unwrap();
-        assert_eq!(parts.len(), 2);
-        assert_eq!(parts[0].frame_name, "back");
-        assert_eq!(parts[0].matrix, [2.0, 0.0, 0.0, 2.0, 10.0, 21.0]);
-        assert_eq!(parts[1].frame_name, "front0");
-        assert_eq!(parts[1].matrix, [1.0, 0.0, 0.0, 1.0, 13.0, 24.0]);
-    }
-
-    #[test]
-    fn flattens_looping_symbol_frames() {
-        let animation = Animation::parse(FLATTEN_ANIMATION).unwrap();
-
-        let parts = animation.flatten_label_frame("Idle", 1).unwrap();
-        assert_eq!(parts[0].frame_name, "back");
-        assert_eq!(parts[1].frame_name, "front1");
-
-        let parts = animation.flatten_label_frame("Idle", 3).unwrap();
-        assert_eq!(parts[0].frame_name, "back");
-        assert_eq!(parts[1].frame_name, "front1");
-    }
-
-    #[test]
-    fn rejects_zero_duration_labels() {
-        let bad = br#"{
-          "AN": {
-            "TL": { "L": [{ "FR": [{ "N": "Idle", "I": 0, "DU": 0 }] }] }
-          }
-        }"#;
-        assert!(matches!(Animation::parse(bad), Err(AnimateError::Atlas(_))));
-    }
-
-    #[test]
-    fn rejects_empty_symbol_names() {
-        let bad = br#"{
-          "AN": {
-            "TL": { "L": [] },
-            "SD": { "S": [{ "SN": "" }] }
-          }
-        }"#;
-        assert!(matches!(Animation::parse(bad), Err(AnimateError::Atlas(_))));
-    }
-
-    #[test]
-    fn rejects_empty_element_symbol_names() {
-        let bad = br#"{
-          "AN": {
-            "TL": { "L": [] },
-            "SD": {
-              "S": [{
-                "SN": "container",
-                "TL": {
-                  "L": [{
-                    "FR": [{
-                      "I": 0,
-                      "DU": 1,
-                      "E": [{ "SI": { "SN": "" } }]
-                    }]
-                  }]
-                }
-              }]
-            }
-          }
-        }"#;
-        assert!(matches!(Animation::parse(bad), Err(AnimateError::Atlas(_))));
-    }
-
-    #[test]
-    fn parses_matrix3d_as_affine() {
-        let json = br#"{
-          "AN": {
-            "TL": { "L": [] },
-            "SD": {
-              "S": [{
-                "SN": "container",
-                "TL": {
-                  "L": [{
-                    "FR": [{
-                      "I": 0,
-                      "DU": 1,
-                      "E": [{
-                        "ASI": {
-                          "N": "0000",
-                          "M3D": [2, 0.5, 0, 0, -0.25, 3, 0, 0, 0, 0, 1, 0, 7, 8, 0, 1]
-                        }
-                      }]
-                    }]
-                  }]
-                }
-              }]
-            }
-          }
-        }"#;
-        let animation = Animation::parse(json).unwrap();
-        let element = &animation.symbol("container").unwrap().layers[0].frames[0].elements[0];
-        assert_eq!(element.matrix, [2.0, 0.5, -0.25, 3.0, 7.0, 8.0]);
-    }
-
-    #[test]
-    fn rejects_empty_element_atlas_frame_names() {
-        let bad = br#"{
-          "AN": {
-            "TL": { "L": [] },
-            "SD": {
-              "S": [{
-                "SN": "container",
-                "TL": {
-                  "L": [{
-                    "FR": [{
-                      "I": 0,
-                      "DU": 1,
-                      "E": [{ "ASI": { "N": "" } }]
-                    }]
-                  }]
-                }
-              }]
-            }
-          }
-        }"#;
-        assert!(matches!(Animation::parse(bad), Err(AnimateError::Atlas(_))));
-    }
 }

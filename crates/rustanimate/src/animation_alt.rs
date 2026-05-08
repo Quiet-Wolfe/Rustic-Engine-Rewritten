@@ -1,8 +1,9 @@
 //! Parser for verbose Adobe Animate JSFL `Animation.json` exports.
 
 use crate::animation::{
-    Animation, AnimationLabel, AtlasInstance, DrawPart, Element, ElementKind, Symbol,
-    SymbolInstance, TimelineFrame, TimelineLayer,
+    normalize_symbol_first_frame, normalize_symbol_loop_mode, Animation, AnimationLabel,
+    AtlasInstance, DrawPart, Element, ElementKind, Symbol, SymbolInstance, TimelineFrame,
+    TimelineLayer,
 };
 use crate::error::{AnimateError, AnimateResult};
 use glam::Vec2;
@@ -135,9 +136,15 @@ fn symbol_element(instance: RawSymbolInstance) -> AnimateResult<Element> {
         matrix: instance.matrix.map(matrix3d_to_affine).unwrap_or(ID_MATRIX),
         kind: ElementKind::Symbol(SymbolInstance {
             symbol_name: instance.symbol_name,
-            first_frame: instance.first_frame,
+            first_frame: normalize_symbol_first_frame(
+                instance.symbol_type.as_deref(),
+                instance.first_frame,
+            ),
             transform_point: Vec2::new(instance.transform_point.x, instance.transform_point.y),
-            loop_mode: normalize_loop_mode(instance.loop_mode),
+            loop_mode: normalize_symbol_loop_mode(
+                instance.symbol_type.as_deref(),
+                instance.loop_mode.as_deref(),
+            ),
         }),
     })
 }
@@ -154,16 +161,6 @@ fn atlas_element(instance: RawAtlasInstance) -> AnimateResult<Element> {
             frame_name: instance.name,
         }),
     })
-}
-
-fn normalize_loop_mode(loop_mode: Option<String>) -> Option<String> {
-    match loop_mode.as_deref() {
-        Some("loop") => Some("LP".to_owned()),
-        Some("singleframe") => Some("SF".to_owned()),
-        Some("playonce") => None,
-        Some(other) => Some(other.to_owned()),
-        None => None,
-    }
 }
 
 fn matrix3d_to_affine(matrix: RawMatrix3d) -> [f32; 6] {
@@ -240,6 +237,8 @@ struct RawSymbolInstance {
     symbol_name: String,
     #[serde(rename = "firstFrame", default)]
     first_frame: u32,
+    #[serde(rename = "symbolType")]
+    symbol_type: Option<String>,
     #[serde(rename = "loop")]
     loop_mode: Option<String>,
     #[serde(rename = "transformationPoint", default)]
