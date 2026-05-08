@@ -589,9 +589,10 @@ impl App {
         let dropped = self
             .play_state
             .as_mut()
-            .and_then(|play_state| play_state.register_hold_drop(remaining_samples, sample_rate))
-            .is_some();
-        if dropped {
+            .and_then(|play_state| play_state.register_hold_drop(remaining_samples, sample_rate));
+        if let Some(drop) = dropped {
+            self.score_popups
+                .push(Judgment::Miss, drop.combo_popup, cursor);
             set_vocals_gain(&self.mixer, 0.0);
         }
     }

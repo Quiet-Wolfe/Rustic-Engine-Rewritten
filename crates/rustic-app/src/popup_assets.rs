@@ -42,7 +42,7 @@ struct ScorePopup {
 
 impl ScorePopups {
     pub fn push(&mut self, judgment: Judgment, combo: Option<u32>, cursor: Samples) {
-        if judgment == Judgment::Miss {
+        if judgment == Judgment::Miss && combo.is_none() {
             return;
         }
         self.active.push(ScorePopup {
@@ -443,5 +443,22 @@ mod tests {
 
         assert!(commands[0].color.w < 1.0);
         assert_eq!(commands[1].color.w, 1.0);
+    }
+
+    #[test]
+    fn combo_break_can_render_digits_without_rating() {
+        let mut popups = ScorePopups::default();
+        popups.push(Judgment::Miss, Some(0), Samples(0));
+
+        let commands = popups.commands(&skin(), Samples(0), 48_000, 100.0);
+
+        assert_eq!(commands.len(), 3);
+        assert_eq!(
+            commands
+                .iter()
+                .map(|command| command.texture)
+                .collect::<Vec<_>>(),
+            vec![AssetId::new(10), AssetId::new(10), AssetId::new(10)]
+        );
     }
 }

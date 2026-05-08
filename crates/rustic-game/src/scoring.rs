@@ -30,6 +30,13 @@ pub struct HitOutcome {
     pub combo_popup: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct HoldDropOutcome {
+    pub score_delta: i64,
+    pub combo_popup: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct TimedHitRegistration {
     judgment: Judgment,
@@ -116,12 +123,20 @@ impl PlayState {
     /// Player released an already-hit hold before completion. v0.8.5 applies
     /// one remaining-duration score penalty and breaks combo without adding a
     /// miss tally.
-    pub fn register_hold_drop(&mut self, remaining_samples: i64, sample_rate: u32) -> Option<i64> {
+    pub fn register_hold_drop(
+        &mut self,
+        remaining_samples: i64,
+        sample_rate: u32,
+    ) -> Option<HoldDropOutcome> {
         let remaining_ms = remaining_samples.max(0) as f64 * 1000.0 / f64::from(sample_rate.max(1));
         let delta = hold_drop_score_delta(remaining_ms)?;
+        let previous_combo = self.combo;
         self.score += delta;
         self.combo = 0;
-        Some(delta)
+        Some(HoldDropOutcome {
+            score_delta: delta,
+            combo_popup: (previous_combo >= 10).then_some(0),
+        })
     }
 
     /// v0.8.5 gives score and health every frame while a hit hold note still
@@ -368,9 +383,9 @@ mod tests {
         s.combo = 7;
         s.score = 500;
 
-        let delta = s.register_hold_drop(48_000, 48_000);
+        let drop = s.register_hold_drop(48_000, 48_000);
 
-        assert_eq!(delta, Some(-125));
+        assert_eq!(drop.map(|drop| drop.score_delta), Some(-125));
         assert_eq!(s.score, 375);
         assert_eq!(s.combo, 0);
         assert_eq!(s.misses, 0);
@@ -387,6 +402,16 @@ mod tests {
         assert_eq!(delta, None);
         assert_eq!(s.score, 500);
         assert_eq!(s.combo, 7);
+    }
+
+    #[test]
+    fn hold_drop_reports_zero_combo_popup_when_breaking_double_digit_combo() {
+        let mut s = PlayState::new();
+        s.combo = 10;
+
+        let drop = s.register_hold_drop(48_000, 48_000);
+
+        assert_eq!(drop.and_then(|drop| drop.combo_popup), Some(0));
     }
 
     #[test]
