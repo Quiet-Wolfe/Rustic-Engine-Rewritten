@@ -39,6 +39,13 @@ pub struct HoldDropOutcome {
     pub combo_popup: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct LateMissOutcome {
+    pub lane: Lane,
+    pub combo_count: u32,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct TimedHitRegistration {
     judgment: Judgment,
@@ -250,7 +257,7 @@ impl PlayState {
     /// window behind `cursor` as a miss. Sustain children are an internal
     /// trail approximation in this prototype; dropped holds are scored once
     /// by remaining duration, not as a miss per child.
-    pub fn expire_late_notes(&mut self, cursor: Samples, sample_rate: u32) -> u32 {
+    pub fn expire_late_notes(&mut self, cursor: Samples, sample_rate: u32) -> Vec<LateMissOutcome> {
         let hit_window = JudgmentWindows::from(self.windows).hit_window_ms.0;
         let ms_per_sample = 1000.0 / sample_rate as f64;
         let mut newly_missed = Vec::new();
@@ -264,17 +271,19 @@ impl PlayState {
                 if n.is_sustain {
                     expired_sustains.push(n.id);
                 } else {
-                    newly_missed.push(n.id);
+                    newly_missed.push((n.id, n.lane));
                 }
             }
         }
-        let count = newly_missed.len() as u32;
         self.resolved_notes.extend(expired_sustains);
-        for id in newly_missed {
+        let mut outcomes = Vec::with_capacity(newly_missed.len());
+        for (id, lane) in newly_missed {
+            let combo_count = self.combo;
             self.resolved_notes.push(id);
             self.register_note_miss();
+            outcomes.push(LateMissOutcome { lane, combo_count });
         }
-        count
+        outcomes
     }
 
     pub(crate) fn apply_health(&mut self, delta: f32) {
@@ -649,12 +658,40 @@ mod tests {
         s.combo = 3;
         let cursor = Samples(48_000 + 8_000);
         let missed = s.expire_late_notes(cursor, 48_000);
-        assert_eq!(missed, 1);
+        assert_eq!(missed.len(), 1);
+        assert_eq!(missed[0].lane, Lane::Left);
+        assert_eq!(missed[0].combo_count, 3);
         assert!(s.resolved_notes.contains(&NoteId::new(0)));
         assert_eq!(s.misses, 1);
         assert_eq!(s.score, 400);
         assert_eq!(s.combo, 0);
         assert!((s.health - (INITIAL_HEALTH - 0.08)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn expire_late_notes_reports_combo_after_prior_same_frame_miss() {
+        let mut s = PlayState::new();
+        add_note(&mut s, 0, Lane::Left, 48_000);
+        add_note(&mut s, 1, Lane::Right, 48_000 + 1);
+        s.combo = 12;
+
+        let missed = s.expire_late_notes(Samples(48_000 + 8_000), 48_000);
+
+        assert_eq!(
+            missed,
+            vec![
+                LateMissOutcome {
+                    lane: Lane::Left,
+                    combo_count: 12,
+                },
+                LateMissOutcome {
+                    lane: Lane::Right,
+                    combo_count: 0,
+                },
+            ]
+        );
+        assert_eq!(s.combo, 0);
+        assert_eq!(s.misses, 2);
     }
 
     #[test]
@@ -666,7 +703,7 @@ mod tests {
 
         let missed = s.expire_late_notes(Samples(48_000 + 8_000), 48_000);
 
-        assert_eq!(missed, 0);
+        assert!(missed.is_empty());
         assert!(s.resolved_notes.contains(&NoteId::new(0)));
         assert_eq!(s.misses, 0);
         assert_eq!(s.score, 500);

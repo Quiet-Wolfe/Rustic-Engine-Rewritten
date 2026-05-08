@@ -336,7 +336,7 @@ impl App {
         let mut opponent_hits = Vec::new();
         let mut song_events = Vec::new();
         let mut bpm = None;
-        let mut late_misses = 0;
+        let mut late_misses = Vec::new();
         let mut dead = false;
         let confirm_duration = confirm_duration_or_default(self.note_skin.as_ref(), sample_rate);
         let hold_ticks = self.active_holds.score_ticks(cursor);
@@ -373,19 +373,23 @@ impl App {
             self.rebuild_game_over_commands(cursor, sample_rate);
             return;
         }
-        if late_misses > 0 {
-            set_vocals_gain(&self.mixer, 0.0);
-        }
         if let Some(bpm) = bpm {
+            let anim = &mut self.character_anim;
+            let had_late_misses = !late_misses.is_empty();
+            for miss in late_misses {
+                anim.player_note_miss(miss.lane, cursor, sample_rate, bpm);
+                anim.girlfriend_combo_drop(miss.combo_count, cursor);
+            }
+            if had_late_misses {
+                set_vocals_gain(&self.mixer, 0.0);
+            }
             let had_opponent_hits = !opponent_hits.is_empty();
+            let opponent_receptors = &mut self.opponent_receptors;
             for hit in opponent_hits {
-                self.opponent_receptors
-                    .confirm(hit.lane, cursor, confirm_duration);
-                self.character_anim
-                    .opponent_note_hit(hit.lane, cursor, sample_rate, bpm);
+                opponent_receptors.confirm(hit.lane, cursor, confirm_duration);
+                anim.opponent_note_hit(hit.lane, cursor, sample_rate, bpm);
                 if let Some(hold_end_at) = hit.hold_end_at {
-                    self.opponent_receptors
-                        .start_hold(hit.lane, hold_end_at, cursor);
+                    opponent_receptors.start_hold(hit.lane, hold_end_at, cursor);
                     self.hold_covers
                         .start_opponent(hit.lane, cursor, hold_end_at);
                 }
@@ -410,7 +414,6 @@ impl App {
             self.camera_fx
                 .update(&mut self.cameras, cursor, sample_rate, bpm);
         }
-
         self.cmds = self.static_cmds.clone();
         if let Some(characters) = &self.characters {
             for cmd in characters.commands(self.character_anim.poses(), cursor, sample_rate) {
@@ -420,7 +423,6 @@ impl App {
         let (Some(play_state), Some(note_skin)) = (&self.play_state, &self.note_skin) else {
             return;
         };
-
         for view in play_state.hold_trail_views(cursor, sample_rate) {
             if view.head_resolved && !self.held_lanes.is_held(view.lane) {
                 continue;
@@ -437,7 +439,6 @@ impl App {
         }) {
             self.cmds.push(cmd);
         }
-
         for view in play_state.note_views(cursor, sample_rate) {
             if view.is_sustain {
                 continue;
@@ -490,7 +491,6 @@ impl App {
             }
         }
     }
-
     fn apply_song_event(
         &mut self,
         kind: &ChartEventKind,
