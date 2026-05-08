@@ -26,6 +26,7 @@ use crate::scene_assets::{
 };
 use crate::screen::ScreenStack;
 use crate::song_audio::{load_preview_stems_for, play_sample_rate, set_vocals_gain};
+use crate::stage_object_assets::StagePropSet;
 use anyhow::Result;
 use rustic_asset::ChartEventKind;
 use rustic_audio::{AudioOutput, SharedMixer};
@@ -50,6 +51,7 @@ struct App {
     camera_focus: CameraFocusPoints,
     base_camera_zoom: f32,
     static_cmds: RenderCommandList,
+    stage_props: StagePropSet,
     cmds: RenderCommandList,
     atlases: HashMap<AssetId, Texture>,
     characters: Option<CharacterSet>,
@@ -93,6 +95,7 @@ impl App {
             camera_focus: CameraFocusPoints::default(),
             base_camera_zoom: 1.0,
             static_cmds: RenderCommandList::new(),
+            stage_props: StagePropSet::default(),
             cmds: RenderCommandList::new(),
             atlases: HashMap::new(),
             characters: None,
@@ -135,6 +138,7 @@ impl App {
             .unwrap_or_default();
         self.cmds = scene.commands;
         self.static_cmds = self.cmds.clone();
+        self.stage_props = scene.stage_props;
         self.atlases = scene.textures;
         self.characters = scene.characters;
         self.character_anim.set_timings(anim_timings);
@@ -399,6 +403,9 @@ impl App {
                 .update(&mut self.cameras, cursor, sample_rate, bpm);
         }
         self.cmds = self.static_cmds.clone();
+        for cmd in self.stage_props.commands(cursor, sample_rate) {
+            self.cmds.push(cmd);
+        }
         if let Some(characters) = &self.characters {
             for cmd in characters.commands(self.character_anim.poses(), cursor, sample_rate) {
                 self.cmds.push(cmd);

@@ -17,7 +17,7 @@ use crate::note_assets::{load_note_skin, NoteSkin};
 use crate::note_splash_assets::{load_note_splash_assets, NoteSplashSkin};
 use crate::popup_assets::{load_popup_assets, PopupSkin};
 use crate::preview_song::PreviewSelection;
-use crate::stage_object_assets::load_stage_object;
+use crate::stage_object_assets::{load_stage_object, StagePropSet};
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_character, load_png, load_sparrow, load_stage, load_vslice_chart, AssetPath,
@@ -35,6 +35,7 @@ pub struct LoadedScene {
     pub camera_zoom: f32,
     pub camera_focus: CameraFocusPoints,
     pub commands: RenderCommandList,
+    pub(crate) stage_props: StagePropSet,
     pub textures: HashMap<AssetId, Texture>,
     pub characters: Option<CharacterSet>,
     pub bitmap_text_skin: Option<BitmapTextSkin>,
@@ -339,6 +340,7 @@ fn load_scene_for_ids(
         camera_zoom: stage.camera_zoom,
         camera_focus: CameraFocusPoints::default(),
         commands: RenderCommandList::new(),
+        stage_props: StagePropSet::default(),
         textures: HashMap::new(),
         characters: None,
         bitmap_text_skin: None,
@@ -351,14 +353,16 @@ fn load_scene_for_ids(
     };
 
     for object in &stage.objects {
-        load_stage_object(
+        if let Some(prop) = load_stage_object(
             device,
             queue,
             resolver,
             object,
             &mut scene.textures,
             &mut scene.commands,
-        )?;
+        )? {
+            scene.stage_props.push(prop);
+        }
     }
     let characters = load_stage_characters(
         device,

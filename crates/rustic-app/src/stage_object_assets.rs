@@ -5,8 +5,39 @@ use rustic_asset::{
     load_png, load_sparrow, AssetPath, OverlayResolver, SparrowAtlas, SparrowFrame, StageObject,
 };
 use rustic_core::ids::AssetId;
+use rustic_core::time::Samples;
 use rustic_render::{DrawCommand, FilterMode, RenderCommandList, Texture};
 use std::collections::HashMap;
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct StagePropSet {
+    props: Vec<StagePropSprite>,
+}
+
+impl StagePropSet {
+    pub(crate) fn push(&mut self, prop: StagePropSprite) {
+        self.props.push(prop);
+    }
+
+    pub(crate) fn commands(&self, cursor: Samples, sample_rate: u32) -> Vec<DrawCommand> {
+        self.props
+            .iter()
+            .map(|prop| prop.command(cursor, sample_rate))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StagePropSprite {
+    texture_id: AssetId,
+    texture_width: u32,
+    texture_height: u32,
+    object: StageObject,
+    frames: Vec<SparrowFrame>,
+    frame_rate: u16,
+    looped: bool,
+    filter: FilterMode,
+}
 
 pub(crate) fn load_stage_object(
     device: &wgpu::Device,
@@ -15,19 +46,34 @@ pub(crate) fn load_stage_object(
     object: &StageObject,
     textures: &mut HashMap<AssetId, Texture>,
     commands: &mut RenderCommandList,
-) -> Result<()> {
+) -> Result<Option<StagePropSprite>> {
     if let Some(animation) = &object.animation {
-        load_sparrow_stage_object(
-            device,
-            queue,
-            resolver,
-            object,
-            &animation.prefix,
-            textures,
-            commands,
-        )
+        load_sparrow_stage_object(device, queue, resolver, object, animation, textures)
     } else {
-        load_png_stage_object(device, queue, resolver, object, textures, commands)
+        load_png_stage_object(device, queue, resolver, object, textures, commands)?;
+        Ok(None)
+    }
+}
+
+impl StagePropSprite {
+    fn command(&self, cursor: Samples, sample_rate: u32) -> DrawCommand {
+        let frame = &self.frames[stage_frame_index(
+            cursor,
+            sample_rate,
+            self.frame_rate,
+            self.frames.len(),
+            self.looped,
+        )];
+        let mut cmd = base_stage_command(
+            &self.object,
+            self.texture_id,
+            self.filter,
+            stage_frame_pos(&self.object, frame),
+            frame_draw_size(frame) * glam::vec2(self.object.scale.x, self.object.scale.y),
+        );
+        (cmd.uv_min, cmd.uv_max) = frame_uv(frame, self.texture_width, self.texture_height);
+        cmd.uv_rotated = frame.rotated;
+        cmd
     }
 }
 
@@ -65,16 +111,24 @@ fn load_sparrow_stage_object(
     queue: &wgpu::Queue,
     resolver: &OverlayResolver,
     object: &StageObject,
-    prefix: &str,
+    animation: &rustic_asset::StageObjectAnimation,
     textures: &mut HashMap<AssetId, Texture>,
-    commands: &mut RenderCommandList,
-) -> Result<()> {
+) -> Result<Option<StagePropSprite>> {
     let atlas_path = stage_object_atlas_path(&object.image)?;
     let atlas = load_sparrow(resolver, &atlas_path)
         .with_context(|| format!("load {}", atlas_path.as_str()))?;
-    let frame = atlas
-        .first_animation_frame(prefix, &[])
-        .with_context(|| format!("resolve stage prop frame {}:{prefix}", object.id))?;
+    let frames: Vec<_> = atlas
+        .animation_frames(&animation.prefix, &[])
+        .into_iter()
+        .cloned()
+        .collect();
+    if frames.is_empty() {
+        anyhow::bail!(
+            "resolve stage prop frame {}:{}",
+            object.id,
+            animation.prefix
+        );
+    }
     let texture_path = atlas_texture_path(&atlas_path, &atlas)?;
     let image = load_png(resolver, &texture_path)
         .with_context(|| format!("load {}", texture_path.as_str()))?;
@@ -83,18 +137,16 @@ fn load_sparrow_stage_object(
     let texture =
         Texture::from_png_image(device, queue, &image, filter, Some(texture_path.as_str()));
     textures.insert(texture_id, texture);
-
-    let mut cmd = base_stage_command(
-        object,
+    Ok(Some(StagePropSprite {
         texture_id,
+        texture_width: image.width,
+        texture_height: image.height,
+        object: object.clone(),
+        frames,
+        frame_rate: animation.frame_rate,
+        looped: animation.looped,
         filter,
-        stage_frame_pos(object, frame),
-        frame_draw_size(frame) * glam::vec2(object.scale.x, object.scale.y),
-    );
-    (cmd.uv_min, cmd.uv_max) = frame_uv(frame, image.width, image.height);
-    cmd.uv_rotated = frame.rotated;
-    commands.push(cmd);
-    Ok(())
+    }))
 }
 
 fn base_stage_command(
@@ -157,6 +209,25 @@ fn frame_uv(
             (frame.y as f32 + frame.height as f32) / height,
         ),
     )
+}
+
+fn stage_frame_index(
+    cursor: Samples,
+    sample_rate: u32,
+    frame_rate: u16,
+    frame_count: usize,
+    looped: bool,
+) -> usize {
+    if frame_count <= 1 {
+        return 0;
+    }
+    let samples_per_frame = f64::from(sample_rate.max(1)) / f64::from(frame_rate.max(1));
+    let index = (cursor.0.max(0) as f64 / samples_per_frame).floor() as usize;
+    if looped {
+        index % frame_count
+    } else {
+        index.min(frame_count - 1)
+    }
 }
 
 fn filter_for_antialiasing(antialiasing: bool) -> FilterMode {
@@ -225,5 +296,57 @@ mod tests {
         let frame = atlas.first_animation_frame("idle0", &[]).unwrap();
 
         assert_eq!(stage_frame_pos(object, frame), glam::vec2(692.0, 269.0));
+    }
+
+    #[test]
+    fn stage_prop_sprite_advances_looping_frames() {
+        let stage = StageDefinition::parse(
+            br##"{
+              "name": "test",
+              "props": [{
+                "name": "crowd",
+                "assetPath": "erect/crowd",
+                "position": [0, 0],
+                "scale": [1, 1],
+                "scroll": [1, 1],
+                "zIndex": 5,
+                "startingAnimation": "idle",
+                "animations": [{
+                  "name": "idle",
+                  "prefix": "idle0",
+                  "frameRate": 12,
+                  "looped": true
+                }]
+              }]
+            }"##,
+        )
+        .unwrap();
+        let atlas = SparrowAtlas::parse(
+            br#"<TextureAtlas imagePath="crowd.png">
+              <SubTexture name="idle0000" x="0" y="0" width="100" height="80"/>
+              <SubTexture name="idle0001" x="100" y="0" width="100" height="80"/>
+            </TextureAtlas>"#,
+        )
+        .unwrap();
+        let object = stage.objects[0].clone();
+        let frames: Vec<_> = atlas
+            .animation_frames("idle0", &[])
+            .into_iter()
+            .cloned()
+            .collect();
+        let prop = StagePropSprite {
+            texture_id: AssetId::new(7),
+            texture_width: 200,
+            texture_height: 80,
+            object,
+            frames,
+            frame_rate: 12,
+            looped: true,
+            filter: FilterMode::Linear,
+        };
+
+        assert_eq!(prop.command(Samples(0), 48_000).uv_min.x, 0.0);
+        assert_eq!(prop.command(Samples(4_000), 48_000).uv_min.x, 0.5);
+        assert_eq!(prop.command(Samples(8_000), 48_000).uv_min.x, 0.0);
     }
 }
