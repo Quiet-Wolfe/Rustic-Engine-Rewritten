@@ -167,3 +167,32 @@ fn preview_song_metadata_preserves_tutorial_gf_opponent() {
     assert_eq!(stage_asset_id(&chart.chart.stage), "mainStage");
     assert_eq!(character_id(&chart.chart.girlfriend), None);
 }
+
+#[test]
+fn stage_asset_id_keeps_vslice_stage_variants() {
+    assert_eq!(stage_asset_id("mainStageErect"), "mainStageErect");
+}
+
+#[test]
+fn baked_main_stage_erect_preserves_animated_crowd_prop() {
+    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let stage = load_stage(
+        &resolver,
+        &AssetPath::new("data/stages/mainStageErect.json").unwrap(),
+    )
+    .expect("mainStageErect stage");
+
+    let crowd = stage
+        .objects
+        .iter()
+        .find(|object| object.id == "crowd")
+        .expect("crowd prop");
+    assert_eq!(crowd.image.as_str(), "images/erect/crowd.png");
+    assert_eq!(
+        crowd
+            .animation
+            .as_ref()
+            .map(|animation| animation.prefix.as_str()),
+        Some("idle0")
+    );
+}

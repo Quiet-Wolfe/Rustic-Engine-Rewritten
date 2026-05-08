@@ -42,6 +42,8 @@ pub struct StageCharacterSlot {
 pub struct StageObject {
     pub id: String,
     pub image: AssetPath,
+    #[serde(default)]
+    pub animation: Option<StageObjectAnimation>,
     #[serde(default = "default_layer")]
     pub layer: RenderLayer,
     #[serde(default)]
@@ -56,6 +58,27 @@ pub struct StageObject {
     pub antialiasing: bool,
     #[serde(default = "default_active")]
     pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct StageObjectAnimation {
+    pub name: String,
+    pub prefix: String,
+    pub frame_rate: u16,
+    pub looped: bool,
+}
+
+impl Default for StageObjectAnimation {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            prefix: String::new(),
+            frame_rate: 24,
+            looped: false,
+        }
+    }
 }
 
 fn default_camera_zoom() -> f32 {
@@ -169,6 +192,9 @@ struct RawStageCharacterSlot {
 struct RawStageProp {
     name: String,
     asset_path: String,
+    starting_animation: Option<String>,
+    #[serde(default)]
+    animations: Vec<StageObjectAnimation>,
     #[serde(deserialize_with = "deserialize_asset_vec2")]
     position: AssetVec2,
     #[serde(deserialize_with = "deserialize_asset_vec2")]
@@ -184,6 +210,8 @@ impl Default for RawStageProp {
         Self {
             name: String::new(),
             asset_path: String::new(),
+            starting_animation: None,
+            animations: Vec::new(),
             position: AssetVec2::ZERO,
             scale: AssetVec2::ONE,
             scroll: AssetVec2::ONE,
@@ -234,6 +262,7 @@ impl RawStageProp {
         if self.asset_path.trim().starts_with('#') {
             return Ok(None);
         }
+        let animation = prop_starting_animation(&self.starting_animation, &self.animations);
         Ok(Some(StageObject {
             id: if self.name.trim().is_empty() {
                 self.asset_path.clone()
@@ -241,6 +270,7 @@ impl RawStageProp {
                 self.name
             },
             image: AssetPath::new(format!("images/{}.png", self.asset_path))?,
+            animation,
             layer: default_layer(),
             position: self.position,
             scroll_factor: self.scroll,
@@ -250,6 +280,18 @@ impl RawStageProp {
             active: false,
         }))
     }
+}
+
+fn prop_starting_animation(
+    starting_animation: &Option<String>,
+    animations: &[StageObjectAnimation],
+) -> Option<StageObjectAnimation> {
+    if let Some(name) = starting_animation.as_deref() {
+        if let Some(animation) = animations.iter().find(|animation| animation.name == name) {
+            return Some(animation.clone());
+        }
+    }
+    animations.first().cloned()
 }
 
 fn deserialize_asset_vec2<'de, D>(d: D) -> Result<AssetVec2, D::Error>
@@ -368,7 +410,14 @@ mod tests {
                 "assetPath": "stageback",
                 "position": [-600, -200],
                 "scroll": [0.9, 0.9],
-                "zIndex": 10
+                "zIndex": 10,
+                "startingAnimation": "idle",
+                "animations": [{
+                  "name": "idle",
+                  "prefix": "idle0",
+                  "frameRate": 12,
+                  "looped": true
+                }]
               }],
               "characters": {
                 "bf": { "position": [989.5, 885], "cameraOffsets": [-100, -100] },
@@ -385,6 +434,15 @@ mod tests {
         assert_eq!(stage.objects[0].id, "stageBack");
         assert_eq!(stage.objects[0].image.as_str(), "images/stageback.png");
         assert_eq!(stage.objects[0].z, 10);
+        assert_eq!(
+            stage.objects[0].animation,
+            Some(StageObjectAnimation {
+                name: "idle".to_string(),
+                prefix: "idle0".to_string(),
+                frame_rate: 12,
+                looped: true,
+            })
+        );
     }
 
     #[test]

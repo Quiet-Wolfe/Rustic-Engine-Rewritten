@@ -17,11 +17,12 @@ use crate::note_assets::{load_note_skin, NoteSkin};
 use crate::note_splash_assets::{load_note_splash_assets, NoteSplashSkin};
 use crate::popup_assets::{load_popup_assets, PopupSkin};
 use crate::preview_song::PreviewSelection;
+use crate::stage_object_assets::load_stage_object;
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_character, load_png, load_sparrow, load_stage, load_vslice_chart, AssetPath,
     CharacterAnimation, CharacterDefinition, CharacterRenderType, OverlayResolver, ParsedSong,
-    SparrowAtlas, SparrowFrame, StageCharacterSlot, StageDefinition, StageObject,
+    SparrowAtlas, SparrowFrame, StageCharacterSlot, StageDefinition,
 };
 use rustic_core::ids::{AssetId, SongId};
 use rustic_core::render::RenderLayer;
@@ -350,7 +351,14 @@ fn load_scene_for_ids(
     };
 
     for object in &stage.objects {
-        load_stage_object(device, queue, resolver, object, &mut scene)?;
+        load_stage_object(
+            device,
+            queue,
+            resolver,
+            object,
+            &mut scene.textures,
+            &mut scene.commands,
+        )?;
     }
     let characters = load_stage_characters(
         device,
@@ -437,10 +445,7 @@ pub(crate) fn load_preview_play_state_for(
 }
 
 fn stage_asset_id(stage: &str) -> &str {
-    match stage {
-        "mainStageErect" => "mainStage",
-        other => other,
-    }
+    stage
 }
 
 fn character_id(id: &str) -> Option<&str> {
@@ -450,39 +455,6 @@ fn character_id(id: &str) -> Option<&str> {
     } else {
         Some(trimmed)
     }
-}
-
-fn load_stage_object(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    resolver: &OverlayResolver,
-    object: &StageObject,
-    scene: &mut LoadedScene,
-) -> Result<()> {
-    let image = load_png(resolver, &object.image)
-        .with_context(|| format!("load {}", object.image.as_str()))?;
-    let texture_id = asset_id_for_path(&object.image);
-    let filter = filter_for_antialiasing(object.antialiasing);
-    let size = glam::vec2(
-        image.width as f32 * object.scale.x,
-        image.height as f32 * object.scale.y,
-    );
-    let texture =
-        Texture::from_png_image(device, queue, &image, filter, Some(object.image.as_str()));
-    scene.textures.insert(texture_id, texture);
-
-    let mut cmd = DrawCommand::sprite(
-        texture_id,
-        glam::vec2(object.position.x, object.position.y),
-        size,
-    );
-    cmd.pivot = glam::Vec2::ZERO;
-    cmd.layer = object.layer;
-    cmd.z = object.z;
-    cmd.filter = filter;
-    cmd.scroll_factor = glam::vec2(object.scroll_factor.x, object.scroll_factor.y);
-    scene.commands.push(cmd);
-    Ok(())
 }
 
 fn load_stage_characters(

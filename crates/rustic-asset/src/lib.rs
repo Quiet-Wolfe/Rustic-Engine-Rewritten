@@ -27,7 +27,7 @@ pub use parsers::level::{LevelDefinition, LevelPropDefinition};
 pub use parsers::png::PngImage;
 pub use parsers::sparrow::{SparrowAtlas, SparrowFrame};
 pub use parsers::stage::{
-    stage_id_for_song_name, StageCharacterSlot, StageDefinition, StageObject,
+    stage_id_for_song_name, StageCharacterSlot, StageDefinition, StageObject, StageObjectAnimation,
 };
 pub use parsers::text_list::TextList;
 pub use parsers::types::AssetVec2;
