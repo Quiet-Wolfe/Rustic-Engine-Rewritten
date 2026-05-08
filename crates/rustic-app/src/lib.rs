@@ -22,6 +22,7 @@ pub mod hud_assets;
 pub mod hud_bop;
 pub mod input_bridge;
 pub mod lane_state;
+pub mod miss_note_audio;
 pub mod note_assets;
 pub mod note_splash_assets;
 pub mod popup_assets;

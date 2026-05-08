@@ -22,6 +22,7 @@ use crate::hud_assets::HudSkin;
 use crate::hud_bop::health_icon_scale;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, AutoReceptors, HeldLanes};
+use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKind};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
@@ -379,6 +380,7 @@ impl App {
             for miss in late_misses {
                 anim.player_note_miss(miss.lane, cursor, sample_rate, bpm);
                 anim.girlfriend_combo_drop(miss.combo_count, cursor);
+                play_miss_sfx(&self.mixer, cursor, MissNoteKind::Scoreable);
             }
             if had_late_misses {
                 set_vocals_gain(&self.mixer, 0.0);
@@ -519,7 +521,6 @@ impl App {
                 .play_chart_animation(target, animation, cursor, *force);
         }
     }
-
     fn handle_gameplay_input(&mut self, event: &NormalizedInputEvent, already_held: bool) {
         if event.state != InputState::Pressed {
             return;
@@ -549,15 +550,14 @@ impl App {
                 if already_held {
                     return;
                 }
+                let anim = &mut self.character_anim;
                 if let Some(outcome) =
                     play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate)
                 {
                     self.held_lanes.confirm(lane, cursor, confirm_duration);
-                    self.character_anim
-                        .player_note_hit(lane, cursor, sample_rate, play_state.bpm);
+                    anim.player_note_hit(lane, cursor, sample_rate, play_state.bpm);
                     let combo_count = outcome.combo_count;
-                    self.character_anim
-                        .girlfriend_note_hit(outcome.judgment, combo_count, cursor);
+                    anim.girlfriend_note_hit(outcome.judgment, combo_count, cursor);
                     restore_vocals = true;
                     if !outcome.is_sustain {
                         self.score_popups
@@ -572,8 +572,8 @@ impl App {
                     }
                 } else {
                     play_state.register_ghost_miss();
-                    self.character_anim
-                        .player_note_miss(lane, cursor, sample_rate, play_state.bpm);
+                    anim.player_note_miss(lane, cursor, sample_rate, play_state.bpm);
+                    play_miss_sfx(&self.mixer, cursor, MissNoteKind::Ghost);
                 }
                 should_enter_game_over = play_state.is_dead();
             }
@@ -595,13 +595,13 @@ impl App {
         let Some(drop) = play_state.register_hold_drop(remaining_samples, sample_rate) else {
             return;
         };
-        self.character_anim
-            .player_note_miss(lane, cursor, sample_rate, play_state.bpm);
-        self.character_anim
-            .girlfriend_combo_drop(drop.combo_count, cursor);
+        let anim = &mut self.character_anim;
+        anim.player_note_miss(lane, cursor, sample_rate, play_state.bpm);
+        anim.girlfriend_combo_drop(drop.combo_count, cursor);
         self.score_popups
             .push(Judgment::Miss, drop.combo_popup, cursor);
         set_vocals_gain(&self.mixer, 0.0);
+        play_miss_sfx(&self.mixer, cursor, MissNoteKind::Scoreable);
     }
 
     fn register_hold_tick(&mut self, elapsed_samples: i64) {
