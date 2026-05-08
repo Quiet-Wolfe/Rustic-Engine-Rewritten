@@ -219,7 +219,11 @@ impl CharacterAnimState {
             self.dance_girlfriend(cursor);
         }
         // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:457-473
-        if !self.player_pose.starts_with("sing") && !self.player_pose.starts_with("death") {
+        if self.opponent_pose.starts_with("idle") || self.opponent_pose.starts_with("dance") {
+            self.opponent_pose = "idle";
+            self.opponent_started = cursor;
+        }
+        if self.player_pose.starts_with("idle") || self.player_pose.starts_with("dance") {
             self.player_pose = "idle";
             self.player_started = cursor;
         }
@@ -354,6 +358,17 @@ mod tests {
 
         assert_eq!(state.poses().player.name, "idle");
         assert_eq!(state.poses().player.started_at, Samples(28_800));
+    }
+
+    #[test]
+    fn opponent_idle_restarts_on_each_beat_when_not_singing() {
+        let mut state = CharacterAnimState::default();
+
+        state.update(Samples(0), 48_000, 100.0, false);
+        state.update(Samples(28_800), 48_000, 100.0, false);
+
+        assert_eq!(state.poses().opponent.name, "idle");
+        assert_eq!(state.poses().opponent.started_at, Samples(28_800));
     }
 
     #[test]
