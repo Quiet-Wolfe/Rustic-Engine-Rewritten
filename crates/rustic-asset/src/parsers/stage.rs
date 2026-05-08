@@ -43,6 +43,8 @@ pub struct StageObject {
     pub id: String,
     pub image: AssetPath,
     #[serde(default)]
+    pub solid_color: Option<[u8; 4]>,
+    #[serde(default)]
     pub animation: Option<StageObjectAnimation>,
     #[serde(default = "default_layer")]
     pub layer: RenderLayer,
@@ -260,7 +262,7 @@ impl From<RawStageCharacterSlot> for StageCharacterSlot {
 impl RawStageProp {
     fn into_stage_object(self) -> AssetResult<Option<StageObject>> {
         if self.asset_path.trim().starts_with('#') {
-            return Ok(None);
+            return self.into_solid_stage_object().map(Some);
         }
         let animation = prop_starting_animation(&self.starting_animation, &self.animations);
         Ok(Some(StageObject {
@@ -270,6 +272,7 @@ impl RawStageProp {
                 self.name
             },
             image: AssetPath::new(format!("images/{}.png", self.asset_path))?,
+            solid_color: None,
             animation,
             layer: default_layer(),
             position: self.position,
@@ -280,6 +283,47 @@ impl RawStageProp {
             active: false,
         }))
     }
+
+    fn into_solid_stage_object(self) -> AssetResult<StageObject> {
+        let color = parse_hex_color(&self.asset_path)?;
+        let id = if self.name.trim().is_empty() {
+            format!("solid{}", self.asset_path.trim())
+        } else {
+            self.name
+        };
+        Ok(StageObject {
+            id,
+            image: AssetPath::new(format!(
+                "generated/stage/solid-{}.png",
+                self.asset_path.trim().trim_start_matches('#')
+            ))?,
+            solid_color: Some(color),
+            animation: None,
+            layer: default_layer(),
+            position: self.position,
+            scroll_factor: self.scroll,
+            scale: self.scale,
+            z: self.z_index,
+            antialiasing: !self.is_pixel,
+            active: false,
+        })
+    }
+}
+
+fn parse_hex_color(value: &str) -> AssetResult<[u8; 4]> {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() != 6 && hex.len() != 8 {
+        return Err(invalid(&format!("invalid solid color {value}")));
+    }
+    let parse = |range: std::ops::Range<usize>| {
+        u8::from_str_radix(&hex[range], 16)
+            .map_err(|_| invalid(&format!("invalid solid color {value}")))
+    };
+    let r = parse(0..2)?;
+    let g = parse(2..4)?;
+    let b = parse(4..6)?;
+    let a = if hex.len() == 8 { parse(6..8)? } else { 255 };
+    Ok([r, g, b, a])
 }
 
 fn prop_starting_animation(
@@ -443,6 +487,32 @@ mod tests {
                 looped: true,
             })
         );
+    }
+
+    #[test]
+    fn parses_vslice_solid_color_props() {
+        let stage = StageDefinition::parse(
+            br##"{
+              "name": "Main Stage [Erect]",
+              "props": [{
+                "name": "solid",
+                "assetPath": "#222026",
+                "position": [-500, -1000],
+                "scale": [2400, 2000],
+                "scroll": [0, 0],
+                "zIndex": 0
+              }]
+            }"##,
+        )
+        .unwrap();
+
+        assert_eq!(stage.objects[0].id, "solid");
+        assert_eq!(stage.objects[0].solid_color, Some([0x22, 0x20, 0x26, 0xff]));
+        assert_eq!(
+            stage.objects[0].image.as_str(),
+            "generated/stage/solid-222026.png"
+        );
+        assert_eq!(stage.objects[0].scale, AssetVec2::new(2400.0, 2000.0));
     }
 
     #[test]

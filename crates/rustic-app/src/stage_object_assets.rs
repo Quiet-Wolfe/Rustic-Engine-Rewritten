@@ -47,7 +47,10 @@ pub(crate) fn load_stage_object(
     textures: &mut HashMap<AssetId, Texture>,
     commands: &mut RenderCommandList,
 ) -> Result<Option<StagePropSprite>> {
-    if let Some(animation) = &object.animation {
+    if object.solid_color.is_some() {
+        load_solid_stage_object(device, queue, object, textures, commands);
+        Ok(None)
+    } else if let Some(animation) = &object.animation {
         load_sparrow_stage_object(device, queue, resolver, object, animation, textures)
     } else {
         load_png_stage_object(device, queue, resolver, object, textures, commands)?;
@@ -75,6 +78,35 @@ impl StagePropSprite {
         cmd.uv_rotated = frame.rotated;
         cmd
     }
+}
+
+fn load_solid_stage_object(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    object: &StageObject,
+    textures: &mut HashMap<AssetId, Texture>,
+    commands: &mut RenderCommandList,
+) {
+    let texture_id = asset_id_for_path(&object.image);
+    let filter = filter_for_antialiasing(object.antialiasing);
+    let color = object.solid_color.unwrap_or([0, 0, 0, 255]);
+    let texture = Texture::from_rgba8(
+        device,
+        queue,
+        &color,
+        1,
+        1,
+        filter,
+        Some(object.image.as_str()),
+    );
+    textures.insert(texture_id, texture);
+    commands.push(base_stage_command(
+        object,
+        texture_id,
+        filter,
+        glam::vec2(object.position.x, object.position.y),
+        glam::vec2(object.scale.x, object.scale.y),
+    ));
 }
 
 fn load_png_stage_object(
@@ -260,6 +292,36 @@ mod tests {
             stage_object_atlas_path(&path).unwrap().as_str(),
             "images/erect/crowd.xml"
         );
+    }
+
+    #[test]
+    fn solid_stage_prop_uses_scale_as_draw_size() {
+        let stage = StageDefinition::parse(
+            br##"{
+              "name": "test",
+              "props": [{
+                "name": "solid",
+                "assetPath": "#222026",
+                "position": [-500, -1000],
+                "scale": [2400, 2000],
+                "scroll": [0, 0],
+                "zIndex": 0
+              }]
+            }"##,
+        )
+        .unwrap();
+        let object = &stage.objects[0];
+        let cmd = base_stage_command(
+            object,
+            AssetId::new(9),
+            FilterMode::Linear,
+            glam::vec2(object.position.x, object.position.y),
+            glam::vec2(object.scale.x, object.scale.y),
+        );
+
+        assert_eq!(cmd.world_pos, glam::vec2(-500.0, -1000.0));
+        assert_eq!(cmd.size, glam::vec2(2400.0, 2000.0));
+        assert_eq!(cmd.scroll_factor, glam::Vec2::ZERO);
     }
 
     #[test]
