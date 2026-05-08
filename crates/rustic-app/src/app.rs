@@ -648,6 +648,11 @@ impl App {
             .and_then(|characters| characters.player_animation_duration("firstDeath", sample_rate))
             .unwrap_or(Samples(i64::from(sample_rate)));
         self.character_anim.player_first_death(cursor);
+        if let Some(characters) = &self.characters {
+            let (target, zoom) = characters.player_game_over_camera(self.base_camera_zoom);
+            self.camera_fx
+                .focus_game_over_camera(&mut self.cameras, target, zoom);
+        }
         (
             self.held_lanes,
             self.opponent_receptors,
@@ -670,6 +675,8 @@ impl App {
         if let Some(loop_at) = game_over.start_loop_if_due(cursor) {
             self.character_anim.player_death_loop(loop_at);
         }
+        self.camera_fx
+            .update(&mut self.cameras, cursor, sample_rate, 100.0);
 
         self.cmds.clear();
         if let Some(characters) = &self.characters {

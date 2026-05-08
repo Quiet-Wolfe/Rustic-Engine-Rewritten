@@ -48,7 +48,19 @@ pub struct CharacterDefinition {
     #[serde(default = "default_antialiasing")]
     pub antialiasing: bool,
     #[serde(default)]
+    pub death: CharacterDeathDefinition,
+    #[serde(default)]
     pub animations: Vec<CharacterAnimation>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct CharacterDeathDefinition {
+    #[serde(alias = "cameraOffsets", deserialize_with = "deserialize_asset_vec2")]
+    pub camera_offset: AssetVec2,
+    #[serde(default = "default_death_camera_zoom")]
+    pub camera_zoom: f32,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +107,11 @@ fn default_scale() -> f32 {
 fn default_antialiasing() -> bool {
     // ref: bdedc0aa:source/funkin/data/character/CharacterData.hx:456
     true
+}
+
+fn default_death_camera_zoom() -> f32 {
+    // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:202
+    1.0
 }
 
 fn default_sing_time() -> f64 {
@@ -344,6 +361,19 @@ mod tests {
         assert_eq!(character.initial_animation.as_deref(), Some("idle"));
         assert_eq!(character.sing_time, 6.5);
         assert_eq!(character.dance_every, 2.0);
+    }
+
+    #[test]
+    fn parses_death_camera_data() {
+        let json = br#"{
+            "id":"bf",
+            "atlas":"images/bf.xml",
+            "death": { "cameraOffsets": [-73, 42], "cameraZoom": 1.2 },
+            "animations":[{"name":"idle","prefix":"BF idle dance"}]
+        }"#;
+        let character = CharacterDefinition::parse(json).unwrap();
+        assert_eq!(character.death.camera_offset, AssetVec2::new(-73.0, 42.0));
+        assert_eq!(character.death.camera_zoom, 1.2);
     }
 
     #[test]

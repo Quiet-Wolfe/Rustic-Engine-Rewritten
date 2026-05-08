@@ -103,6 +103,10 @@ impl CharacterSet {
         self.player.animation_duration(animation_name, sample_rate)
     }
 
+    pub fn player_game_over_camera(&self, stage_zoom: f32) -> (glam::Vec2, f32) {
+        self.player.game_over_camera(stage_zoom)
+    }
+
     pub fn camera_focus_points(&self) -> CameraFocusPoints {
         CameraFocusPoints {
             player: self.player.camera_focus_point(),
@@ -170,6 +174,27 @@ impl CharacterSprite {
             Self::Sparrow(sprite) => &sprite.character,
             Self::Animate(sprite) => sprite.definition(),
         }
+    }
+
+    fn game_over_camera(&self, stage_zoom: f32) -> (glam::Vec2, f32) {
+        let (focus, character, slot) = match self {
+            Self::Sparrow(sprite) => (sprite.camera_focus_point(), &sprite.character, sprite.slot),
+            Self::Animate(sprite) => (
+                sprite.camera_focus_point(),
+                sprite.definition(),
+                sprite.slot(),
+            ),
+        };
+        let char_offset = glam::vec2(character.camera_offset.x, character.camera_offset.y);
+        let stage_offset = glam::vec2(slot.camera_offset.x, slot.camera_offset.y);
+        let death_offset = glam::vec2(
+            character.death.camera_offset.x,
+            character.death.camera_offset.y,
+        );
+        (
+            focus - char_offset - stage_offset + death_offset,
+            stage_zoom * character.death.camera_zoom,
+        )
     }
 }
 
@@ -267,11 +292,6 @@ impl CharacterPose {
         );
         &self.frames[index]
     }
-}
-
-pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<LoadedScene> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
-    load_scene_for_ids(device, queue, &resolver, "stage", Some("gf"), "dad", "bf")
 }
 
 pub(crate) fn load_preview_scene_for(

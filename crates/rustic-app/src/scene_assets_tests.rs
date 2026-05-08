@@ -92,6 +92,7 @@ fn sparrow_camera_focus_uses_idle_visual_center() {
           "id": "test",
           "atlas": "images/test.xml",
           "cameraOffsets": [7, -9],
+          "death": { "cameraOffsets": [-73, 42], "cameraZoom": 1.2 },
           "offsets": [10, 20],
           "scale": 2,
           "animations": [{ "name": "idle", "prefix": "idle" }]
@@ -123,6 +124,10 @@ fn sparrow_camera_focus_uses_idle_visual_center() {
     };
 
     assert_eq!(sprite.camera_focus_point(), glam::vec2(217.0, 111.0));
+
+    let (death_focus, death_zoom) = CharacterSprite::Sparrow(sprite).game_over_camera(1.1);
+    assert_eq!(death_focus, glam::vec2(237.0, 262.0));
+    assert!((death_zoom - 1.32).abs() < 1e-6);
 }
 
 #[test]

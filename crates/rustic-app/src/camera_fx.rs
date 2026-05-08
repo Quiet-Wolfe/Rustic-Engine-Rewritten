@@ -25,6 +25,7 @@ pub(crate) struct CameraFx {
     zooming: bool,
     last_step: i64,
     last_update_cursor: Option<Samples>,
+    follow_rate: f32,
     follow_target: glam::Vec2,
     follow_initialized: bool,
     follow_tween: Option<CameraFollowTween>,
@@ -78,6 +79,7 @@ impl Default for CameraFx {
             zooming: false,
             last_step: -1,
             last_update_cursor: None,
+            follow_rate: DEFAULT_CAMERA_FOLLOW_RATE,
             follow_target: glam::Vec2::new(640.0, 360.0),
             follow_initialized: false,
             follow_tween: None,
@@ -98,6 +100,7 @@ impl CameraFx {
         self.zooming = false;
         self.last_step = -1;
         self.last_update_cursor = None;
+        self.follow_rate = DEFAULT_CAMERA_FOLLOW_RATE;
         self.follow_target = glam::Vec2::new(640.0, 360.0);
         self.follow_initialized = false;
         self.follow_tween = None;
@@ -124,6 +127,23 @@ impl CameraFx {
                 camera.position = target;
             }
         }
+    }
+
+    pub(crate) fn focus_game_over_camera(
+        &mut self,
+        cameras: &mut CameraRegistry,
+        target: glam::Vec2,
+        target_zoom: f32,
+    ) {
+        // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:203-225
+        self.zooming = false;
+        self.camera_bop_multiplier = 1.0;
+        self.follow_rate = DEFAULT_CAMERA_FOLLOW_RATE * 0.5;
+        self.last_update_cursor = None;
+        self.focus_camera(cameras, target, false);
+        self.current_game_zoom = target_zoom;
+        self.zoom_tween = None;
+        self.write_zooms(cameras);
     }
 
     pub(crate) fn tween_focus_camera(
@@ -242,7 +262,7 @@ impl CameraFx {
             return;
         };
         // ref: bdedc0aa:source/funkin/util/Constants.hx:640-644
-        let ratio = (DEFAULT_CAMERA_FOLLOW_RATE * dt_frames).clamp(0.0, 1.0);
+        let ratio = (self.follow_rate * dt_frames).clamp(0.0, 1.0);
         camera.position = camera.position.lerp(self.follow_target, ratio);
     }
 
@@ -548,5 +568,26 @@ mod tests {
 
         assert!((cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom) - 1.03).abs() < 1e-6);
         assert!((cameras.get(CameraId(1)).map_or(0.0, |camera| camera.zoom) - 1.06).abs() < 1e-6);
+    }
+
+    #[test]
+    fn game_over_camera_uses_half_follow_rate_and_target_zoom() {
+        let mut cameras = CameraRegistry::with_default_fnf();
+        let mut fx = CameraFx::default();
+        fx.reset(&mut cameras, 1.1);
+        fx.focus_game_over_camera(&mut cameras, glam::vec2(840.0, 360.0), 1.2);
+
+        assert!((cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom) - 1.2).abs() < 1e-6);
+        fx.update(&mut cameras, Samples(0), 48_000, 100.0);
+        fx.update(&mut cameras, Samples(800), 48_000, 100.0);
+
+        assert!(
+            (cameras
+                .get(CameraId(0))
+                .map_or(0.0, |camera| camera.position.x)
+                - 644.0)
+                .abs()
+                < 1e-6
+        );
     }
 }

@@ -79,6 +79,10 @@ impl AnimateCharacterSprite {
         &self.character
     }
 
+    pub(crate) fn slot(&self) -> StageCharacterSlot {
+        self.slot
+    }
+
     fn pose(&self, animation_name: &str) -> &AnimateCharacterPose {
         self.poses
             .iter()
