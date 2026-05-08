@@ -134,16 +134,18 @@ mod tests {
 
     const STAGE: &str = r#"{
         "id": "stage",
-        "cameraZoom": 0.9,
+        "cameraZoom": 1.1,
         "boyfriend": {
-            "position": { "x": 770.0, "y": 450.0 }
+            "position": { "x": 989.5, "y": 885.0 },
+            "cameraOffset": { "x": -100.0, "y": -100.0 }
         },
         "girlfriend": {
-            "position": { "x": 400.0, "y": 130.0 }
+            "position": { "x": 751.5, "y": 787.0 },
+            "cameraOffset": { "x": 0.0, "y": 0.0 }
         },
         "opponent": {
-            "position": { "x": 100.0, "y": 100.0 },
-            "cameraOffset": { "x": 400.0, "y": 0.0 }
+            "position": { "x": 335.0, "y": 885.0 },
+            "cameraOffset": { "x": 150.0, "y": -100.0 }
         },
         "objects": [
             {
@@ -174,17 +176,18 @@ mod tests {
 
     #[test]
     fn parses_stage_definition_with_defaults() {
-        // ref: 50fccded:source/PlayState.hx:486-509 — default stage
-        // camera zoom, image paths, positions, scroll factors, scale, and
-        // inactive static sprites.
-        // ref: 50fccded:source/PlayState.hx:529-574 — Week 1 character slots.
+        // ref: bdedc0aa:assets/preload/data/stages/mainStage.json
         let stage = StageDefinition::parse(STAGE.as_bytes()).unwrap();
         assert_eq!(stage.id, "stage");
-        assert_eq!(stage.camera_zoom, 0.9);
-        assert_eq!(stage.boyfriend.position, AssetVec2::new(770.0, 450.0));
-        assert_eq!(stage.girlfriend.position, AssetVec2::new(400.0, 130.0));
-        assert_eq!(stage.opponent.position, AssetVec2::new(100.0, 100.0));
-        assert_eq!(stage.opponent.camera_offset, AssetVec2::new(400.0, 0.0));
+        assert_eq!(stage.camera_zoom, 1.1);
+        assert_eq!(stage.boyfriend.position, AssetVec2::new(989.5, 885.0));
+        assert_eq!(
+            stage.boyfriend.camera_offset,
+            AssetVec2::new(-100.0, -100.0)
+        );
+        assert_eq!(stage.girlfriend.position, AssetVec2::new(751.5, 787.0));
+        assert_eq!(stage.opponent.position, AssetVec2::new(335.0, 885.0));
+        assert_eq!(stage.opponent.camera_offset, AssetVec2::new(150.0, -100.0));
         assert_eq!(stage.objects.len(), 3);
 
         let back = &stage.objects[0];
