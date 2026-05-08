@@ -549,6 +549,8 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::asset_roots::baked_assets_root;
+    use rustic_asset::load_character;
 
     fn character_with_hold() -> CharacterDefinition {
         CharacterDefinition::parse(
@@ -571,6 +573,26 @@ mod tests {
             asset_index: 0,
             source: AnimatePoseSource::FrameLabel,
             frame_count,
+        }
+    }
+
+    fn baked_resolver() -> OverlayResolver {
+        OverlayResolver::new().with_baked_root(baked_assets_root())
+    }
+
+    fn test_animate_atlas(
+        resolver: &OverlayResolver,
+        asset_path: &AssetPath,
+    ) -> LoadedAnimateAtlas {
+        let animation_path = animate_asset_file(asset_path, "Animation.json").unwrap();
+        let spritemap_path = animate_asset_file(asset_path, "spritemap1.json").unwrap();
+        let animation = load_animate_animation(resolver, &animation_path).unwrap();
+        let atlas = load_animate_spritemap(resolver, &spritemap_path).unwrap();
+        LoadedAnimateAtlas {
+            texture_id: AssetId::new(1),
+            flat_labels: FlatLabelAtlas::new(&animation, &atlas),
+            animation,
+            atlas,
         }
     }
 
@@ -658,5 +680,40 @@ mod tests {
 
         let parts = flat.parts(&animation, &character.animations[0], 1).unwrap();
         assert_eq!(parts[0].frame_name, "up1");
+    }
+
+    #[test]
+    fn gf_dance_left_uses_animate_symbols_instead_of_flat_spritemap_slices() {
+        let resolver = baked_resolver();
+        let character = load_character(
+            &resolver,
+            &AssetPath::new("data/characters/gf.json").unwrap(),
+        )
+        .unwrap();
+        let asset_path = animation_asset_path(&character, &character.animations[0]).unwrap();
+        let loaded = test_animate_atlas(&resolver, &asset_path);
+        assert!(loaded.flat_labels.is_none());
+        let mut asset_indices = HashMap::new();
+        asset_indices.insert(asset_path.as_str().to_owned(), 0);
+        let poses =
+            animate_character_poses(&character, std::slice::from_ref(&loaded), &asset_indices)
+                .unwrap();
+        let dance_left = poses
+            .iter()
+            .find(|pose| pose.animation.name == "danceLeft")
+            .unwrap();
+        let parts = dance_left
+            .parts(&loaded, Samples(0), SAMPLE_RATE, Samples(0))
+            .unwrap();
+        let frame_names = parts
+            .iter()
+            .map(|part| part.frame_name.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(frame_names.len() > 4);
+        assert!(frame_names.contains(&"16"));
+        assert!(!frame_names
+            .iter()
+            .any(|name| ["36", "37", "38"].contains(name)));
     }
 }

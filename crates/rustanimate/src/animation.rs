@@ -87,13 +87,22 @@ impl Animation {
             Ok(raw) => raw,
             Err(err) => return crate::animation_alt::parse(bytes).map_err(|_| err.into()),
         };
-        let name = raw.animation.name.unwrap_or_default();
-        let symbol_name = raw.animation.symbol_name.unwrap_or_default();
-        let labels = timeline_labels(&raw.animation.timeline)?;
-        let layers = timeline_layers(raw.animation.timeline)?;
-        let symbols = raw
-            .animation
-            .symbol_dictionary
+        let RawAnimationFile {
+            animation,
+            symbol_dictionary: top_level_symbol_dictionary,
+        } = raw;
+        let RawAnimation {
+            name,
+            symbol_name,
+            timeline,
+            symbol_dictionary,
+        } = animation;
+        let name = name.unwrap_or_default();
+        let symbol_name = symbol_name.unwrap_or_default();
+        let labels = timeline_labels(&timeline)?;
+        let layers = timeline_layers(timeline)?;
+        let symbols = symbol_dictionary
+            .or(top_level_symbol_dictionary)
             .map(|dictionary| dictionary.symbols)
             .unwrap_or_default()
             .into_iter()
@@ -126,7 +135,9 @@ impl Animation {
     }
 
     pub fn symbol(&self, name: &str) -> Option<&Symbol> {
-        self.symbols.iter().find(|symbol| symbol.name == name)
+        // flxanimate loads the Animate symbol dictionary into a Map with
+        // repeated set() calls, so later duplicate names replace earlier ones.
+        self.symbols.iter().rev().find(|symbol| symbol.name == name)
     }
 
     pub fn flatten_label_frame(
@@ -446,6 +457,8 @@ fn matrix3d_to_affine(matrix: [f32; 16]) -> [f32; 6] {
 struct RawAnimationFile {
     #[serde(rename = "AN")]
     animation: RawAnimation,
+    #[serde(rename = "SD")]
+    symbol_dictionary: Option<RawSymbolDictionary>,
 }
 
 #[derive(Debug, Deserialize)]

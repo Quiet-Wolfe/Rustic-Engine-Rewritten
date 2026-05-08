@@ -174,6 +174,43 @@ fn flattens_looping_symbol_frames() {
 }
 
 #[test]
+fn follows_flxanimate_top_level_symbol_dictionary_overwrite_order() {
+    let animation = Animation::parse(
+        br#"{
+          "AN": {
+            "N": "duplicate-symbol-test",
+            "SN": "root",
+            "TL": { "L": [
+              { "FR": [{ "N": "Idle", "I": 0, "DU": 1, "E": [] }] },
+              { "FR": [{
+                "I": 0,
+                "DU": 1,
+                "E": [{ "SI": { "SN": "body", "FF": 0, "LP": "LP" } }]
+              }] }
+            ] }
+          },
+          "SD": { "S": [
+            { "SN": "body", "TL": { "L": [{ "FR": [{
+              "I": 0,
+              "DU": 1,
+              "E": [{ "ASI": { "N": "old", "MX": [1, 0, 0, 1, 0, 0] } }]
+            }] }] } },
+            { "SN": "body", "TL": { "L": [{ "FR": [{
+              "I": 0,
+              "DU": 1,
+              "E": [{ "ASI": { "N": "new", "MX": [1, 0, 0, 1, 0, 0] } }]
+            }] }] } }
+          ] }
+        }"#,
+    )
+    .unwrap();
+
+    assert_eq!(animation.symbol("body").unwrap().name, "body");
+    let parts = animation.flatten_label_frame("Idle", 0).unwrap();
+    assert_eq!(parts[0].frame_name, "new");
+}
+
+#[test]
 fn follows_flxanimate_compact_symbol_loop_defaults() {
     assert_eq!(compact_loop_frame("", 2), "body0");
     assert_eq!(compact_loop_frame(r#""LP": "LPR","#, 2), "body0");
