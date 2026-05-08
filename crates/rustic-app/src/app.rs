@@ -170,10 +170,17 @@ impl App {
         }
     }
     fn load_selected_song(&mut self) {
+        self.update_window_title();
         self.load_selected_scene();
         let sample_rate = play_sample_rate(&self.mixer);
         match load_preview_play_state_for(self.preview_selection, sample_rate) {
             Ok(play_state) => {
+                tracing::info!(
+                    target: "rustic",
+                    "loading {} ({})",
+                    self.preview_selection.song.display_name(),
+                    self.preview_selection.difficulty.as_str()
+                );
                 let bpm = play_state.bpm;
                 self.play_state = Some(play_state);
                 self.reset_song_runtime(bpm);
@@ -181,6 +188,16 @@ impl App {
                 self.rebuild_frame_commands();
             }
             Err(e) => tracing::warn!(target: "rustic.asset", "preview chart unavailable: {e:#}"),
+        }
+    }
+    fn update_window_title(&self) {
+        if let Some(runtime) = self.runtime.as_ref() {
+            runtime.window.set_title(&format!(
+                "{} - {} [{}]",
+                self.options.title,
+                self.preview_selection.song.display_name(),
+                self.preview_selection.difficulty.as_str()
+            ));
         }
     }
     fn load_selected_stems(&mut self) {

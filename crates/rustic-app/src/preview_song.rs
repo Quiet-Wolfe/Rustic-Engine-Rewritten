@@ -81,6 +81,16 @@ impl PreviewSong {
         format!("music/{}_Voices.ogg", self.audio_prefix)
     }
 
+    pub fn display_name(self) -> &'static str {
+        match self.id {
+            0 => "Tutorial",
+            1 => "Bopeebo",
+            2 => "Fresh",
+            3 => "Dad Battle",
+            _ => self.folder,
+        }
+    }
+
     pub fn next(self) -> Self {
         next_in(&Self::CYCLABLE_WEEK1, self)
     }
@@ -252,6 +262,7 @@ mod tests {
     #[test]
     fn preview_song_paths_match_imported_assets() {
         let song = PreviewSong::DADBATTLE;
+        assert_eq!(song.display_name(), "Dad Battle");
         assert_eq!(
             song.chart_path(),
             "data/songs/dadbattle/dadbattle-chart.json"
