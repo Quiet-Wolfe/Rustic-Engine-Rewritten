@@ -22,10 +22,16 @@ const WHITE_TEXTURE_ID: AssetId = AssetId::new(0xfef0_0000_0000_0001);
 #[derive(Debug, Clone)]
 pub struct HudSkin {
     health_bar_texture: AssetId,
-    icon_grid_texture: AssetId,
+    bf_icon: IconTexture,
+    dad_icon: IconTexture,
     white_texture: AssetId,
-    icon_grid_width: u32,
-    icon_grid_height: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IconTexture {
+    texture: AssetId,
+    width: u32,
+    height: u32,
 }
 
 impl HudSkin {
@@ -69,15 +75,17 @@ impl HudSkin {
 
         let marker = fill_x + HEALTH_FILL_WIDTH * (1.0 - health / 2.0);
         let bf_frame = if health < 0.4 { 1 } else { 0 };
-        let dad_frame = if health > 1.6 { 13 } else { 12 };
+        let dad_frame = if health > 1.6 { 1 } else { 0 };
         let icon_size = ICON_SIZE * icon_scale.max(0.01);
         commands.push(self.icon_command(
+            self.bf_icon,
             bf_frame,
             true,
             glam::vec2(marker - ICON_OFFSET, fill_y - icon_size * 0.5),
             icon_size,
         ));
         commands.push(self.icon_command(
+            self.dad_icon,
             dad_frame,
             false,
             glam::vec2(marker - (icon_size - ICON_OFFSET), fill_y - icon_size * 0.5),
@@ -105,23 +113,20 @@ impl HudSkin {
 
     fn icon_command(
         &self,
+        icon: IconTexture,
         frame_index: u32,
         flip_x: bool,
         world_pos: glam::Vec2,
         icon_size: f32,
     ) -> DrawCommand {
-        let mut cmd = DrawCommand::sprite(
-            self.icon_grid_texture,
-            world_pos,
-            glam::vec2(icon_size, icon_size),
-        );
+        let mut cmd =
+            DrawCommand::sprite(icon.texture, world_pos, glam::vec2(icon_size, icon_size));
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
         cmd.layer = RenderLayer::Hud;
         cmd.filter = FilterMode::Linear;
         cmd.z = 3;
-        (cmd.uv_min, cmd.uv_max) =
-            icon_uv(frame_index, self.icon_grid_width, self.icon_grid_height);
+        (cmd.uv_min, cmd.uv_max) = icon_uv(frame_index, icon.width, icon.height);
         if flip_x {
             std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
         }
@@ -150,18 +155,33 @@ pub fn load_hud_assets(
         ),
     );
 
-    let icon_grid_path = AssetPath::new("images/iconGrid.png")?;
-    let icon_grid = load_png(resolver, &icon_grid_path)
-        .with_context(|| format!("load {}", icon_grid_path.as_str()))?;
-    let icon_grid_texture = asset_id_for_path(&icon_grid_path);
+    let bf_icon_path = AssetPath::new("images/icons/icon-bf.png")?;
+    let bf_icon = load_png(resolver, &bf_icon_path)
+        .with_context(|| format!("load {}", bf_icon_path.as_str()))?;
+    let bf_icon_texture = asset_id_for_path(&bf_icon_path);
     textures.insert(
-        icon_grid_texture,
+        bf_icon_texture,
         Texture::from_png_image(
             device,
             queue,
-            &icon_grid,
+            &bf_icon,
             FilterMode::Linear,
-            Some(icon_grid_path.as_str()),
+            Some(bf_icon_path.as_str()),
+        ),
+    );
+
+    let dad_icon_path = AssetPath::new("images/icons/icon-dad.png")?;
+    let dad_icon = load_png(resolver, &dad_icon_path)
+        .with_context(|| format!("load {}", dad_icon_path.as_str()))?;
+    let dad_icon_texture = asset_id_for_path(&dad_icon_path);
+    textures.insert(
+        dad_icon_texture,
+        Texture::from_png_image(
+            device,
+            queue,
+            &dad_icon,
+            FilterMode::Linear,
+            Some(dad_icon_path.as_str()),
         ),
     );
 
@@ -180,23 +200,31 @@ pub fn load_hud_assets(
 
     Ok(HudSkin {
         health_bar_texture,
-        icon_grid_texture,
+        bf_icon: IconTexture {
+            texture: bf_icon_texture,
+            width: bf_icon.width,
+            height: bf_icon.height,
+        },
+        dad_icon: IconTexture {
+            texture: dad_icon_texture,
+            width: dad_icon.width,
+            height: dad_icon.height,
+        },
         white_texture: WHITE_TEXTURE_ID,
-        icon_grid_width: icon_grid.width,
-        icon_grid_height: icon_grid.height,
     })
 }
 
 fn icon_uv(frame_index: u32, texture_width: u32, texture_height: u32) -> (glam::Vec2, glam::Vec2) {
-    let col = frame_index % 10;
-    let row = frame_index / 10;
+    let frame_count = (texture_width / ICON_SIZE as u32).max(1);
+    let frame_index = frame_index.min(frame_count - 1);
     let width = texture_width.max(1) as f32;
     let height = texture_height.max(1) as f32;
-    let x = col as f32 * ICON_SIZE;
-    let y = row as f32 * ICON_SIZE;
+    let x = frame_index as f32 * ICON_SIZE;
+    let frame_width = ICON_SIZE.min(width);
+    let frame_height = ICON_SIZE.min(height);
     (
-        glam::vec2(x / width, y / height),
-        glam::vec2((x + ICON_SIZE) / width, (y + ICON_SIZE) / height),
+        glam::vec2(x / width, 0.0),
+        glam::vec2((x + frame_width) / width, frame_height / height),
     )
 }
 
@@ -216,10 +244,17 @@ mod tests {
     fn skin() -> HudSkin {
         HudSkin {
             health_bar_texture: AssetId::new(1),
-            icon_grid_texture: AssetId::new(2),
+            bf_icon: IconTexture {
+                texture: AssetId::new(2),
+                width: 300,
+                height: 150,
+            },
+            dad_icon: IconTexture {
+                texture: AssetId::new(4),
+                width: 150,
+                height: 150,
+            },
             white_texture: AssetId::new(3),
-            icon_grid_width: 1500,
-            icon_grid_height: 900,
         }
     }
 
@@ -250,16 +285,21 @@ mod tests {
         let low_health = skin().commands(0.39);
         let high_health = skin().commands(1.61);
 
-        let (bf_frame_one_min, bf_frame_one_max) = icon_uv(1, 1500, 900);
-        let (dad_frame_thirteen_min, dad_frame_thirteen_max) = icon_uv(13, 1500, 900);
+        let (bf_frame_one_min, bf_frame_one_max) = icon_uv(1, 300, 150);
+        let (dad_frame_zero_min, dad_frame_zero_max) = icon_uv(1, 150, 150);
 
         assert_eq!(low_health[3].uv_min.x, bf_frame_one_max.x);
         assert_eq!(low_health[3].uv_max.x, bf_frame_one_min.x);
         assert_eq!(low_health[3].uv_min.y, bf_frame_one_min.y);
         assert_eq!(low_health[3].uv_max.y, bf_frame_one_max.y);
 
-        assert_eq!(high_health[4].uv_min, dad_frame_thirteen_min);
-        assert_eq!(high_health[4].uv_max, dad_frame_thirteen_max);
+        assert_eq!(high_health[4].uv_min, dad_frame_zero_min);
+        assert_eq!(high_health[4].uv_max, dad_frame_zero_max);
+    }
+
+    #[test]
+    fn single_frame_icons_clamp_danger_frame_to_idle() {
+        assert_eq!(icon_uv(0, 150, 150), icon_uv(1, 150, 150));
     }
 
     #[test]
