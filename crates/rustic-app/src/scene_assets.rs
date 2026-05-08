@@ -418,7 +418,7 @@ pub(crate) fn load_preview_play_state_for(
 
 fn stage_asset_id(stage: &str) -> &str {
     match stage {
-        "mainStage" | "mainStageErect" => "stage",
+        "mainStageErect" => "mainStage",
         other => other,
     }
 }

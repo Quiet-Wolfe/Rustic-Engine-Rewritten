@@ -423,6 +423,9 @@ mod tests {
         let stage = load_stage(&resolver, &ap("data/stages/stage.json")).unwrap();
         assert_eq!(stage.id, "stage");
         assert_eq!(stage.objects.len(), 3);
+        let main_stage = load_stage(&resolver, &ap("data/stages/mainStage.json")).unwrap();
+        assert_eq!(main_stage.id, "Main Stage");
+        assert_eq!(main_stage.objects[0].image.as_str(), "images/stageback.png");
 
         let tutorial = load_level(&resolver, &ap("data/levels/tutorial.json")).unwrap();
         assert_eq!(tutorial.songs, vec!["tutorial"]);

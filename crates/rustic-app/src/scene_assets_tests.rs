@@ -159,6 +159,6 @@ fn preview_song_metadata_preserves_tutorial_gf_opponent() {
     assert_eq!(chart.chart.player2, "gf");
     assert_eq!(chart.chart.girlfriend, "");
     assert_eq!(chart.chart.stage, "mainStage");
-    assert_eq!(stage_asset_id(&chart.chart.stage), "stage");
+    assert_eq!(stage_asset_id(&chart.chart.stage), "mainStage");
     assert_eq!(character_id(&chart.chart.girlfriend), None);
 }

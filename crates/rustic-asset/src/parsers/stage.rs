@@ -8,7 +8,7 @@ use crate::error::{AssetError, AssetResult};
 use crate::parsers::types::AssetVec2;
 use crate::path::AssetPath;
 use rustic_core::render::RenderLayer;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,8 +98,9 @@ pub fn stage_id_for_song_name(song_name: &str) -> &'static str {
 
 impl StageDefinition {
     pub fn parse(bytes: &[u8]) -> AssetResult<Self> {
-        let parsed: Self = serde_json::from_slice(bytes)
+        let parsed: RawStageDefinition = serde_json::from_slice(bytes)
             .map_err(|e| AssetError::InvalidData(format!("stage json: {e}")))?;
+        let parsed = parsed.into_stage()?;
         parsed.validate()?;
         Ok(parsed)
     }
@@ -124,6 +125,147 @@ impl StageDefinition {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawStageDefinition {
+    id: Option<String>,
+    name: Option<String>,
+    #[serde(default = "default_camera_zoom")]
+    camera_zoom: f32,
+    #[serde(default)]
+    boyfriend: StageCharacterSlot,
+    #[serde(default)]
+    girlfriend: StageCharacterSlot,
+    #[serde(default)]
+    opponent: StageCharacterSlot,
+    characters: Option<RawStageCharacters>,
+    #[serde(default)]
+    objects: Vec<StageObject>,
+    #[serde(default)]
+    props: Vec<RawStageProp>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawStageCharacters {
+    bf: RawStageCharacterSlot,
+    dad: RawStageCharacterSlot,
+    gf: RawStageCharacterSlot,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct RawStageCharacterSlot {
+    #[serde(deserialize_with = "deserialize_asset_vec2")]
+    position: AssetVec2,
+    #[serde(rename = "cameraOffsets", deserialize_with = "deserialize_asset_vec2")]
+    camera_offset: AssetVec2,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct RawStageProp {
+    name: String,
+    asset_path: String,
+    #[serde(deserialize_with = "deserialize_asset_vec2")]
+    position: AssetVec2,
+    #[serde(deserialize_with = "deserialize_asset_vec2")]
+    scale: AssetVec2,
+    #[serde(deserialize_with = "deserialize_asset_vec2")]
+    scroll: AssetVec2,
+    z_index: i32,
+    is_pixel: bool,
+}
+
+impl Default for RawStageProp {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            asset_path: String::new(),
+            position: AssetVec2::ZERO,
+            scale: AssetVec2::ONE,
+            scroll: AssetVec2::ONE,
+            z_index: 0,
+            is_pixel: false,
+        }
+    }
+}
+
+impl RawStageDefinition {
+    fn into_stage(self) -> AssetResult<StageDefinition> {
+        let mut boyfriend = self.boyfriend;
+        let mut opponent = self.opponent;
+        let mut girlfriend = self.girlfriend;
+        if let Some(characters) = self.characters {
+            boyfriend = characters.bf.into();
+            opponent = characters.dad.into();
+            girlfriend = characters.gf.into();
+        }
+        let mut objects = self.objects;
+        for prop in self.props {
+            if let Some(object) = prop.into_stage_object()? {
+                objects.push(object);
+            }
+        }
+        Ok(StageDefinition {
+            id: self.id.or(self.name).unwrap_or_default(),
+            camera_zoom: self.camera_zoom,
+            boyfriend,
+            girlfriend,
+            opponent,
+            objects,
+        })
+    }
+}
+
+impl From<RawStageCharacterSlot> for StageCharacterSlot {
+    fn from(value: RawStageCharacterSlot) -> Self {
+        Self {
+            position: value.position,
+            camera_offset: value.camera_offset,
+        }
+    }
+}
+
+impl RawStageProp {
+    fn into_stage_object(self) -> AssetResult<Option<StageObject>> {
+        if self.asset_path.trim().starts_with('#') {
+            return Ok(None);
+        }
+        Ok(Some(StageObject {
+            id: if self.name.trim().is_empty() {
+                self.asset_path.clone()
+            } else {
+                self.name
+            },
+            image: AssetPath::new(format!("images/{}.png", self.asset_path))?,
+            layer: default_layer(),
+            position: self.position,
+            scroll_factor: self.scroll,
+            scale: self.scale,
+            z: self.z_index,
+            antialiasing: !self.is_pixel,
+            active: false,
+        }))
+    }
+}
+
+fn deserialize_asset_vec2<'de, D>(d: D) -> Result<AssetVec2, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Object { x: f32, y: f32 },
+        Array([f32; 2]),
+    }
+    Ok(match Option::<Raw>::deserialize(d)? {
+        Some(Raw::Object { x, y }) => AssetVec2::new(x, y),
+        Some(Raw::Array([x, y])) => AssetVec2::new(x, y),
+        None => AssetVec2::ZERO,
+    })
 }
 
 fn invalid(msg: &str) -> AssetError {
@@ -211,6 +353,37 @@ mod tests {
         assert_eq!(curtains.position, AssetVec2::new(-500.0, -300.0));
         assert_eq!(curtains.scale, AssetVec2::new(0.9, 0.9));
         assert_eq!(curtains.scroll_factor, AssetVec2::new(1.3, 1.3));
+    }
+
+    #[test]
+    fn parses_vslice_stage_props_and_characters() {
+        // ref: bdedc0aa:assets/preload/data/stages/mainStage.json
+        let stage = StageDefinition::parse(
+            br#"{
+              "name": "Main Stage",
+              "cameraZoom": 1.1,
+              "props": [{
+                "name": "stageBack",
+                "assetPath": "stageback",
+                "position": [-600, -200],
+                "scroll": [0.9, 0.9],
+                "zIndex": 10
+              }],
+              "characters": {
+                "bf": { "position": [989.5, 885], "cameraOffsets": [-100, -100] },
+                "dad": { "position": [335, 885], "cameraOffsets": [150, -100] },
+                "gf": { "position": [751.5, 787], "cameraOffsets": [0, 0] }
+              }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(stage.id, "Main Stage");
+        assert_eq!(stage.boyfriend.position, AssetVec2::new(989.5, 885.0));
+        assert_eq!(stage.opponent.camera_offset, AssetVec2::new(150.0, -100.0));
+        assert_eq!(stage.objects[0].id, "stageBack");
+        assert_eq!(stage.objects[0].image.as_str(), "images/stageback.png");
+        assert_eq!(stage.objects[0].z, 10);
     }
 
     #[test]
