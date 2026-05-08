@@ -150,7 +150,7 @@ impl Mixer {
 
         out.fill(0.0);
         let frames = out.len() / OUTPUT_CHANNELS;
-        if frames == 0 || self.paused {
+        if frames == 0 {
             return Ok(MixStats {
                 frames,
                 sample_cursor: self.sample_cursor,
@@ -160,11 +160,16 @@ impl Mixer {
 
         let stem_gains = self.stem_gains.clone();
         for voice in &mut self.voices {
+            if self.paused && voice.stem != Stem::Sfx {
+                continue;
+            }
             let gain = stem_gain(&stem_gains, voice.stem);
             voice.mix_into(self.sample_rate, out, gain)?;
         }
         self.voices.retain(|v| !v.ended);
-        self.sample_cursor = Samples(self.sample_cursor.0 + frames as i64);
+        if !self.paused {
+            self.sample_cursor = Samples(self.sample_cursor.0 + frames as i64);
+        }
 
         Ok(MixStats {
             frames,
@@ -446,7 +451,7 @@ mod tests {
         let mut mixer = Mixer::new(48_000);
         let samples: Arc<[f32]> = Arc::from([1.0, 1.0, 0.25, 0.25]);
         mixer
-            .add_source(Stem::Sfx, SoundSource::Pcm(samples))
+            .add_source(Stem::Instrumental, SoundSource::Pcm(samples))
             .unwrap();
         mixer.pause();
         let mut out = [99.0; 2];
@@ -459,6 +464,25 @@ mod tests {
         mixer.mix_stereo(&mut out).unwrap();
         assert_eq!(out, [1.0, 1.0]);
         assert_eq!(mixer.sample_cursor(), Samples(1));
+    }
+
+    #[test]
+    fn paused_mixer_still_plays_sfx_without_advancing_song_cursor() {
+        let mut mixer = Mixer::new(48_000);
+        let samples: Arc<[f32]> = Arc::from([0.75, -0.75, 0.25, -0.25]);
+        mixer
+            .add_source(Stem::Sfx, SoundSource::Pcm(samples))
+            .unwrap();
+        mixer.pause();
+        let mut out = [0.0; 2];
+
+        mixer.mix_stereo(&mut out).unwrap();
+        assert_eq!(out, [0.75, -0.75]);
+        assert_eq!(mixer.sample_cursor(), Samples(0));
+
+        mixer.mix_stereo(&mut out).unwrap();
+        assert_eq!(out, [0.25, -0.25]);
+        assert_eq!(mixer.sample_cursor(), Samples(0));
     }
 
     #[test]

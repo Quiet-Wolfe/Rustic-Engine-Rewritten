@@ -47,10 +47,10 @@ impl CountdownImage {
         let eased = cube_in_out(progress);
         let world_pos = glam::vec2(
             (FNF_WIDTH - self.size.x) * 0.5,
-            (FNF_HEIGHT - self.size.y) * 0.5 + eased * 100.0,
+            (FNF_HEIGHT - self.size.y) * 0.5,
         );
         let mut cmd = DrawCommand::sprite(self.texture_id, world_pos, self.size);
-        // ref: bdedc0aa:source/funkin/play/Countdown.hx:241-247
+        // ref: bdedc0aa:source/funkin/play/Countdown.hx:215-236
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
         cmd.layer = RenderLayer::Overlay;
@@ -174,11 +174,15 @@ mod tests {
     }
 
     #[test]
-    fn countdown_uses_hud_camera_and_top_left_centering() {
-        let command = skin().commands(Samples(-86_400), 48_000, 100.0)[0].clone();
+    fn countdown_uses_hud_camera_and_screen_center() {
+        let skin = skin();
+        let command = skin.commands(Samples(-86_400), 48_000, 100.0)[0].clone();
+        let mid_fade = skin.commands(Samples(-72_000), 48_000, 100.0)[0].clone();
 
         assert_eq!(command.camera, CameraId(1));
         assert_eq!(command.pivot, glam::Vec2::ZERO);
         assert_eq!(command.world_pos, glam::vec2(590.0, 335.0));
+        assert_eq!(mid_fade.world_pos, glam::vec2(590.0, 335.0));
+        assert!(mid_fade.color.w < command.color.w);
     }
 }
