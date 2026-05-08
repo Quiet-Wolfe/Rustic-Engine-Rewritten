@@ -23,6 +23,7 @@ pub(crate) struct CameraFx {
     camera_zoom_rate_offset: f32,
     zooming: bool,
     last_step: i64,
+    last_update_cursor: Option<Samples>,
     zoom_tween: Option<CameraZoomTween>,
 }
 
@@ -63,6 +64,7 @@ impl Default for CameraFx {
             camera_zoom_rate_offset: DEFAULT_ZOOM_OFFSET,
             zooming: false,
             last_step: -1,
+            last_update_cursor: None,
             zoom_tween: None,
         }
     }
@@ -79,6 +81,7 @@ impl CameraFx {
         self.camera_zoom_rate_offset = DEFAULT_ZOOM_OFFSET;
         self.zooming = false;
         self.last_step = -1;
+        self.last_update_cursor = None;
         self.zoom_tween = None;
         if let Some(camera) = cameras.get_mut(CameraId(0)) {
             camera.zoom = default_game_zoom;
@@ -142,12 +145,22 @@ impl CameraFx {
         bpm: f64,
     ) {
         self.update_zoom_tween(cursor);
+        let dt_frames = self.update_dt_frames(cursor, sample_rate);
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:1223-1229,1855-1861
         if self.zooming && self.camera_zoom_rate > 0.0 {
-            self.camera_bop_multiplier = camera_bop_decay(self.camera_bop_multiplier);
-            self.update_camera_bop(cameras, cursor, sample_rate, bpm);
+            self.camera_bop_multiplier = camera_bop_decay(self.camera_bop_multiplier, dt_frames);
+            self.update_camera_bop(cameras, cursor, sample_rate, bpm, dt_frames);
         }
         self.write_zooms(cameras);
+    }
+
+    fn update_dt_frames(&mut self, cursor: Samples, sample_rate: u32) -> f32 {
+        let dt_samples = self
+            .last_update_cursor
+            .map(|last| cursor.0.saturating_sub(last.0).max(0))
+            .unwrap_or(0);
+        self.last_update_cursor = Some(cursor);
+        dt_samples as f32 * 60.0 / sample_rate.max(1) as f32
     }
 
     fn update_zoom_tween(&mut self, cursor: Samples) {
@@ -170,9 +183,10 @@ impl CameraFx {
         cursor: Samples,
         sample_rate: u32,
         bpm: f64,
+        dt_frames: f32,
     ) {
         if let Some(camera) = cameras.get_mut(CameraId(1)) {
-            camera.zoom = hud_zoom_decay(camera.zoom);
+            camera.zoom = hud_zoom_decay(camera.zoom, dt_frames);
         }
 
         let step = camera_step_index(cursor, sample_rate, bpm);
@@ -230,12 +244,12 @@ impl CameraEase {
     }
 }
 
-fn camera_bop_decay(current: f32) -> f32 {
-    1.0 + (current - 1.0) * 0.95
+fn camera_bop_decay(current: f32, dt_frames: f32) -> f32 {
+    1.0 + (current - 1.0) * 0.95_f32.powf(dt_frames)
 }
 
-fn hud_zoom_decay(current: f32) -> f32 {
-    1.0 + (current - 1.0) * 0.95
+fn hud_zoom_decay(current: f32, dt_frames: f32) -> f32 {
+    1.0 + (current - 1.0) * 0.95_f32.powf(dt_frames)
 }
 
 fn camera_step_index(cursor: Samples, sample_rate: u32, bpm: f64) -> i64 {
@@ -326,8 +340,11 @@ mod tests {
 
     #[test]
     fn camera_bop_decay_matches_v085_lerp_direction() {
-        let decayed = camera_bop_decay(1.20);
+        let decayed = camera_bop_decay(1.20, 1.0);
         assert!((decayed - 1.19).abs() < 0.0001);
+
+        let half_frame = camera_bop_decay(1.20, 0.5);
+        assert!((half_frame - 1.194_936).abs() < 0.0001);
     }
 
     #[test]
