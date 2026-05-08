@@ -334,7 +334,9 @@ mod tests {
                 kind: ChartEventKind::FocusCamera {
                     target: Some(1),
                     x: 0.0,
-                    y: 0.0
+                    y: 0.0,
+                    duration_steps: 4.0,
+                    ease: "CLASSIC".to_string()
                 }
             }]
         );

@@ -27,6 +27,7 @@ pub(crate) struct CameraFx {
     last_update_cursor: Option<Samples>,
     follow_target: glam::Vec2,
     follow_initialized: bool,
+    follow_tween: Option<CameraFollowTween>,
     zoom_tween: Option<CameraZoomTween>,
 }
 
@@ -34,6 +35,15 @@ pub(crate) struct CameraFx {
 struct CameraZoomTween {
     start_zoom: f32,
     target_zoom: f32,
+    start_cursor: Samples,
+    duration_samples: i64,
+    ease: CameraEase,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CameraFollowTween {
+    start_position: glam::Vec2,
+    target_position: glam::Vec2,
     start_cursor: Samples,
     duration_samples: i64,
     ease: CameraEase,
@@ -70,6 +80,7 @@ impl Default for CameraFx {
             last_update_cursor: None,
             follow_target: glam::Vec2::new(640.0, 360.0),
             follow_initialized: false,
+            follow_tween: None,
             zoom_tween: None,
         }
     }
@@ -89,6 +100,7 @@ impl CameraFx {
         self.last_update_cursor = None;
         self.follow_target = glam::Vec2::new(640.0, 360.0);
         self.follow_initialized = false;
+        self.follow_tween = None;
         self.zoom_tween = None;
         if let Some(camera) = cameras.get_mut(CameraId(0)) {
             camera.zoom = default_game_zoom;
@@ -106,11 +118,45 @@ impl CameraFx {
     ) {
         self.follow_target = target;
         self.follow_initialized = true;
+        self.follow_tween = None;
         if snap {
             if let Some(camera) = cameras.get_mut(CameraId(0)) {
                 camera.position = target;
             }
         }
+    }
+
+    pub(crate) fn tween_focus_camera(
+        &mut self,
+        cameras: &mut CameraRegistry,
+        target: glam::Vec2,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        event: FocusCameraEvent<'_>,
+    ) {
+        self.follow_target = target;
+        self.follow_initialized = true;
+        let ease = CameraEase::from_name(event.ease);
+        let duration_samples = steps_to_samples(event.duration_steps, sample_rate, bpm);
+        if ease == CameraEase::Instant || duration_samples <= 0 {
+            self.follow_tween = None;
+            if let Some(camera) = cameras.get_mut(CameraId(0)) {
+                camera.position = target;
+            }
+            return;
+        }
+        let start_position = cameras
+            .get(CameraId(0))
+            .map(|camera| camera.position)
+            .unwrap_or(target);
+        self.follow_tween = Some(CameraFollowTween {
+            start_position,
+            target_position: target,
+            start_cursor: cursor,
+            duration_samples,
+            ease,
+        });
     }
 
     pub(crate) fn enable_zooming(&mut self) {
@@ -168,7 +214,9 @@ impl CameraFx {
     ) {
         self.update_zoom_tween(cursor);
         let dt_frames = self.update_dt_frames(cursor, sample_rate);
-        self.update_follow(cameras, dt_frames);
+        if !self.update_follow_tween(cameras, cursor) {
+            self.update_follow(cameras, dt_frames);
+        }
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:1223-1229,1855-1861
         if self.zooming && self.camera_zoom_rate > 0.0 {
             self.camera_bop_multiplier = camera_bop_decay(self.camera_bop_multiplier, dt_frames);
@@ -196,6 +244,23 @@ impl CameraFx {
         // ref: bdedc0aa:source/funkin/util/Constants.hx:640-644
         let ratio = (DEFAULT_CAMERA_FOLLOW_RATE * dt_frames).clamp(0.0, 1.0);
         camera.position = camera.position.lerp(self.follow_target, ratio);
+    }
+
+    fn update_follow_tween(&mut self, cameras: &mut CameraRegistry, cursor: Samples) -> bool {
+        let Some(tween) = self.follow_tween else {
+            return false;
+        };
+        let elapsed = cursor.0.saturating_sub(tween.start_cursor.0).max(0);
+        let progress = elapsed as f32 / tween.duration_samples.max(1) as f32;
+        let position = tween.start_position
+            + (tween.target_position - tween.start_position) * ease_progress(tween.ease, progress);
+        if let Some(camera) = cameras.get_mut(CameraId(0)) {
+            camera.position = position;
+        }
+        if progress >= 1.0 {
+            self.follow_tween = None;
+        }
+        true
     }
 
     fn update_zoom_tween(&mut self, cursor: Samples) {
@@ -251,6 +316,11 @@ pub(crate) struct ZoomCameraEvent<'a> {
     pub(crate) zoom: f32,
     pub(crate) duration_steps: f32,
     pub(crate) direct: bool,
+    pub(crate) ease: &'a str,
+}
+
+pub(crate) struct FocusCameraEvent<'a> {
+    pub(crate) duration_steps: f32,
     pub(crate) ease: &'a str,
 }
 

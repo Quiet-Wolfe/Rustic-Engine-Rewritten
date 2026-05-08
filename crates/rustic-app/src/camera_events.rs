@@ -1,6 +1,6 @@
 //! Song-event camera helpers.
 
-use crate::camera_fx::{CameraBopEvent, CameraFx, ZoomCameraEvent};
+use crate::camera_fx::{CameraBopEvent, CameraFx, FocusCameraEvent, ZoomCameraEvent};
 use crate::scene_assets::CameraFocusPoints;
 use glam::Vec2;
 use rustic_asset::ChartEventKind;
@@ -17,8 +17,25 @@ pub(crate) fn apply_camera_event(
     bpm: f64,
 ) -> bool {
     match kind {
-        ChartEventKind::FocusCamera { target, x, y } => {
-            focus_camera(cameras, camera_fx, focus, *target, Vec2::new(*x, *y), false);
+        ChartEventKind::FocusCamera {
+            target,
+            x,
+            y,
+            duration_steps,
+            ease,
+        } => {
+            apply_focus_camera(
+                cameras,
+                camera_fx,
+                focus,
+                *target,
+                Vec2::new(*x, *y),
+                cursor,
+                sample_rate,
+                bpm,
+                *duration_steps,
+                ease,
+            );
             true
         }
         ChartEventKind::ZoomCamera {
@@ -57,6 +74,38 @@ pub(crate) fn apply_camera_event(
     }
 }
 
+fn apply_focus_camera(
+    cameras: &mut CameraRegistry,
+    camera_fx: &mut CameraFx,
+    focus: CameraFocusPoints,
+    target: Option<i8>,
+    offset: Vec2,
+    cursor: Samples,
+    sample_rate: u32,
+    bpm: f64,
+    duration_steps: f32,
+    ease: &str,
+) {
+    if ease.eq_ignore_ascii_case("CLASSIC") {
+        focus_camera(cameras, camera_fx, focus, target, offset, false);
+        return;
+    }
+    let Some(target) = focus_target(focus, target, offset) else {
+        return;
+    };
+    camera_fx.tween_focus_camera(
+        cameras,
+        target,
+        cursor,
+        sample_rate,
+        bpm,
+        FocusCameraEvent {
+            duration_steps,
+            ease,
+        },
+    );
+}
+
 pub(crate) fn focus_camera(
     cameras: &mut CameraRegistry,
     camera_fx: &mut CameraFx,
@@ -66,14 +115,20 @@ pub(crate) fn focus_camera(
     snap: bool,
 ) {
     // ref: bdedc0aa:source/funkin/play/event/FocusCameraSongEvent.hx:97-145
+    if let Some(target) = focus_target(focus, target, offset) {
+        camera_fx.focus_camera(cameras, target, snap);
+    }
+}
+
+fn focus_target(focus: CameraFocusPoints, target: Option<i8>, offset: Vec2) -> Option<Vec2> {
     let base = match target.unwrap_or(0) {
         -1 => Vec2::ZERO,
         0 => focus.player,
         1 => focus.opponent,
         2 => focus.girlfriend,
-        _ => return,
+        _ => return None,
     };
-    camera_fx.focus_camera(cameras, base + offset, snap);
+    Some(base + offset)
 }
 
 #[cfg(test)]
@@ -134,5 +189,40 @@ mod tests {
             .unwrap_or_default();
         assert!(position.x > 640.0);
         assert!(position.x < 840.0);
+    }
+
+    #[test]
+    fn focus_camera_event_tweens_when_not_classic() {
+        let mut cameras = CameraRegistry::with_default_fnf();
+        let mut camera_fx = CameraFx::default();
+        let focus = CameraFocusPoints {
+            player: Vec2::new(840.0, 360.0),
+            opponent: Vec2::new(640.0, 360.0),
+            girlfriend: Vec2::new(640.0, 360.0),
+        };
+
+        assert!(apply_camera_event(
+            &mut cameras,
+            &mut camera_fx,
+            focus,
+            &ChartEventKind::FocusCamera {
+                target: Some(0),
+                x: 0.0,
+                y: 0.0,
+                duration_steps: 4.0,
+                ease: "linear".to_string(),
+            },
+            Samples(0),
+            48_000,
+            120.0,
+        ));
+        camera_fx.update(&mut cameras, Samples(12_000), 48_000, 120.0);
+
+        assert_eq!(
+            cameras
+                .get(rustic_core::ids::CameraId(0))
+                .map(|camera| camera.position),
+            Some(Vec2::new(740.0, 360.0))
+        );
     }
 }

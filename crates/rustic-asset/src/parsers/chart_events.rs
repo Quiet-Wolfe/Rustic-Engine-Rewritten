@@ -26,6 +26,8 @@ fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
             target: focus_camera_target(&event.value),
             x: event_float(&event.value, "x", 0.0),
             y: event_float(&event.value, "y", 0.0),
+            duration_steps: event_float(&event.value, "duration", 4.0),
+            ease: focus_camera_ease_name(&event.value),
         },
         "PlayAnimation" => parse_play_animation_event(event),
         "ZoomCamera" => ChartEventKind::ZoomCamera {
@@ -103,6 +105,17 @@ fn event_ease_name(value: &Value) -> String {
     }
     let dir = value.get("easeDir").and_then(Value::as_str).unwrap_or("In");
     format!("{ease}{dir}")
+}
+
+fn focus_camera_ease_name(value: &Value) -> String {
+    let ease = value
+        .get("ease")
+        .and_then(Value::as_str)
+        .unwrap_or("CLASSIC");
+    if ease.eq_ignore_ascii_case("CLASSIC") || ease.eq_ignore_ascii_case("INSTANT") {
+        return ease.to_string();
+    }
+    event_ease_name(value)
 }
 
 fn parse_play_animation_event(event: &VSliceEvent) -> ChartEventKind {

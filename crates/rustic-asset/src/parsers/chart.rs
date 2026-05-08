@@ -256,6 +256,8 @@ pub enum ChartEventKind {
         target: Option<i8>,
         x: f32,
         y: f32,
+        duration_steps: f32,
+        ease: String,
     },
     PlayAnimation {
         target: String,
@@ -699,7 +701,9 @@ mod tests {
             ChartEventKind::FocusCamera {
                 target: Some(1),
                 x: 0.0,
-                y: 0.0
+                y: 0.0,
+                duration_steps: 4.0,
+                ease: "CLASSIC".to_string()
             }
         );
         assert_eq!(
