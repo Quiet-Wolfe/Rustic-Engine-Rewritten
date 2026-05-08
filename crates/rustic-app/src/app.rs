@@ -36,7 +36,7 @@ use rustic_audio::{AudioOutput, SharedMixer};
 use rustic_core::ids::AssetId;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
-use rustic_game::{Judgment, PlayState};
+use rustic_game::{Judgment, Lane, PlayState};
 use rustic_render::{
     CameraRegistry, Composite, RenderCommandList, RenderState, SpriteBatcher, SpritePipeline,
     Texture,
@@ -583,18 +583,20 @@ impl App {
         }
     }
 
-    fn register_hold_drop(&mut self, cursor: Samples, hold_end_at: Samples) {
+    fn register_hold_drop(&mut self, lane: Lane, cursor: Samples, hold_end_at: Samples) {
         let sample_rate = play_sample_rate(&self.mixer);
+        let Some(play_state) = self.play_state.as_mut() else {
+            return;
+        };
         let remaining_samples = hold_end_at.0.saturating_sub(cursor.0);
-        let dropped = self
-            .play_state
-            .as_mut()
-            .and_then(|play_state| play_state.register_hold_drop(remaining_samples, sample_rate));
-        if let Some(drop) = dropped {
-            self.score_popups
-                .push(Judgment::Miss, drop.combo_popup, cursor);
-            set_vocals_gain(&self.mixer, 0.0);
-        }
+        let Some(drop) = play_state.register_hold_drop(remaining_samples, sample_rate) else {
+            return;
+        };
+        self.character_anim
+            .player_note_miss(lane, cursor, sample_rate, play_state.bpm);
+        self.score_popups
+            .push(Judgment::Miss, drop.combo_popup, cursor);
+        set_vocals_gain(&self.mixer, 0.0);
     }
 
     fn register_hold_tick(&mut self, elapsed_samples: i64) {
@@ -751,7 +753,7 @@ impl ApplicationHandler for App {
                             if let Some(release) = self.active_holds.release(lane, song_cursor) {
                                 self.register_hold_tick(release.elapsed_samples);
                                 if release.hold_end_at > song_cursor {
-                                    self.register_hold_drop(song_cursor, release.hold_end_at);
+                                    self.register_hold_drop(lane, song_cursor, release.hold_end_at);
                                 }
                             }
                             self.hold_covers.end(lane, song_cursor);
