@@ -2,7 +2,7 @@
 // LINT-ALLOW: long-file character pose state plus v0.8.5 timing tests
 
 use rustic_core::time::Samples;
-use rustic_game::Lane;
+use rustic_game::{Judgment, Lane};
 
 // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:389-399,457-473
 const CHART_ANIM_HOLD_STEPS: f64 = 4.0;
@@ -12,6 +12,8 @@ const MISS_SING_TIME_MULTIPLIER: f64 = 2.0;
 pub struct CharacterAnimTimings {
     pub player_sing_steps: f64,
     pub opponent_sing_steps: f64,
+    pub girlfriend_combo_counts: [Option<u32>; COUNT_ANIM_SLOTS],
+    pub girlfriend_drop_counts: [Option<u32>; COUNT_ANIM_SLOTS],
 }
 
 impl Default for CharacterAnimTimings {
@@ -20,9 +22,13 @@ impl Default for CharacterAnimTimings {
         Self {
             player_sing_steps: 8.0,
             opponent_sing_steps: 8.0,
+            girlfriend_combo_counts: [None; COUNT_ANIM_SLOTS],
+            girlfriend_drop_counts: [None; COUNT_ANIM_SLOTS],
         }
     }
 }
+
+pub const COUNT_ANIM_SLOTS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CharacterPoseRequest {
@@ -202,6 +208,38 @@ impl CharacterAnimState {
         );
     }
 
+    pub fn girlfriend_note_hit(&mut self, judgment: Judgment, combo_count: u32, cursor: Samples) {
+        // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:528-576
+        match judgment {
+            Judgment::Sick | Judgment::Good => {
+                if self
+                    .timings
+                    .girlfriend_combo_counts
+                    .contains(&Some(combo_count))
+                {
+                    self.play_girlfriend_count_animation(combo_pose(combo_count), cursor);
+                }
+            }
+            _ => self.girlfriend_combo_drop(combo_count, cursor),
+        }
+    }
+
+    pub fn girlfriend_combo_drop(&mut self, combo_count: u32, cursor: Samples) {
+        // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:639-654
+        let Some(drop) = self
+            .timings
+            .girlfriend_drop_counts
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|count| combo_count >= *count)
+            .max()
+        else {
+            return;
+        };
+        self.play_girlfriend_count_animation(drop_pose(drop), cursor);
+    }
+
     pub fn player_first_death(&mut self, cursor: Samples) {
         // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:259
         self.player_pose = "firstDeath";
@@ -243,6 +281,13 @@ impl CharacterAnimState {
             "danceLeft"
         };
         self.girlfriend_started = cursor;
+    }
+
+    fn play_girlfriend_count_animation(&mut self, pose: Option<&'static str>, cursor: Samples) {
+        if let Some(pose) = pose {
+            self.girlfriend_pose = pose;
+            self.girlfriend_started = cursor;
+        }
     }
 }
 
@@ -291,6 +336,21 @@ fn miss_pose(lane: Lane) -> &'static str {
     }
 }
 
+fn combo_pose(count: u32) -> Option<&'static str> {
+    match count {
+        50 => Some("combo50"),
+        200 => Some("combo200"),
+        _ => None,
+    }
+}
+
+fn drop_pose(count: u32) -> Option<&'static str> {
+    match count {
+        70 => Some("drop70"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,6 +388,7 @@ mod tests {
         state.set_timings(CharacterAnimTimings {
             player_sing_steps: 5.0,
             opponent_sing_steps: 6.5,
+            ..CharacterAnimTimings::default()
         });
 
         state.player_note_hit(Lane::Down, Samples(0), 48_000, 100.0);
@@ -413,6 +474,38 @@ mod tests {
     }
 
     #[test]
+    fn girlfriend_plays_combo_animation_only_on_matching_good_hit_count() {
+        let mut state = CharacterAnimState::default();
+        state.set_timings(CharacterAnimTimings {
+            girlfriend_combo_counts: [Some(50), None, None, None],
+            ..CharacterAnimTimings::default()
+        });
+
+        state.girlfriend_note_hit(Judgment::Sick, 49, Samples(100));
+        assert_eq!(state.poses().girlfriend.name, "danceRight");
+
+        state.girlfriend_note_hit(Judgment::Good, 50, Samples(200));
+        assert_eq!(state.poses().girlfriend.name, "combo50");
+        assert_eq!(state.poses().girlfriend.started_at, Samples(200));
+    }
+
+    #[test]
+    fn girlfriend_plays_highest_matching_drop_animation() {
+        let mut state = CharacterAnimState::default();
+        state.set_timings(CharacterAnimTimings {
+            girlfriend_drop_counts: [Some(10), Some(70), None, None],
+            ..CharacterAnimTimings::default()
+        });
+
+        state.girlfriend_note_hit(Judgment::Bad, 69, Samples(100));
+        assert_eq!(state.poses().girlfriend.name, "danceRight");
+
+        state.girlfriend_combo_drop(70, Samples(200));
+        assert_eq!(state.poses().girlfriend.name, "drop70");
+        assert_eq!(state.poses().girlfriend.started_at, Samples(200));
+    }
+
+    #[test]
     fn opponent_chart_animation_returns_to_idle_after_hold_time() {
         let mut state = CharacterAnimState::default();
         state.play_chart_animation("dad", "cheer", Samples(0), true);
@@ -464,6 +557,8 @@ mod tests {
         let timings = CharacterAnimTimings {
             player_sing_steps: 6.1,
             opponent_sing_steps: 4.2,
+            girlfriend_combo_counts: [Some(50), None, None, None],
+            girlfriend_drop_counts: [Some(70), None, None, None],
         };
         state.set_timings(timings);
         state.player_note_hit(Lane::Left, Samples(1_000), 48_000, 100.0);

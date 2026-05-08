@@ -7,6 +7,7 @@
 use crate::animate_character_assets::{load_animate_character_sprite, AnimateCharacterSprite};
 use crate::asset_roots::baked_assets_root;
 use crate::bitmap_text_assets::{load_bitmap_text_assets, BitmapTextSkin};
+use crate::character_anim::COUNT_ANIM_SLOTS;
 use crate::character_anim::{CharacterAnimTimings, CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
 use crate::hold_cover_assets::{load_hold_cover_assets, HoldCoverSkin};
@@ -114,6 +115,14 @@ impl CharacterSet {
         CharacterAnimTimings {
             player_sing_steps: self.player.definition().sing_time,
             opponent_sing_steps: self.opponent.definition().sing_time,
+            girlfriend_combo_counts: count_animation_thresholds(
+                &self.girlfriend.definition().animations,
+                "combo",
+            ),
+            girlfriend_drop_counts: count_animation_thresholds(
+                &self.girlfriend.definition().animations,
+                "drop",
+            ),
         }
     }
 }
@@ -559,6 +568,23 @@ fn animation_duration_samples(sample_rate: u32, fps: u16, frame_count: usize) ->
     Samples((samples_per_frame * frame_count.max(1) as f64).ceil() as i64)
 }
 
+fn count_animation_thresholds(
+    animations: &[CharacterAnimation],
+    prefix: &str,
+) -> [Option<u32>; COUNT_ANIM_SLOTS] {
+    let mut counts = animations
+        .iter()
+        .filter_map(|animation| animation.name.strip_prefix(prefix))
+        .filter_map(|suffix| suffix.parse::<u32>().ok())
+        .collect::<Vec<_>>();
+    counts.sort_unstable();
+    let mut out = [None; COUNT_ANIM_SLOTS];
+    for (slot, count) in out.iter_mut().zip(counts) {
+        *slot = Some(count);
+    }
+    out
+}
+
 fn initial_animation(character: &CharacterDefinition) -> Result<&CharacterAnimation> {
     match character.initial_animation.as_deref() {
         Some(name) => character
@@ -695,6 +721,21 @@ mod tests {
     fn animation_duration_uses_frame_count_and_fps() {
         assert_eq!(animation_duration_samples(48_000, 24, 12), Samples(24_000));
         assert_eq!(animation_duration_samples(48_000, 0, 0), Samples(48_000));
+    }
+
+    #[test]
+    fn count_animation_thresholds_extracts_sorted_combo_suffixes() {
+        let json = br#"{"id":"gf","assetPath":"shared:characters/gf","animations":[{"name":"drop70","prefix":"Crying"},{"name":"combo50","prefix":"Cheer"}]}"#;
+        let character = CharacterDefinition::parse(json).unwrap();
+
+        assert_eq!(
+            count_animation_thresholds(&character.animations, "combo"),
+            [Some(50), None, None, None]
+        );
+        assert_eq!(
+            count_animation_thresholds(&character.animations, "drop"),
+            [Some(70), None, None, None]
+        );
     }
 
     #[test]

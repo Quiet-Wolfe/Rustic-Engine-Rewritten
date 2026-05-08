@@ -27,6 +27,7 @@ pub struct HitOutcome {
     pub is_sustain: bool,
     pub hold_end_at: Option<Samples>,
     pub combo_break: bool,
+    pub combo_count: u32,
     pub combo_popup: Option<u32>,
 }
 
@@ -34,6 +35,7 @@ pub struct HitOutcome {
 #[non_exhaustive]
 pub struct HoldDropOutcome {
     pub score_delta: i64,
+    pub combo_count: u32,
     pub combo_popup: Option<u32>,
 }
 
@@ -41,6 +43,7 @@ pub struct HoldDropOutcome {
 struct TimedHitRegistration {
     judgment: Judgment,
     combo_break: bool,
+    combo_count: u32,
     combo_popup: Option<u32>,
 }
 
@@ -59,11 +62,13 @@ impl PlayState {
             return TimedHitRegistration {
                 judgment,
                 combo_break: true,
+                combo_count: 0,
                 combo_popup: None,
             };
         }
 
         let previous_combo = self.combo;
+        let combo_count = previous_combo + 1;
         self.score += score_for_timing(abs_diff_ms);
         self.add_judgment_tally(judgment);
         self.apply_health(health_delta(judgment));
@@ -87,6 +92,7 @@ impl PlayState {
         TimedHitRegistration {
             judgment,
             combo_break,
+            combo_count,
             combo_popup,
         }
     }
@@ -135,6 +141,7 @@ impl PlayState {
         self.combo = 0;
         Some(HoldDropOutcome {
             score_delta: delta,
+            combo_count: previous_combo,
             combo_popup: (previous_combo >= 10).then_some(0),
         })
     }
@@ -198,6 +205,7 @@ impl PlayState {
             is_sustain: false,
             hold_end_at,
             combo_break: hit.combo_break,
+            combo_count: hit.combo_count,
             combo_popup: hit.combo_popup,
         })
     }
@@ -415,6 +423,16 @@ mod tests {
     }
 
     #[test]
+    fn hold_drop_reports_previous_combo_for_character_events() {
+        let mut s = PlayState::new();
+        s.combo = 70;
+
+        let drop = s.register_hold_drop(48_000, 48_000);
+
+        assert_eq!(drop.map(|drop| drop.combo_count), Some(70));
+    }
+
+    #[test]
     fn hold_tick_adds_continuous_score_and_health_with_fractional_carry() {
         let mut s = PlayState::new();
 
@@ -496,6 +514,17 @@ mod tests {
         let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
         assert_eq!(j.map(|outcome| outcome.judgment), Some(Judgment::Sick));
         assert_eq!(s.resolved_notes.len(), 1);
+    }
+
+    #[test]
+    fn hit_outcome_reports_next_combo_for_character_events() {
+        let mut s = PlayState::new();
+        s.combo = 49;
+        add_note(&mut s, 0, Lane::Left, 48_000);
+
+        let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
+
+        assert_eq!(j.map(|outcome| outcome.combo_count), Some(50));
     }
 
     #[test]

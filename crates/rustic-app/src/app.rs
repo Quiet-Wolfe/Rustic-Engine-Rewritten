@@ -555,6 +555,9 @@ impl App {
                     self.held_lanes.confirm(lane, cursor, confirm_duration);
                     self.character_anim
                         .player_note_hit(lane, cursor, sample_rate, play_state.bpm);
+                    let combo_count = outcome.combo_count;
+                    self.character_anim
+                        .girlfriend_note_hit(outcome.judgment, combo_count, cursor);
                     restore_vocals = true;
                     if !outcome.is_sustain {
                         self.score_popups
@@ -594,6 +597,8 @@ impl App {
         };
         self.character_anim
             .player_note_miss(lane, cursor, sample_rate, play_state.bpm);
+        self.character_anim
+            .girlfriend_combo_drop(drop.combo_count, cursor);
         self.score_popups
             .push(Judgment::Miss, drop.combo_popup, cursor);
         set_vocals_gain(&self.mixer, 0.0);
