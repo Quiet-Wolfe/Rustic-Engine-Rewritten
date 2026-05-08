@@ -20,7 +20,11 @@ pub fn load_preview_stems_for(
     let song = selection.song;
     let parsed = load_preview_song_for(selection).ok();
     let inst = load_first_stem(&resolver, &inst_paths(selection))?;
-    let vocals = load_optional_vocals(&resolver, &vocal_paths(selection, parsed.as_ref()));
+    let vocals = load_optional_vocals(
+        &resolver,
+        &vocal_path_groups(selection, parsed.as_ref()),
+        &selection.song.voices_path(),
+    );
     configure_song_stems(mixer, inst, vocals, start_cursor, song.folder)
 }
 
@@ -75,13 +79,23 @@ fn load_first_stem(resolver: &OverlayResolver, paths: &[String]) -> Result<Sound
     Err(anyhow!("no usable stem in [{}]", errors.join("; ")))
 }
 
-fn load_optional_vocals(resolver: &OverlayResolver, paths: &[String]) -> Vec<SoundSource> {
+fn load_optional_vocals(
+    resolver: &OverlayResolver,
+    groups: &[Vec<String>],
+    legacy_path: &str,
+) -> Vec<SoundSource> {
     let mut vocals = Vec::new();
     let mut errors = Vec::new();
-    for path in paths {
-        match load_stem(resolver, path) {
+    for paths in groups {
+        match load_first_stem(resolver, paths) {
             Ok(stem) => vocals.push(stem),
-            Err(e) => errors.push(format!("{path}: {e:#}")),
+            Err(e) => errors.push(format!("{e:#}")),
+        }
+    }
+    if vocals.is_empty() {
+        match load_stem(resolver, legacy_path) {
+            Ok(stem) => vocals.push(stem),
+            Err(e) => errors.push(format!("{legacy_path}: {e:#}")),
         }
     }
     if vocals.is_empty() {
@@ -91,23 +105,45 @@ fn load_optional_vocals(resolver: &OverlayResolver, paths: &[String]) -> Vec<Sou
 }
 
 fn inst_paths(selection: PreviewSelection) -> Vec<String> {
-    vec![
-        format!("songs/{}/Inst.ogg", selection.song.folder),
-        selection.song.inst_path(),
-    ]
+    let mut paths = Vec::new();
+    if let Some(suffix) = selection.difficulty.chart_variation_suffix() {
+        paths.push(format!("songs/{}/Inst-{suffix}.ogg", selection.song.folder));
+    }
+    paths.push(format!("songs/{}/Inst.ogg", selection.song.folder));
+    paths.push(selection.song.inst_path());
+    paths
 }
 
+#[cfg(test)]
 fn vocal_paths(selection: PreviewSelection, parsed: Option<&ParsedSong>) -> Vec<String> {
-    let mut paths = parsed
+    let mut paths: Vec<_> = vocal_path_groups(selection, parsed)
+        .into_iter()
+        .flatten()
+        .collect();
+    paths.push(selection.song.voices_path());
+    paths
+}
+
+fn vocal_path_groups(selection: PreviewSelection, parsed: Option<&ParsedSong>) -> Vec<Vec<String>> {
+    let suffix = selection.difficulty.chart_variation_suffix();
+    parsed
         .map(|parsed| {
             vocal_character_ids(parsed)
                 .into_iter()
-                .map(|id| format!("songs/{}/Voices-{id}.ogg", selection.song.folder))
+                .map(|id| {
+                    let mut paths = Vec::new();
+                    if let Some(suffix) = suffix {
+                        paths.push(format!(
+                            "songs/{}/Voices-{id}-{suffix}.ogg",
+                            selection.song.folder
+                        ));
+                    }
+                    paths.push(format!("songs/{}/Voices-{id}.ogg", selection.song.folder));
+                    paths
+                })
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_default();
-    paths.push(selection.song.voices_path());
-    paths
+        .unwrap_or_default()
 }
 
 fn vocal_character_ids(parsed: &ParsedSong) -> Vec<&str> {
@@ -181,9 +217,61 @@ mod tests {
     }
 
     #[test]
+    fn preview_stem_paths_prefer_erect_variant_stems() {
+        const CHART: &str = r#"{"scrollSpeed":{"erect":1},"notes":{"erect":[]}}"#;
+        const METADATA: &str = r#"{
+            "songName": "DadBattle Erect",
+            "playData": {
+                "characters": { "player": "bf", "opponent": "dad", "girlfriend": "gf" },
+                "stage": "mainStageErect"
+            },
+            "timeChanges": [{ "bpm": 190 }]
+        }"#;
+        let selection = PreviewSelection::from_keys(Some("dadbattle"), Some("erect"));
+        let parsed =
+            ParsedSong::parse_vslice(CHART.as_bytes(), METADATA.as_bytes(), "erect").unwrap();
+
+        assert_eq!(
+            inst_paths(selection),
+            vec![
+                "songs/dadbattle/Inst-erect.ogg",
+                "songs/dadbattle/Inst.ogg",
+                "music/Dadbattle_Inst.ogg"
+            ]
+        );
+        assert_eq!(
+            vocal_paths(selection, Some(&parsed)),
+            vec![
+                "songs/dadbattle/Voices-bf-erect.ogg",
+                "songs/dadbattle/Voices-bf.ogg",
+                "songs/dadbattle/Voices-dad-erect.ogg",
+                "songs/dadbattle/Voices-dad.ogg",
+                "songs/dadbattle/Voices-gf-erect.ogg",
+                "songs/dadbattle/Voices-gf.ogg",
+                "music/Dadbattle_Voices.ogg"
+            ]
+        );
+    }
+
+    #[test]
     fn tutorial_vslice_stems_load_as_split_sources() {
         let mixer = SharedMixer::new(Mixer::new(48_000));
         let selection = PreviewSelection::from_keys(Some("tutorial"), Some("normal"));
+
+        load_preview_stems_for(&mixer, selection, Samples(0)).unwrap();
+
+        mixer
+            .edit(|mixer| {
+                assert_eq!(mixer.voice_count(), 3);
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn dadbattle_erect_stems_load_as_variant_split_sources() {
+        let mixer = SharedMixer::new(Mixer::new(48_000));
+        let selection = PreviewSelection::from_keys(Some("dadbattle"), Some("erect"));
 
         load_preview_stems_for(&mixer, selection, Samples(0)).unwrap();
 

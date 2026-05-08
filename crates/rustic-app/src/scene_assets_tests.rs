@@ -154,6 +154,19 @@ fn preview_play_state_uses_selected_difficulty() {
 }
 
 #[test]
+fn preview_play_state_uses_erect_variant_files() {
+    let erect = load_preview_song_for(PreviewSelection {
+        song: PreviewSong::DADBATTLE,
+        difficulty: PreviewDifficulty::Erect,
+    })
+    .expect("erect dadbattle chart");
+
+    assert_eq!(erect.chart.stage, "mainStageErect");
+    assert_eq!(erect.chart.bpm, 190.0);
+    assert!(erect.chart.notes.iter().any(|note| note.time_ms > 60_000.0));
+}
+
+#[test]
 fn preview_song_metadata_preserves_tutorial_gf_opponent() {
     let chart = load_preview_song_for(PreviewSelection {
         song: PreviewSong::TUTORIAL,

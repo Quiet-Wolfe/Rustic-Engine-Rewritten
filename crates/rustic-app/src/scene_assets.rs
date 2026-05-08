@@ -424,9 +424,9 @@ pub fn load_preview_play_state(sample_rate: u32) -> Result<PlayState> {
 pub(crate) fn load_preview_song_for(selection: PreviewSelection) -> Result<ParsedSong> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
     let song = selection.song;
-    let chart_path = AssetPath::new(song.chart_path())?;
-    let metadata_path = AssetPath::new(song.metadata_path())?;
     let difficulty = selection.difficulty.as_str();
+    let chart_path = AssetPath::new(song.chart_path_for(selection.difficulty))?;
+    let metadata_path = AssetPath::new(song.metadata_path_for(selection.difficulty))?;
     load_vslice_chart(&resolver, &chart_path, &metadata_path, difficulty)
         .with_context(|| format!("load {} + {} [{}]", chart_path, metadata_path, difficulty))
 }
