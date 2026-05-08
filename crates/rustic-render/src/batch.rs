@@ -35,10 +35,11 @@ pub struct SpriteInstance {
     pub uv_rotated: f32,
     pub _pad1: f32,
     pub color: [f32; 4],
+    pub color_offset: [f32; 4],
 }
 
 impl SpriteInstance {
-    pub const ATTRIBUTES: [wgpu::VertexAttribute; 12] = [
+    pub const ATTRIBUTES: [wgpu::VertexAttribute; 13] = [
         wgpu::VertexAttribute {
             format: wgpu::VertexFormat::Float32x2,
             offset: 0,
@@ -99,6 +100,11 @@ impl SpriteInstance {
             offset: 88,
             shader_location: 12,
         },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 104,
+            shader_location: 13,
+        },
     ];
 }
 
@@ -127,6 +133,7 @@ impl From<&DrawCommand> for SpriteInstance {
             uv_rotated: if c.uv_rotated { 1.0 } else { 0.0 },
             _pad1: 0.0,
             color: c.color.to_array(),
+            color_offset: c.color_offset.to_array(),
         }
     }
 }
@@ -440,6 +447,7 @@ mod tests {
             scroll_factor: Vec2::ONE,
             affine: DrawCommand::IDENTITY_AFFINE,
             color: Vec4::ONE,
+            color_offset: Vec4::ZERO,
         }
     }
 
@@ -447,13 +455,15 @@ mod tests {
     fn sprite_instance_carries_affine_matrix() {
         let mut cmd = cmd(0, RenderLayer::Stage, 0, 1);
         cmd.affine = [0.5, 0.25, -0.75, 1.5, 12.0, -8.0];
+        cmd.color_offset = Vec4::new(0.1, 0.2, 0.3, -0.4);
 
         let instance = SpriteInstance::from(&cmd);
 
-        assert_eq!(std::mem::size_of::<SpriteInstance>(), 104);
+        assert_eq!(std::mem::size_of::<SpriteInstance>(), 120);
         assert_eq!(instance.affine_x, [0.5, 0.25]);
         assert_eq!(instance.affine_y, [-0.75, 1.5]);
         assert_eq!(instance.affine_t, [12.0, -8.0]);
+        assert_eq!(instance.color_offset, [0.1, 0.2, 0.3, -0.4]);
     }
 
     #[test]

@@ -15,6 +15,7 @@
 //   a_uv_max       vec2<f32>
 //   a_uv_rotated   f32           // Sparrow rotated="true"
 //   a_color        vec4<f32>
+//   a_color_offset vec4<f32>
 //
 // Camera uniform binds the view-projection matrix (group=0 binding=0).
 // Atlas texture + sampler bind at group=1.
@@ -42,12 +43,14 @@ struct VsIn {
     @location(10) uv_max: vec2<f32>,
     @location(11) uv_rotated: f32,
     @location(12) color: vec4<f32>,
+    @location(13) color_offset: vec4<f32>,
 };
 
 struct VsOut {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) color_offset: vec4<f32>,
 };
 
 @vertex
@@ -77,11 +80,12 @@ fn vs_main(input: VsIn) -> VsOut {
     out.position = u_camera.view_proj * vec4<f32>(world, 0.0, 1.0);
     out.uv = uv;
     out.color = input.color;
+    out.color_offset = input.color_offset;
     return out;
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let tex = textureSample(t_atlas, s_atlas, in.uv);
-    return tex * in.color;
+    return clamp(tex * in.color + in.color_offset, vec4<f32>(0.0), vec4<f32>(1.0));
 }

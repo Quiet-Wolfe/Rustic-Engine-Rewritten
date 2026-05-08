@@ -15,6 +15,7 @@ pub struct Animation {
     pub symbols: Vec<Symbol>,
     pub stage_matrix: [f32; 6],
     pub stage_color: [f32; 4],
+    pub stage_color_offset: [f32; 4],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +53,7 @@ pub struct TimelineFrame {
 pub struct Element {
     pub matrix: [f32; 6],
     pub color: [f32; 4],
+    pub color_offset: [f32; 4],
     pub kind: ElementKind,
 }
 
@@ -83,6 +85,7 @@ pub struct DrawPart {
     pub frame_name: String,
     pub matrix: [f32; 6],
     pub color: [f32; 4],
+    pub color_offset: [f32; 4],
 }
 
 impl Animation {
@@ -138,6 +141,9 @@ impl Animation {
             stage_color: stage
                 .as_ref()
                 .map_or_else(identity_color, |stage| stage.color),
+            stage_color_offset: stage
+                .as_ref()
+                .map_or_else(zero_color_offset, |stage| stage.color_offset),
         })
     }
 
@@ -170,6 +176,7 @@ impl Animation {
             label.index.saturating_add(frame_offset),
             self.stage_matrix,
             self.stage_color,
+            self.stage_color_offset,
             &mut Vec::new(),
             &mut parts,
         )?;
@@ -190,6 +197,7 @@ impl Animation {
             frame_index,
             identity_matrix(),
             identity_color(),
+            zero_color_offset(),
             &mut Vec::new(),
             &mut parts,
         )?;
@@ -202,6 +210,7 @@ impl Animation {
         frame_index: u32,
         parent_matrix: [f32; 6],
         parent_color: [f32; 4],
+        parent_color_offset: [f32; 4],
         stack: &mut Vec<String>,
         parts: &mut Vec<DrawPart>,
     ) -> AnimateResult<()> {
@@ -218,6 +227,7 @@ impl Animation {
             frame_index,
             parent_matrix,
             parent_color,
+            parent_color_offset,
             stack,
             parts,
         );
@@ -231,6 +241,7 @@ impl Animation {
         frame_index: u32,
         parent_matrix: [f32; 6],
         parent_color: [f32; 4],
+        parent_color_offset: [f32; 4],
         stack: &mut Vec<String>,
         parts: &mut Vec<DrawPart>,
     ) -> AnimateResult<()> {
@@ -245,6 +256,7 @@ impl Animation {
                     frame_offset,
                     parent_matrix,
                     parent_color,
+                    parent_color_offset,
                     stack,
                     parts,
                 )?;
@@ -259,17 +271,24 @@ impl Animation {
         frame_offset: u32,
         parent_matrix: [f32; 6],
         parent_color: [f32; 4],
+        parent_color_offset: [f32; 4],
         stack: &mut Vec<String>,
         parts: &mut Vec<DrawPart>,
     ) -> AnimateResult<()> {
         let matrix = compose_affine(parent_matrix, element.matrix);
-        let color = multiply_color(parent_color, element.color);
+        let (color, color_offset) = concat_color(
+            parent_color,
+            parent_color_offset,
+            element.color,
+            element.color_offset,
+        );
         match &element.kind {
             ElementKind::Atlas(instance) => {
                 parts.push(DrawPart {
                     frame_name: instance.frame_name.clone(),
                     matrix,
                     color,
+                    color_offset,
                 });
                 Ok(())
             }
@@ -281,7 +300,15 @@ impl Animation {
                     ))
                 })?;
                 let frame_index = symbol_frame_index(instance, symbol.duration(), frame_offset);
-                self.flatten_symbol(symbol, frame_index, matrix, color, stack, parts)
+                self.flatten_symbol(
+                    symbol,
+                    frame_index,
+                    matrix,
+                    color,
+                    color_offset,
+                    stack,
+                    parts,
+                )
             }
         }
     }
@@ -425,22 +452,41 @@ fn compose_affine(parent: [f32; 6], child: [f32; 6]) -> [f32; 6] {
     ]
 }
 
-fn multiply_color(parent: [f32; 4], child: [f32; 4]) -> [f32; 4] {
-    [
+fn concat_color(
+    parent: [f32; 4],
+    parent_offset: [f32; 4],
+    child: [f32; 4],
+    child_offset: [f32; 4],
+) -> ([f32; 4], [f32; 4]) {
+    let color = [
         parent[0] * child[0],
         parent[1] * child[1],
         parent[2] * child[2],
         parent[3] * child[3],
-    ]
+    ];
+    let offset = [
+        parent_offset[0] * child[0] + child_offset[0],
+        parent_offset[1] * child[1] + child_offset[1],
+        parent_offset[2] * child[2] + child_offset[2],
+        parent_offset[3] * child[3] + child_offset[3],
+    ];
+    (color, offset)
 }
 
-fn color_multiplier(color: RawColorTransform) -> [f32; 4] {
-    [
+fn color_transform(color: RawColorTransform) -> ([f32; 4], [f32; 4]) {
+    let multiplier = [
         color.red_multiplier,
         color.green_multiplier,
         color.blue_multiplier,
         color.alpha_multiplier,
-    ]
+    ];
+    let offset = [
+        color.red_offset / 255.0,
+        color.green_offset / 255.0,
+        color.blue_offset / 255.0,
+        color.alpha_offset / 255.0,
+    ];
+    (multiplier, offset)
 }
 
 fn frame_elements(elements: Vec<RawElement>) -> AnimateResult<Vec<Element>> {
@@ -465,12 +511,14 @@ fn symbol_element(instance: RawSymbolInstance) -> AnimateResult<Element> {
         return Err(AnimateError::Atlas("element symbol name is empty".into()));
     }
     let position = instance.bitmap.and_then(|bitmap| bitmap.position);
+    let (color, color_offset) = instance
+        .color
+        .map(color_transform)
+        .unwrap_or_else(identity_color_transform);
     Ok(Element {
         matrix: instance_matrix_with_position(instance.matrix, instance.matrix3d, position),
-        color: instance
-            .color
-            .map(color_multiplier)
-            .unwrap_or_else(identity_color),
+        color,
+        color_offset,
         kind: ElementKind::Symbol(SymbolInstance {
             symbol_name: instance.symbol_name,
             first_frame: normalize_symbol_first_frame(
@@ -492,16 +540,18 @@ fn atlas_element(instance: RawAtlasInstance) -> AnimateResult<Element> {
             "element atlas frame name is empty".into(),
         ));
     }
+    let (color, color_offset) = instance
+        .color
+        .map(color_transform)
+        .unwrap_or_else(identity_color_transform);
     Ok(Element {
         matrix: instance_matrix_with_position(
             instance.matrix,
             instance.matrix3d,
             instance.position,
         ),
-        color: instance
-            .color
-            .map(color_multiplier)
-            .unwrap_or_else(identity_color),
+        color,
+        color_offset,
         kind: ElementKind::Atlas(AtlasInstance {
             frame_name: instance.frame_name,
         }),
@@ -655,6 +705,14 @@ struct RawColorTransform {
     blue_multiplier: f32,
     #[serde(rename = "AM", default = "one")]
     alpha_multiplier: f32,
+    #[serde(rename = "RO", default)]
+    red_offset: f32,
+    #[serde(rename = "GO", default)]
+    green_offset: f32,
+    #[serde(rename = "BO", default)]
+    blue_offset: f32,
+    #[serde(rename = "AO", default)]
+    alpha_offset: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -677,6 +735,14 @@ fn identity_matrix() -> [f32; 6] {
 
 fn identity_color() -> [f32; 4] {
     [1.0, 1.0, 1.0, 1.0]
+}
+
+fn zero_color_offset() -> [f32; 4] {
+    [0.0, 0.0, 0.0, 0.0]
+}
+
+fn identity_color_transform() -> ([f32; 4], [f32; 4]) {
+    (identity_color(), zero_color_offset())
 }
 
 fn one() -> f32 {

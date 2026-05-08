@@ -50,6 +50,9 @@ pub(crate) fn parse(bytes: &[u8]) -> AnimateResult<Animation> {
         symbols,
         stage_matrix: stage.as_ref().map_or(ID_MATRIX, |stage| stage.matrix),
         stage_color: stage.as_ref().map_or(ID_COLOR, |stage| stage.color),
+        stage_color_offset: stage
+            .as_ref()
+            .map_or(ZERO_COLOR_OFFSET, |stage| stage.color_offset),
     })
 }
 
@@ -59,6 +62,7 @@ impl DrawPart {
             frame_name: frame_name.into(),
             matrix,
             color: ID_COLOR,
+            color_offset: ZERO_COLOR_OFFSET,
         }
     }
 }
@@ -142,9 +146,14 @@ fn symbol_element(instance: RawSymbolInstance) -> AnimateResult<Element> {
         return Err(AnimateError::Atlas("element symbol name is empty".into()));
     }
     let position = instance.bitmap.and_then(|bitmap| bitmap.position);
+    let (color, color_offset) = instance
+        .color
+        .map(color_transform)
+        .unwrap_or((ID_COLOR, ZERO_COLOR_OFFSET));
     Ok(Element {
         matrix: matrix_with_position(instance.matrix, position),
-        color: ID_COLOR,
+        color,
+        color_offset,
         kind: ElementKind::Symbol(SymbolInstance {
             symbol_name: instance.symbol_name,
             first_frame: normalize_symbol_first_frame(
@@ -166,13 +175,35 @@ fn atlas_element(instance: RawAtlasInstance) -> AnimateResult<Element> {
             "element atlas frame name is empty".into(),
         ));
     }
+    let (color, color_offset) = instance
+        .color
+        .map(color_transform)
+        .unwrap_or((ID_COLOR, ZERO_COLOR_OFFSET));
     Ok(Element {
         matrix: matrix_with_position(instance.matrix, instance.position),
-        color: ID_COLOR,
+        color,
+        color_offset,
         kind: ElementKind::Atlas(AtlasInstance {
             frame_name: instance.name,
         }),
     })
+}
+
+fn color_transform(color: RawColorTransform) -> ([f32; 4], [f32; 4]) {
+    (
+        [
+            color.red_multiplier,
+            color.green_multiplier,
+            color.blue_multiplier,
+            color.alpha_multiplier,
+        ],
+        [
+            color.red_offset / 255.0,
+            color.green_offset / 255.0,
+            color.blue_offset / 255.0,
+            color.alpha_offset / 255.0,
+        ],
+    )
 }
 
 fn matrix_with_position(matrix: Option<RawMatrix3d>, position: Option<RawPoint>) -> [f32; 6] {
@@ -275,6 +306,8 @@ struct RawSymbolInstance {
     transform_point: RawPoint,
     #[serde(rename = "Matrix3D")]
     matrix: Option<RawMatrix3d>,
+    #[serde(rename = "color", alias = "Color", alias = "C")]
+    color: Option<RawColorTransform>,
     #[serde(alias = "BM")]
     bitmap: Option<RawBitmap>,
 }
@@ -286,6 +319,48 @@ struct RawAtlasInstance {
     position: Option<RawPoint>,
     #[serde(rename = "Matrix3D")]
     matrix: Option<RawMatrix3d>,
+    #[serde(rename = "color", alias = "Color", alias = "C")]
+    color: Option<RawColorTransform>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawColorTransform {
+    #[serde(
+        rename = "RM",
+        alias = "redMultiplier",
+        alias = "RedMultiplier",
+        default = "one"
+    )]
+    red_multiplier: f32,
+    #[serde(
+        rename = "GM",
+        alias = "greenMultiplier",
+        alias = "GreenMultiplier",
+        default = "one"
+    )]
+    green_multiplier: f32,
+    #[serde(
+        rename = "BM",
+        alias = "blueMultiplier",
+        alias = "BlueMultiplier",
+        default = "one"
+    )]
+    blue_multiplier: f32,
+    #[serde(
+        rename = "AM",
+        alias = "alphaMultiplier",
+        alias = "AlphaMultiplier",
+        default = "one"
+    )]
+    alpha_multiplier: f32,
+    #[serde(rename = "RO", alias = "redOffset", alias = "RedOffset", default)]
+    red_offset: f32,
+    #[serde(rename = "GO", alias = "greenOffset", alias = "GreenOffset", default)]
+    green_offset: f32,
+    #[serde(rename = "BO", alias = "blueOffset", alias = "BlueOffset", default)]
+    blue_offset: f32,
+    #[serde(rename = "AO", alias = "alphaOffset", alias = "AlphaOffset", default)]
+    alpha_offset: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -314,6 +389,11 @@ struct RawMatrix3d {
 
 const ID_MATRIX: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 const ID_COLOR: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+const ZERO_COLOR_OFFSET: [f32; 4] = [0.0, 0.0, 0.0, 0.0];
+
+fn one() -> f32 {
+    1.0
+}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
@@ -331,9 +411,10 @@ mod tests {
               "index": 0,
               "duration": 1,
               "elements": [{
-                "ATLAS_SPRITE_instance": {
-                  "name": "root0",
-                  "Matrix3D": {
+                    "ATLAS_SPRITE_instance": {
+                      "name": "root0",
+                      "color": { "RM": 0.5, "RO": 128 },
+                      "Matrix3D": {
                     "m00": 1, "m01": 0, "m02": 0, "m03": 0,
                     "m10": 0, "m11": 1, "m12": 0, "m13": 0,
                     "m20": 0, "m21": 0, "m22": 1, "m23": 0,
@@ -436,5 +517,7 @@ mod tests {
         let parts = animation.flatten_symbol_frame("root", 0).unwrap();
         assert_eq!(parts[0].frame_name, "root0");
         assert_eq!(parts[0].matrix, [1.0, 0.0, 0.0, 1.0, 3.0, 4.0]);
+        assert_eq!(parts[0].color, [0.5, 1.0, 1.0, 1.0]);
+        assert!((parts[0].color_offset[0] - 128.0 / 255.0).abs() < 1e-6);
     }
 }

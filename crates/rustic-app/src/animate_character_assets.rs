@@ -143,7 +143,8 @@ impl AnimateCharacterSprite {
         cmd.uv_min = frame.uv_min;
         cmd.uv_max = frame.uv_max;
         cmd.uv_rotated = frame.rotated;
-        cmd.color = glam::vec4(part.color[0], part.color[1], part.color[2], part.color[3]);
+        cmd.color = glam::Vec4::from_array(part.color);
+        cmd.color_offset = glam::Vec4::from_array(part.color_offset);
         if effective_flip_x(&self.character, self.is_player) {
             std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
         }

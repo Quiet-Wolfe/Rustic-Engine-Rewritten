@@ -204,7 +204,7 @@ fn flattens_inherited_color_transforms() {
                 "E": [{
                   "SI": {
                     "SN": "body",
-                    "C": { "M": "AD", "RM": 0.8, "AM": 0.5 }
+                    "C": { "M": "AD", "RM": 0.8, "AM": 0.5, "RO": 10, "AO": -5 }
                   }
                 }]
               }] }
@@ -217,7 +217,7 @@ fn flattens_inherited_color_transforms() {
                 "E": [{
                   "ASI": {
                     "N": "part",
-                    "C": { "M": "AD", "GM": 0.7, "AM": 0.25 }
+                    "C": { "M": "AD", "GM": 0.7, "AM": 0.25, "GO": 20, "AO": 4 }
                   }
                 }]
               }] }] }
@@ -230,6 +230,10 @@ fn flattens_inherited_color_transforms() {
     let parts = animation.flatten_label_frame("Idle", 0).unwrap();
     assert_eq!(parts[0].frame_name, "part");
     assert_eq!(parts[0].color, [0.8, 0.7, 1.0, 0.125]);
+    assert!((parts[0].color_offset[0] - 10.0 / 255.0).abs() < 1e-6);
+    assert!((parts[0].color_offset[1] - 20.0 / 255.0).abs() < 1e-6);
+    assert_eq!(parts[0].color_offset[2], 0.0);
+    assert!((parts[0].color_offset[3] - 2.75 / 255.0).abs() < 1e-6);
 }
 
 #[test]

@@ -31,6 +31,7 @@ pub struct DrawCommand {
     /// pivot/scale/rotation and before camera projection.
     pub affine: [f32; 6],
     pub color: Vec4,
+    pub color_offset: Vec4,
 }
 
 impl DrawCommand {
@@ -54,6 +55,7 @@ impl DrawCommand {
             scroll_factor: Vec2::ONE,
             affine: Self::IDENTITY_AFFINE,
             color: Vec4::ONE,
+            color_offset: Vec4::ZERO,
         }
     }
 }
