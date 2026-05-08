@@ -5,6 +5,7 @@
 //! crates remain free of filesystem and wgpu wiring.
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
 use crate::animate_character_assets::{load_animate_character_sprite, AnimateCharacterSprite};
+use crate::asset_roots::baked_assets_root;
 use crate::bitmap_text_assets::{load_bitmap_text_assets, BitmapTextSkin};
 use crate::character_anim::{CharacterAnimTimings, CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
@@ -13,7 +14,7 @@ use crate::hud_assets::{load_hud_assets, HudSkin};
 use crate::note_assets::{load_note_skin, NoteSkin};
 use crate::note_splash_assets::{load_note_splash_assets, NoteSplashSkin};
 use crate::popup_assets::{load_popup_assets, PopupSkin};
-use crate::preview_song::PreviewSong;
+use crate::preview_song::PreviewSelection;
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_character, load_png, load_sparrow, load_stage, load_vslice_chart, AssetPath,
@@ -256,7 +257,7 @@ impl CharacterPose {
 }
 
 pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<LoadedScene> {
-    let resolver = OverlayResolver::new().with_baked_root("assets/baked");
+    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
     let stage_path = AssetPath::new("data/stages/stage.json")?;
     let stage = load_stage(&resolver, &stage_path).context("load default stage definition")?;
 
@@ -327,12 +328,17 @@ pub fn load_default_scene(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<
 }
 
 pub fn load_preview_play_state(sample_rate: u32) -> Result<PlayState> {
-    let resolver = OverlayResolver::new().with_baked_root("assets/baked");
-    let song = PreviewSong::from_env();
+    load_preview_play_state_for(PreviewSelection::from_env(), sample_rate)
+}
+
+fn load_preview_play_state_for(selection: PreviewSelection, sample_rate: u32) -> Result<PlayState> {
+    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let song = selection.song;
     let chart_path = AssetPath::new(song.chart_path())?;
     let metadata_path = AssetPath::new(song.metadata_path())?;
-    let chart = load_vslice_chart(&resolver, &chart_path, &metadata_path, "normal")
-        .with_context(|| format!("load {} + {}", chart_path, metadata_path))?;
+    let difficulty = selection.difficulty.as_str();
+    let chart = load_vslice_chart(&resolver, &chart_path, &metadata_path, difficulty)
+        .with_context(|| format!("load {} + {} [{}]", chart_path, metadata_path, difficulty))?;
     Ok(PlayState::from_chart(
         SongId::new(song.id),
         &chart,
@@ -633,6 +639,7 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::preview_song::{PreviewDifficulty, PreviewSong};
 
     #[test]
     fn non_looping_animation_frames_clamp_to_last_frame() {
@@ -676,5 +683,28 @@ mod tests {
     fn animation_duration_uses_frame_count_and_fps() {
         assert_eq!(animation_duration_samples(48_000, 24, 12), Samples(24_000));
         assert_eq!(animation_duration_samples(48_000, 0, 0), Samples(48_000));
+    }
+
+    #[test]
+    fn preview_play_state_uses_selected_difficulty() {
+        let easy = load_preview_play_state_for(
+            PreviewSelection {
+                song: PreviewSong::BOPEEBO,
+                difficulty: PreviewDifficulty::Easy,
+            },
+            48_000,
+        )
+        .expect("easy bopeebo chart");
+        let hard = load_preview_play_state_for(
+            PreviewSelection {
+                song: PreviewSong::BOPEEBO,
+                difficulty: PreviewDifficulty::Hard,
+            },
+            48_000,
+        )
+        .expect("hard bopeebo chart");
+        assert_eq!(easy.scroll_speed, 1.2);
+        assert_eq!(hard.scroll_speed, 1.6);
+        assert!(hard.notes.len() > easy.notes.len());
     }
 }

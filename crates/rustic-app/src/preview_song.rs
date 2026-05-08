@@ -3,6 +3,7 @@
 use std::env;
 
 const PREVIEW_SONG_ENV: &str = "RUSTIC_PREVIEW_SONG";
+const PREVIEW_DIFFICULTY_ENV: &str = "RUSTIC_PREVIEW_DIFFICULTY";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreviewSong {
@@ -20,12 +21,7 @@ impl PreviewSong {
     }
 
     pub fn from_key(value: &str) -> Option<Self> {
-        match value
-            .trim()
-            .to_ascii_lowercase()
-            .replace([' ', '_'], "-")
-            .as_str()
-        {
+        match normalized_key(value).as_str() {
             "tutorial" => Some(Self::TUTORIAL),
             "bopeebo" => Some(Self::BOPEEBO),
             "fresh" => Some(Self::FRESH),
@@ -50,26 +46,89 @@ impl PreviewSong {
         format!("music/{}_Voices.ogg", self.audio_prefix)
     }
 
-    const TUTORIAL: Self = Self {
+    pub(crate) const TUTORIAL: Self = Self {
         id: 0,
         folder: "tutorial",
         audio_prefix: "Tutorial",
     };
-    const BOPEEBO: Self = Self {
+    pub(crate) const BOPEEBO: Self = Self {
         id: 1,
         folder: "bopeebo",
         audio_prefix: "Bopeebo",
     };
-    const FRESH: Self = Self {
+    pub(crate) const FRESH: Self = Self {
         id: 2,
         folder: "fresh",
         audio_prefix: "Fresh",
     };
-    const DADBATTLE: Self = Self {
+    pub(crate) const DADBATTLE: Self = Self {
         id: 3,
         folder: "dadbattle",
         audio_prefix: "Dadbattle",
     };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewDifficulty {
+    Easy,
+    Normal,
+    Hard,
+}
+
+impl PreviewDifficulty {
+    pub fn from_env() -> Self {
+        env::var(PREVIEW_DIFFICULTY_ENV)
+            .ok()
+            .and_then(|value| Self::from_key(&value))
+            .unwrap_or(Self::Normal)
+    }
+
+    pub fn from_key(value: &str) -> Option<Self> {
+        match normalized_key(value).as_str() {
+            "easy" => Some(Self::Easy),
+            "normal" | "medium" => Some(Self::Normal),
+            "hard" => Some(Self::Hard),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Easy => "easy",
+            Self::Normal => "normal",
+            Self::Hard => "hard",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewSelection {
+    pub song: PreviewSong,
+    pub difficulty: PreviewDifficulty,
+}
+
+impl PreviewSelection {
+    pub fn from_env() -> Self {
+        Self {
+            song: PreviewSong::from_env(),
+            difficulty: PreviewDifficulty::from_env(),
+        }
+    }
+
+    pub fn from_keys(song: Option<&str>, difficulty: Option<&str>) -> Self {
+        Self {
+            song: song
+                .and_then(PreviewSong::from_key)
+                .unwrap_or(PreviewSong::BOPEEBO),
+            difficulty: difficulty
+                .and_then(PreviewDifficulty::from_key)
+                .unwrap_or(PreviewDifficulty::Normal),
+        }
+    }
+}
+
+fn normalized_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase().replace([' ', '_'], "-")
 }
 
 #[cfg(test)]
@@ -98,5 +157,43 @@ mod tests {
             "data/songs/dadbattle/dadbattle-chart.json"
         );
         assert_eq!(song.inst_path(), "music/Dadbattle_Inst.ogg");
+    }
+
+    #[test]
+    fn preview_difficulty_key_accepts_base_difficulties() {
+        assert_eq!(
+            PreviewDifficulty::from_key("easy"),
+            Some(PreviewDifficulty::Easy)
+        );
+        assert_eq!(
+            PreviewDifficulty::from_key("Medium"),
+            Some(PreviewDifficulty::Normal)
+        );
+        assert_eq!(
+            PreviewDifficulty::from_key("HARD"),
+            Some(PreviewDifficulty::Hard)
+        );
+    }
+
+    #[test]
+    fn preview_selection_defaults_to_bopeebo_normal() {
+        assert_eq!(
+            PreviewSelection::from_keys(None, None),
+            PreviewSelection {
+                song: PreviewSong::BOPEEBO,
+                difficulty: PreviewDifficulty::Normal,
+            }
+        );
+    }
+
+    #[test]
+    fn preview_selection_accepts_song_and_difficulty_keys() {
+        assert_eq!(
+            PreviewSelection::from_keys(Some("fresh"), Some("hard")),
+            PreviewSelection {
+                song: PreviewSong::FRESH,
+                difficulty: PreviewDifficulty::Hard,
+            }
+        );
     }
 }
