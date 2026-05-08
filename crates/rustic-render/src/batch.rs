@@ -181,7 +181,6 @@ pub struct SpriteBatcher {
     instances: Vec<SpriteInstance>,
     instance_buf: Option<wgpu::Buffer>,
     instance_capacity: u32,
-    camera_uniform_buf: Option<wgpu::Buffer>,
 }
 
 impl SpriteBatcher {
@@ -253,13 +252,7 @@ impl SpriteBatcher {
         }
         self.upload_instances(rs);
 
-        // Camera uniform buffer big enough for one Mat4 — we rebind per
-        // run via a fresh BindGroup. (For v1 this is fine; gameplay
-        // typically has 3 cameras and a few hundred sprites.)
-        self.ensure_camera_uniform_buf(rs);
-        let Some(cam_buf) = self.camera_uniform_buf.as_ref() else {
-            return;
-        };
+        let camera_bindings = camera_bindings_for_runs(rs, pipeline, cameras, &runs);
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("rustic.sprite.pass"),
@@ -282,31 +275,20 @@ impl SpriteBatcher {
         }
 
         let mut current_camera: Option<CameraId> = None;
-        let mut current_cam_bg: Option<wgpu::BindGroup> = None;
+        let mut current_cam_bg: Option<&wgpu::BindGroup> = None;
 
         for run in &runs {
             // Rebind camera if it changed.
             if current_camera != Some(run.camera) {
                 if let Some(camera) = cameras.get(run.camera) {
-                    let m = camera.view_proj(REFERENCE_WIDTH as f32, REFERENCE_HEIGHT as f32);
-                    let uniform = CameraUniform {
-                        view_proj: m.to_cols_array_2d(),
-                    };
-                    rs.queue
-                        .write_buffer(cam_buf, 0, bytemuck::bytes_of(&uniform));
-                    let bg = rs.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("rustic.sprite.camera_bg"),
-                        layout: &pipeline.camera_bgl,
-                        entries: &[wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: cam_buf.as_entire_binding(),
-                        }],
-                    });
-                    current_cam_bg = Some(bg);
+                    current_cam_bg = camera_bindings
+                        .iter()
+                        .find(|binding| binding.camera == camera.id)
+                        .map(|binding| &binding.bind_group);
                     current_camera = Some(run.camera);
                 }
             }
-            let Some(cam_bg) = current_cam_bg.as_ref() else {
+            let Some(cam_bg) = current_cam_bg else {
                 continue;
             };
             let Some(tex) = atlases.get(&run.atlas) else {
@@ -336,17 +318,6 @@ impl SpriteBatcher {
         }
     }
 
-    fn ensure_camera_uniform_buf(&mut self, rs: &RenderState) {
-        if self.camera_uniform_buf.is_none() {
-            self.camera_uniform_buf = Some(rs.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rustic.sprite.camera_ub"),
-                size: std::mem::size_of::<CameraUniform>() as u64,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }));
-        }
-    }
-
     fn upload_instances(&mut self, rs: &RenderState) {
         let needed = self.instances.len() as u32;
         if needed == 0 {
@@ -367,6 +338,71 @@ impl SpriteBatcher {
                 .write_buffer(buf, 0, bytemuck::cast_slice(&self.instances));
         }
     }
+}
+
+struct CameraBinding {
+    camera: CameraId,
+    bind_group: wgpu::BindGroup,
+    _buffer: wgpu::Buffer,
+}
+
+fn camera_bindings_for_runs(
+    rs: &RenderState,
+    pipeline: &SpritePipeline,
+    cameras: &CameraRegistry,
+    runs: &[Run],
+) -> Vec<CameraBinding> {
+    unique_run_cameras(runs)
+        .into_iter()
+        .filter_map(|id| {
+            cameras
+                .get(id)
+                .map(|camera| camera_binding(rs, pipeline, camera))
+        })
+        .collect()
+}
+
+fn camera_binding(rs: &RenderState, pipeline: &SpritePipeline, camera: &Camera) -> CameraBinding {
+    let uniform = CameraUniform {
+        view_proj: camera
+            .view_proj(REFERENCE_WIDTH as f32, REFERENCE_HEIGHT as f32)
+            .to_cols_array_2d(),
+    };
+    let bytes = bytemuck::bytes_of(&uniform);
+    let buffer = rs.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("rustic.sprite.camera_ub"),
+        size: bytes.len() as u64,
+        usage: wgpu::BufferUsages::UNIFORM,
+        mapped_at_creation: true,
+    });
+    buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .copy_from_slice(bytes);
+    buffer.unmap();
+    let bind_group = rs.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("rustic.sprite.camera_bg"),
+        layout: &pipeline.camera_bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buffer.as_entire_binding(),
+        }],
+    });
+    CameraBinding {
+        camera: camera.id,
+        bind_group,
+        _buffer: buffer,
+    }
+}
+
+fn unique_run_cameras(runs: &[Run]) -> Vec<CameraId> {
+    let mut ids = Vec::new();
+    for run in runs {
+        if !ids.contains(&run.camera) {
+            ids.push(run.camera);
+        }
+    }
+    ids
 }
 
 fn scrolled_world_pos(c: &DrawCommand, camera: &Camera) -> glam::Vec2 {
@@ -459,5 +495,34 @@ mod tests {
         // Atlas changes break the run: 7 (2) -> 9 (1) -> 7 (1).
         let counts: Vec<u32> = runs.iter().map(|r| r.instance_count).collect();
         assert_eq!(counts, vec![2, 1, 1]);
+    }
+
+    #[test]
+    fn camera_bindings_are_unique_per_run_camera() {
+        let runs = vec![
+            Run {
+                camera: CameraId(0),
+                atlas: AssetId(1),
+                filter: FilterMode::Linear,
+                instance_offset: 0,
+                instance_count: 2,
+            },
+            Run {
+                camera: CameraId(1),
+                atlas: AssetId(2),
+                filter: FilterMode::Linear,
+                instance_offset: 2,
+                instance_count: 1,
+            },
+            Run {
+                camera: CameraId(0),
+                atlas: AssetId(3),
+                filter: FilterMode::Linear,
+                instance_offset: 3,
+                instance_count: 1,
+            },
+        ];
+
+        assert_eq!(unique_run_cameras(&runs), vec![CameraId(0), CameraId(1)]);
     }
 }
