@@ -33,13 +33,13 @@ pub struct SpriteInstance {
     pub uv_min: [f32; 2],
     pub uv_max: [f32; 2],
     pub uv_rotated: f32,
-    pub _pad1: f32,
+    pub uv_wrap_y: f32,
     pub color: [f32; 4],
     pub color_offset: [f32; 4],
 }
 
 impl SpriteInstance {
-    pub const ATTRIBUTES: [wgpu::VertexAttribute; 13] = [
+    pub const ATTRIBUTES: [wgpu::VertexAttribute; 14] = [
         wgpu::VertexAttribute {
             format: wgpu::VertexFormat::Float32x2,
             offset: 0,
@@ -96,14 +96,19 @@ impl SpriteInstance {
             shader_location: 11,
         },
         wgpu::VertexAttribute {
-            format: wgpu::VertexFormat::Float32x4,
-            offset: 88,
+            format: wgpu::VertexFormat::Float32,
+            offset: 84,
             shader_location: 12,
         },
         wgpu::VertexAttribute {
             format: wgpu::VertexFormat::Float32x4,
-            offset: 104,
+            offset: 88,
             shader_location: 13,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 104,
+            shader_location: 14,
         },
     ];
 }
@@ -131,7 +136,7 @@ impl From<&DrawCommand> for SpriteInstance {
             uv_min: c.uv_min.to_array(),
             uv_max: c.uv_max.to_array(),
             uv_rotated: if c.uv_rotated { 1.0 } else { 0.0 },
-            _pad1: 0.0,
+            uv_wrap_y: if c.uv_wrap_y { 1.0 } else { 0.0 },
             color: c.color.to_array(),
             color_offset: c.color_offset.to_array(),
         }
@@ -439,6 +444,7 @@ mod tests {
             uv_min: Vec2::ZERO,
             uv_max: Vec2::ONE,
             uv_rotated: false,
+            uv_wrap_y: false,
             world_pos: Vec2::ZERO,
             size: Vec2::ONE,
             pivot: Vec2::splat(0.5),
@@ -455,6 +461,7 @@ mod tests {
     fn sprite_instance_carries_affine_matrix() {
         let mut cmd = cmd(0, RenderLayer::Stage, 0, 1);
         cmd.affine = [0.5, 0.25, -0.75, 1.5, 12.0, -8.0];
+        cmd.uv_wrap_y = true;
         cmd.color_offset = Vec4::new(0.1, 0.2, 0.3, -0.4);
 
         let instance = SpriteInstance::from(&cmd);
@@ -463,6 +470,7 @@ mod tests {
         assert_eq!(instance.affine_x, [0.5, 0.25]);
         assert_eq!(instance.affine_y, [-0.75, 1.5]);
         assert_eq!(instance.affine_t, [12.0, -8.0]);
+        assert_eq!(instance.uv_wrap_y, 1.0);
         assert_eq!(instance.color_offset, [0.1, 0.2, 0.3, -0.4]);
     }
 

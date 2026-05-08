@@ -81,7 +81,8 @@ impl NoteSkin {
         let scaled_width = segment_width * NOTE_ASSET_SCALE;
         let scaled_texture_height = self.hold_trail_texture_height as f32 * NOTE_ASSET_SCALE;
         let bottom_height = scaled_texture_height * HOLD_TRAIL_END_OFFSET;
-        let tail_height = (view.height - bottom_height).max(0.0);
+        let part_height = view.height - bottom_height;
+        let tail_height = part_height.max(0.0);
         let extra_cap = scaled_texture_height * (HOLD_TRAIL_BOTTOM_CLIP - HOLD_TRAIL_END_OFFSET);
         let cap_height = (view.height + extra_cap)
             .min(scaled_texture_height * HOLD_TRAIL_BOTTOM_CLIP)
@@ -98,26 +99,15 @@ impl NoteSkin {
         let mut commands = Vec::new();
 
         if tail_height > 0.1 {
-            let mut remaining = tail_height;
-            let mut y = view.y;
-            let mut first_height = tail_height % scaled_texture_height;
-            if first_height <= 0.1 {
-                first_height = scaled_texture_height;
-            }
-            while remaining > 0.1 {
-                let h = remaining.min(first_height);
-                first_height = scaled_texture_height;
-                let mut cmd = self.hold_trail_rect(
-                    glam::vec2(x, y),
-                    glam::vec2(scaled_width, h),
-                    glam::vec2(lane_u, 1.0 - h / scaled_texture_height),
-                    glam::vec2(lane_u + u_width, 1.0),
-                );
-                cmd.z = 0;
-                commands.push(cmd);
-                y += h;
-                remaining -= h;
-            }
+            let mut cmd = self.hold_trail_rect(
+                glam::vec2(x, view.y),
+                glam::vec2(scaled_width, tail_height),
+                glam::vec2(lane_u, -part_height / scaled_texture_height),
+                glam::vec2(lane_u + u_width, 0.0),
+            );
+            cmd.uv_wrap_y = true;
+            cmd.z = 0;
+            commands.push(cmd);
         }
 
         if cap_height > 0.1 {

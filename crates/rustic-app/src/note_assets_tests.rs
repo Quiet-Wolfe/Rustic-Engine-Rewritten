@@ -172,21 +172,25 @@ fn hold_confirm_switches_to_confirm_hold_after_confirm_animation() {
 }
 
 #[test]
-fn hold_trail_commands_tile_tail_and_cap_from_note_hold_assets() {
+fn hold_trail_commands_use_wrapped_tail_and_cap_from_note_hold_assets() {
     let skin = test_note_skin();
     let commands = skin.hold_trail_commands(&hold_view(0, 225.0));
 
-    assert_eq!(commands.len(), 5);
+    assert_eq!(commands.len(), 2);
     assert_eq!(commands[0].texture, AssetId::new(4));
     assert!((commands[0].world_pos.x - 833.8).abs() < 1e-3);
     assert_eq!(commands[0].world_pos.y, 100.0);
-    assert!((commands[0].size.y - 11.85).abs() < 1e-3);
+    assert!((commands[0].size.y - 194.55).abs() < 1e-3);
     assert_eq!((commands[0].uv_min.x, commands[0].uv_max.x), (0.25, 0.375));
-    assert_eq!((commands[4].uv_min.x, commands[4].uv_max.x), (0.375, 0.5));
-    assert_eq!(commands[4].uv_max.y, HOLD_TRAIL_BOTTOM_CLIP);
+    assert!((commands[0].uv_min.y + 3.194_581).abs() < 1e-3);
+    assert_eq!(commands[0].uv_max.y, 0.0);
+    assert!(commands[0].uv_wrap_y);
+    assert_eq!((commands[1].uv_min.x, commands[1].uv_max.x), (0.375, 0.5));
+    assert_eq!(commands[1].uv_max.y, HOLD_TRAIL_BOTTOM_CLIP);
 
     let short = skin.hold_trail_commands(&hold_view(1, 15.0));
     assert_eq!(short.len(), 1);
+    assert!(!short[0].uv_wrap_y);
     assert!((short[0].uv_min.y - 0.2537).abs() < 1e-3);
     assert!((short[0].size.y - 39.36).abs() < 1e-3);
 }

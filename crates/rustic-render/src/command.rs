@@ -20,6 +20,7 @@ pub struct DrawCommand {
     pub uv_min: Vec2,
     pub uv_max: Vec2,
     pub uv_rotated: bool,
+    pub uv_wrap_y: bool,
     pub world_pos: Vec2,
     pub size: Vec2,
     /// Pivot in unit-quad space (0..1). (0.5, 0.5) centers the sprite.
@@ -47,6 +48,7 @@ impl DrawCommand {
             uv_min: Vec2::ZERO,
             uv_max: Vec2::ONE,
             uv_rotated: false,
+            uv_wrap_y: false,
             world_pos,
             size,
             pivot: Vec2::splat(0.5),

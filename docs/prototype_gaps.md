@@ -21,5 +21,5 @@ behavior on purpose.
 - Receptor hold-confirm behavior follows active hold state and transitions into
   the v0.8.5 `confirm-hold` atlas frames after the confirm animation completes.
 - Hold trails, hold covers, and note splashes use the v0.8.5 assets. Hold
-  trail clipping is still quad-tiled rather than a literal `drawTriangles`
-  port of `SustainTrail`.
+  trails use the original wrapped UV math through sprite quads; a literal
+  arbitrary-vertex `drawTriangles` path is still deferred.

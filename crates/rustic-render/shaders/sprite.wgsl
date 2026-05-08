@@ -14,6 +14,7 @@
 //   a_uv_min       vec2<f32>
 //   a_uv_max       vec2<f32>
 //   a_uv_rotated   f32           // Sparrow rotated="true"
+//   a_uv_wrap_y    f32           // Repeat V after interpolation.
 //   a_color        vec4<f32>
 //   a_color_offset vec4<f32>
 //
@@ -42,8 +43,9 @@ struct VsIn {
     @location(9) uv_min: vec2<f32>,
     @location(10) uv_max: vec2<f32>,
     @location(11) uv_rotated: f32,
-    @location(12) color: vec4<f32>,
-    @location(13) color_offset: vec4<f32>,
+    @location(12) uv_wrap_y: f32,
+    @location(13) color: vec4<f32>,
+    @location(14) color_offset: vec4<f32>,
 };
 
 struct VsOut {
@@ -51,6 +53,7 @@ struct VsOut {
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
     @location(2) color_offset: vec4<f32>,
+    @location(3) uv_wrap_y: f32,
 };
 
 @vertex
@@ -81,11 +84,16 @@ fn vs_main(input: VsIn) -> VsOut {
     out.uv = uv;
     out.color = input.color;
     out.color_offset = input.color_offset;
+    out.uv_wrap_y = input.uv_wrap_y;
     return out;
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let tex = textureSample(t_atlas, s_atlas, in.uv);
+    var uv = in.uv;
+    if (in.uv_wrap_y > 0.5) {
+        uv.y = fract(uv.y);
+    }
+    let tex = textureSample(t_atlas, s_atlas, uv);
     return clamp(tex * in.color + in.color_offset, vec4<f32>(0.0), vec4<f32>(1.0));
 }
