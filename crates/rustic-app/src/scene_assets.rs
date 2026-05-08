@@ -222,17 +222,14 @@ impl SparrowCharacterSprite {
     }
 
     fn camera_focus_point(&self) -> glam::Vec2 {
-        let pose = &self.poses[self.initial_pose];
-        let frame = &pose.frames[0];
-        let source_size = glam::vec2(frame.frame_width as f32, frame.frame_height as f32);
         glam::vec2(
-            self.slot.position.x
-                + self.character.position.x
-                + source_size.x * self.character.scale * 0.5,
-            self.slot.position.y
-                + self.character.position.y
-                + source_size.y * self.character.scale * 0.5,
+            self.slot.position.x + self.character.position.x,
+            self.slot.position.y + self.character.position.y,
         ) + glam::vec2(self.slot.camera_offset.x, self.slot.camera_offset.y)
+            + glam::vec2(
+                self.character.camera_offset.x,
+                self.character.camera_offset.y,
+            )
     }
 }
 
@@ -589,9 +586,23 @@ fn character_frame_pos(
     frame: &SparrowFrame,
     slot: StageCharacterSlot,
 ) -> glam::Vec2 {
+    let origin = sparrow_character_origin(frame, character.scale);
     glam::vec2(
-        slot.position.x + character.position.x - animation.offset.x - frame.frame_x as f32,
-        slot.position.y + character.position.y - animation.offset.y - frame.frame_y as f32,
+        slot.position.x + character.position.x
+            - origin.x
+            - animation.offset.x
+            - frame.frame_x as f32 * character.scale,
+        slot.position.y + character.position.y
+            - origin.y
+            - animation.offset.y
+            - frame.frame_y as f32 * character.scale,
+    )
+}
+
+fn sparrow_character_origin(frame: &SparrowFrame, scale: f32) -> glam::Vec2 {
+    glam::vec2(
+        frame.frame_width as f32 * scale * 0.5,
+        frame.frame_height as f32 * scale,
     )
 }
 
@@ -683,6 +694,39 @@ mod tests {
     fn animation_duration_uses_frame_count_and_fps() {
         assert_eq!(animation_duration_samples(48_000, 24, 12), Samples(24_000));
         assert_eq!(animation_duration_samples(48_000, 0, 0), Samples(48_000));
+    }
+
+    #[test]
+    fn sparrow_character_position_uses_stage_feet_origin() {
+        let atlas = SparrowAtlas::parse(
+            br#"<TextureAtlas imagePath="test.png">
+              <SubTexture name="idle0000" x="0" y="0" width="80" height="90"
+                frameX="-5" frameY="-7" frameWidth="100" frameHeight="200"/>
+            </TextureAtlas>"#,
+        )
+        .unwrap();
+        let character = CharacterDefinition::parse(
+            br#"{
+              "id": "test",
+              "atlas": "images/test.xml",
+              "offsets": [10, 20],
+              "scale": 2,
+              "animations": [{ "name": "idle", "prefix": "idle", "offsets": [1, 2] }]
+            }"#,
+        )
+        .unwrap();
+        let stage =
+            StageDefinition::parse(br#"{"id":"stage","boyfriend":{"position":{"x":300,"y":400}}}"#)
+                .unwrap();
+
+        let pos = character_frame_pos(
+            &character,
+            &character.animations[0],
+            &atlas.frames[0],
+            stage.boyfriend,
+        );
+
+        assert_eq!(pos, glam::vec2(219.0, 32.0));
     }
 
     #[test]

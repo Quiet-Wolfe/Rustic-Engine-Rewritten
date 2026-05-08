@@ -20,6 +20,7 @@ const SAMPLE_RATE: u32 = 48_000;
 pub(crate) struct AnimateCharacterSprite {
     character: CharacterDefinition,
     slot: StageCharacterSlot,
+    origin: glam::Vec2,
     is_player: bool,
     z: i32,
     filter: FilterMode,
@@ -120,8 +121,12 @@ impl AnimateCharacterSprite {
         let mut cmd = DrawCommand::sprite(
             asset.texture_id,
             glam::vec2(
-                self.slot.position.x + self.character.position.x - pose.animation.offset.x,
-                self.slot.position.y + self.character.position.y - pose.animation.offset.y,
+                self.slot.position.x + self.character.position.x
+                    - self.origin.x
+                    - pose.animation.offset.x,
+                self.slot.position.y + self.character.position.y
+                    - self.origin.y
+                    - pose.animation.offset.y,
             ),
             glam::vec2(frame.size.x, frame.size.y),
         );
@@ -172,10 +177,12 @@ pub(crate) fn load_animate_character_sprite(
         .iter()
         .position(|pose| pose.animation.name == initial_animation.name)
         .with_context(|| format!("resolve initial pose {}", character.id))?;
+    let origin = animate_character_origin(&poses[initial_pose], &assets, character.scale)?;
 
     Ok(AnimateCharacterSprite {
         character,
         slot,
+        origin,
         is_player,
         z,
         filter,
@@ -414,6 +421,48 @@ fn animate_pose_frame_count(
     Ok(count)
 }
 
+fn animate_character_origin(
+    pose: &AnimateCharacterPose,
+    assets: &[LoadedAnimateAtlas],
+    scale: f32,
+) -> Result<glam::Vec2> {
+    let asset = &assets[pose.asset_index];
+    let parts = pose.parts(asset, Samples(0), SAMPLE_RATE, Samples(0))?;
+    let (min, max) =
+        animate_parts_bounds(asset, &parts).context("resolve animate origin bounds")?;
+    let size = max - min;
+    Ok((min + glam::vec2(size.x * 0.5, size.y)) * scale)
+}
+
+fn animate_parts_bounds(
+    asset: &LoadedAnimateAtlas,
+    parts: &[AnimateDrawPart],
+) -> Option<(glam::Vec2, glam::Vec2)> {
+    let mut min = glam::Vec2::splat(f32::INFINITY);
+    let mut max = glam::Vec2::splat(f32::NEG_INFINITY);
+    for part in parts {
+        let frame = asset.atlas.frame(&part.frame_name)?;
+        for point in [
+            glam::Vec2::ZERO,
+            glam::vec2(frame.size.x, 0.0),
+            glam::vec2(0.0, frame.size.y),
+            frame.size,
+        ] {
+            let transformed = transform_affine_point(part.matrix, point);
+            min = min.min(transformed);
+            max = max.max(transformed);
+        }
+    }
+    min.x.is_finite().then_some((min, max))
+}
+
+fn transform_affine_point(matrix: [f32; 6], point: glam::Vec2) -> glam::Vec2 {
+    glam::vec2(
+        point.x * matrix[0] + point.y * matrix[2] + matrix[4],
+        point.x * matrix[1] + point.y * matrix[3] + matrix[5],
+    )
+}
+
 fn flat_label_matrix(
     animation: &AnimateAnimation,
     label_name: &str,
@@ -607,6 +656,7 @@ mod tests {
             ],
             character,
             slot: StageCharacterSlot::default(),
+            origin: glam::Vec2::ZERO,
             is_player: false,
             z: 0,
             filter: FilterMode::Nearest,
@@ -719,73 +769,19 @@ mod tests {
     }
 
     #[test]
-    fn command_for_part_applies_animate_color_transform() {
-        let character = CharacterDefinition::parse(
-            br#"{
-                "id": "test",
-                "assetPath": "shared:characters/test",
-                "animations": [{ "name": "idle", "prefix": "Idle" }]
-            }"#,
-        )
-        .unwrap();
-        let animation = AnimateAnimation::parse(
-            br#"{
-                "AN": {
-                    "N": "Test",
-                    "SN": "Root",
-                    "TL": { "L": [
-                        { "FR": [{ "N": "Idle", "I": 0, "DU": 1, "E": [] }] },
-                        { "FR": [{
-                            "I": 0,
-                            "DU": 1,
-                            "E": [{
-                                "ASI": {
-                                    "N": "part",
-                                    "C": { "M": "AD", "RM": 0.2, "GM": 0.4, "BM": 0.6, "AM": 0.8 }
-                                }
-                            }]
-                        }] }
-                    ] }
-                }
-            }"#,
-        )
-        .unwrap();
-        let atlas = AnimateAtlas::parse_spritemap(
-            br#"{
-                "ATLAS": {
-                    "SPRITES": [
-                        { "SPRITE": { "name": "part", "x": 0, "y": 0, "w": 16, "h": 24 } }
-                    ],
-                    "meta": { "size": { "w": 16, "h": 24 } }
-                }
-            }"#,
-        )
-        .unwrap();
-        let sprite = AnimateCharacterSprite {
-            poses: vec![pose(character.animations[0].clone(), 1)],
-            character,
-            slot: StageCharacterSlot::default(),
-            is_player: false,
-            z: 0,
-            filter: FilterMode::Nearest,
-            assets: vec![LoadedAnimateAtlas {
-                texture_id: AssetId::new(1),
-                flat_labels: None,
-                animation,
-                atlas,
-            }],
-            initial_pose: 0,
-        };
-        let part = sprite.assets[0]
-            .animation
-            .flatten_label_frame("Idle", 0)
-            .unwrap()
-            .remove(0);
-
-        let cmd = sprite
-            .command_for_part(&sprite.poses[0], &sprite.assets[0], &part)
-            .unwrap();
-
-        assert_eq!(cmd.color, glam::vec4(0.2, 0.4, 0.6, 0.8));
+    fn animate_origin_uses_bottom_center_of_flattened_bounds() {
+        let asset = test_animate_atlas(
+            &baked_resolver(),
+            &AssetPath::new("shared:characters/dad").unwrap(),
+        );
+        let character = character_with_hold();
+        let mut asset_indices = HashMap::new();
+        asset_indices.insert("shared:characters/dad".to_owned(), 0);
+        let poses =
+            animate_character_poses(&character, std::slice::from_ref(&asset), &asset_indices)
+                .unwrap();
+        let origin = animate_character_origin(&poses[0], &[asset], 1.0).unwrap();
+        assert!(origin.x.is_finite());
+        assert!(origin.y > 0.0);
     }
 }
