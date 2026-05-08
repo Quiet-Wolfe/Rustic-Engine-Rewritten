@@ -1,5 +1,5 @@
 use crate::active_holds::ActiveHolds;
-use crate::app_runtime::create_runtime as create_app_runtime;
+use crate::app_runtime::{create_runtime as create_app_runtime, reconfigure_surface};
 use crate::app_types::{AppOptions, Runtime};
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::bitmap_text_assets::BitmapTextSkin;
@@ -251,19 +251,8 @@ impl App {
         let frame = match rt.surface.get_current_texture() {
             Ok(f) => f,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                rt.surface.configure(
-                    &rt.rs.device,
-                    &wgpu::SurfaceConfiguration {
-                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                        format: rt.surface_cfg.format,
-                        width: rt.surface_cfg.width.max(1),
-                        height: rt.surface_cfg.height.max(1),
-                        present_mode: rt.surface_cfg.present_mode,
-                        alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                        view_formats: vec![],
-                        desired_maximum_frame_latency: 1,
-                    },
-                );
+                let (width, height) = (rt.surface_cfg.width, rt.surface_cfg.height);
+                reconfigure_surface(rt, width, height);
                 return;
             }
             Err(e) => {
@@ -310,21 +299,7 @@ impl App {
         let Some(rt) = self.runtime.as_mut() else {
             return;
         };
-        rt.surface_cfg.width = w;
-        rt.surface_cfg.height = h;
-        rt.surface.configure(
-            &rt.rs.device,
-            &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: rt.surface_cfg.format,
-                width: w.max(1),
-                height: h.max(1),
-                present_mode: rt.surface_cfg.present_mode,
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![],
-                desired_maximum_frame_latency: 1,
-            },
-        );
+        reconfigure_surface(rt, w, h);
     }
     fn rebuild_frame_commands(&mut self) {
         let sample_rate = play_sample_rate(&self.mixer);
