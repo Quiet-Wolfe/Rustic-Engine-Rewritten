@@ -79,7 +79,10 @@ fn default_vec2_one() -> AssetVec2 {
 
 /// Resolve the base FNF stage id from the song name.
 ///
-/// ref: 50fccded:source/PlayState.hx:173-487
+/// Legacy chart fallback. In v0.8.5 the chart difficulty carries the stage id
+/// directly and `mainStage` is the default.
+/// ref: bdedc0aa:source/funkin/util/Constants.hx:203-206
+/// ref: bdedc0aa:source/funkin/ui/transition/LoadingState.hx:226-233
 pub fn stage_id_for_song_name(song_name: &str) -> &'static str {
     match song_name.to_ascii_lowercase().as_str() {
         "spookeez" | "monster" | "south" => "spooky",
@@ -212,7 +215,7 @@ mod tests {
 
     #[test]
     fn resolves_vanilla_stage_from_song_name() {
-        // ref: 50fccded:source/PlayState.hx:173-487
+        // Legacy chart fallback for imported pre-v-slice song ids.
         assert_eq!(stage_id_for_song_name("Spookeez"), "spooky");
         assert_eq!(stage_id_for_song_name("philly"), "philly");
         assert_eq!(stage_id_for_song_name("Satin-Panties"), "limo");

@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn non_looping_animation_frames_clamp_to_last_frame() {
-        // ref: 50fccded:source/Character.hx:271-284
+        // ref: bdedc0aa:source/funkin/graphics/FunkinAnimationController.hx:28-39
         assert_eq!(
             animation_frame_index(Samples(0), 48_000, Samples(0), 24, 3, false),
             0
@@ -672,7 +672,7 @@ mod tests {
 
     #[test]
     fn looping_animation_frames_wrap() {
-        // ref: 50fccded:source/Character.hx:128-133
+        // ref: bdedc0aa:source/funkin/graphics/FunkinAnimationController.hx:28-39
         assert_eq!(
             animation_frame_index(Samples(6_000), 48_000, Samples(0), 24, 3, true),
             0

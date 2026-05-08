@@ -1,8 +1,7 @@
 //! Conductor: derives song position from the mixer sample cursor.
 //! See `PLAN.md` Section 8.
 //!
-//! ref: 50fccded:source/Conductor.hx:31-60        // mapBPMChanges
-//! ref: 50fccded:source/MusicBeatState.hx:53-66   // updateCurStep
+//! ref: bdedc0aa:source/funkin/Conductor.hx:437-484
 
 use rustic_asset::Chart;
 use rustic_core::time::{Beat, Bpm, Samples, Seconds, Step};
@@ -92,6 +91,9 @@ impl Conductor {
 }
 
 pub fn map_bpm_changes(chart: &Chart) -> Vec<BpmChangeEvent> {
+    // Legacy expanded-chart compatibility. v0.8.5 charts carry time changes
+    // in metadata; this path keeps imported 0.x sections coherent until the
+    // runtime chart model is fully v-slice-native.
     let mut changes = Vec::new();
     let mut cur_bpm = chart.bpm;
     let mut total_steps: i64 = 0;

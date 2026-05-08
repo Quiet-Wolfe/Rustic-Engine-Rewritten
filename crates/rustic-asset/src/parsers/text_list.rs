@@ -1,6 +1,6 @@
-//! Parser for base FNF `CoolUtil.coolTextFile` lists.
+//! Parser for line-oriented FNF text assets.
 //!
-//! ref: 50fccded:source/CoolUtil.hx:9-18
+//! ref: bdedc0aa:source/funkin/modding/PolymodHandler.hx:518-522
 
 use crate::error::{AssetError, AssetResult};
 

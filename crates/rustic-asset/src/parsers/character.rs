@@ -239,8 +239,8 @@ mod tests {
 
     #[test]
     fn parses_character_definition_with_defaults() {
-        // ref: 50fccded:source/Character.hx:268-305 — BF atlas,
-        // animation prefixes, offsets, and flipX.
+        // Legacy Sparrow compatibility fixture. Current v0.8.5 character
+        // data is covered by `parses_vslice_animate_character_shape`.
         let character = CharacterDefinition::parse(BF.as_bytes()).unwrap();
         assert_eq!(character.id, "bf");
         assert_eq!(
