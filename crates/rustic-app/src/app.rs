@@ -1,4 +1,5 @@
 use crate::active_holds::ActiveHolds;
+use crate::app_runtime::create_runtime as create_app_runtime;
 use crate::app_types::{AppOptions, Runtime};
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::bitmap_text_assets::BitmapTextSkin;
@@ -32,17 +33,12 @@ use rustic_core::ids::AssetId;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
 use rustic_game::{Judgment, Lane, PlayState};
-use rustic_render::{
-    CameraRegistry, Composite, RenderCommandList, RenderState, SpriteBatcher, SpritePipeline,
-    Texture,
-};
+use rustic_render::{CameraRegistry, RenderCommandList, SpriteBatcher, Texture};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::window::WindowAttributes;
 
 struct App {
     options: AppOptions,
@@ -127,41 +123,7 @@ impl App {
         }
     }
     fn create_runtime(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
-        let attrs = WindowAttributes::default()
-            .with_title(self.options.title)
-            .with_inner_size(winit::dpi::LogicalSize::new(
-                self.options.width,
-                self.options.height,
-            ));
-        let window = Arc::new(event_loop.create_window(attrs)?);
-
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        });
-        let surface = instance
-            .create_surface(window.clone())
-            .map_err(|e| anyhow::anyhow!("create_surface: {e}"))?;
-
-        let rs = pollster::block_on(RenderState::new_async(instance, Some(&surface)))?;
-        let inner = window.inner_size();
-        let surface_cfg = rs.configure_surface(
-            &surface,
-            inner.width,
-            inner.height,
-            wgpu::PresentMode::AutoVsync,
-        )?;
-        let pipeline = SpritePipeline::new(&rs.device, wgpu::TextureFormat::Rgba8UnormSrgb);
-        let composite = Composite::new(&rs, surface_cfg.format);
-        let runtime = Runtime {
-            window,
-            surface,
-            surface_cfg,
-            rs,
-            pipeline,
-            composite,
-        };
-        self.runtime = Some(runtime);
+        self.runtime = Some(create_app_runtime(&self.options, event_loop)?);
         self.load_selected_song();
         Ok(())
     }

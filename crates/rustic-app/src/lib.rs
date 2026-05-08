@@ -6,6 +6,7 @@
 pub mod active_holds;
 pub mod animate_character_assets;
 pub mod app;
+pub mod app_runtime;
 pub mod app_types;
 pub mod asset_roots;
 pub mod audio_fallback;
