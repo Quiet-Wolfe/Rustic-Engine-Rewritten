@@ -39,14 +39,11 @@ impl Camera {
     pub fn view_proj(&self, baseline_w: f32, baseline_h: f32) -> Mat4 {
         let proj = Mat4::orthographic_rh(0.0, baseline_w, baseline_h, 0.0, -1.0, 1.0);
         let center = Vec2::new(baseline_w * 0.5, baseline_h * 0.5);
-        // Translate so the camera position lands at the screen center.
-        let translate = Mat4::from_translation((center - self.position).extend(0.0));
+        let translate = Mat4::from_translation((-self.position).extend(0.0));
         let scale = Mat4::from_scale(glam::Vec3::new(self.zoom, self.zoom, 1.0));
         let rot = Mat4::from_rotation_z(self.rotation);
-        // pivot at center of the screen
-        let pivot_to_origin = Mat4::from_translation((-center).extend(0.0));
         let origin_to_pivot = Mat4::from_translation(center.extend(0.0));
-        proj * translate * origin_to_pivot * rot * scale * pivot_to_origin
+        proj * origin_to_pivot * rot * scale * translate
     }
 }
 
@@ -137,11 +134,24 @@ mod tests {
     #[test]
     fn view_proj_centers_camera_position_on_screen() {
         let mut cam = Camera::new(CameraId(0), "test", 0);
-        cam.position = Vec2::new(640.0, 360.0);
+        cam.position = Vec2::new(740.0, 320.0);
+        cam.zoom = 1.4;
         let m = cam.view_proj(1280.0, 720.0);
         // World point at the camera position should project to NDC origin (0,0).
-        let v = m * glam::Vec4::new(640.0, 360.0, 0.0, 1.0);
+        let v = m * glam::Vec4::new(740.0, 320.0, 0.0, 1.0);
         assert!(v.x.abs() < 1e-4);
+        assert!(v.y.abs() < 1e-4);
+    }
+
+    #[test]
+    fn view_proj_zooms_around_camera_position() {
+        let mut cam = Camera::new(CameraId(0), "test", 0);
+        cam.position = Vec2::new(740.0, 320.0);
+        cam.zoom = 2.0;
+        let m = cam.view_proj(1280.0, 720.0);
+
+        let v = m * glam::Vec4::new(750.0, 320.0, 0.0, 1.0);
+        assert!((v.x - (20.0 / 640.0)).abs() < 1e-4);
         assert!(v.y.abs() < 1e-4);
     }
 }

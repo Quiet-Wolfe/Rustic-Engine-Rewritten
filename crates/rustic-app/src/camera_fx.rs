@@ -76,7 +76,7 @@ impl Default for CameraFx {
             hud_camera_zoom_intensity: (DEFAULT_BOP_INTENSITY - 1.0) * 2.0,
             camera_zoom_rate: DEFAULT_ZOOM_RATE,
             camera_zoom_rate_offset: DEFAULT_ZOOM_OFFSET,
-            zooming: false,
+            zooming: true,
             last_step: -1,
             last_update_cursor: None,
             follow_rate: DEFAULT_CAMERA_FOLLOW_RATE,
@@ -97,7 +97,7 @@ impl CameraFx {
         self.hud_camera_zoom_intensity = (DEFAULT_BOP_INTENSITY - 1.0) * 2.0;
         self.camera_zoom_rate = DEFAULT_ZOOM_RATE;
         self.camera_zoom_rate_offset = DEFAULT_ZOOM_OFFSET;
-        self.zooming = false;
+        self.zooming = true;
         self.last_step = -1;
         self.last_update_cursor = None;
         self.follow_rate = DEFAULT_CAMERA_FOLLOW_RATE;
@@ -238,7 +238,7 @@ impl CameraFx {
             self.update_follow(cameras, dt_frames);
         }
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:1223-1229,1855-1861
-        if self.zooming && self.camera_zoom_rate > 0.0 {
+        if self.zooming && self.camera_zoom_rate > 0.0 && cursor.0 >= 0 {
             self.camera_bop_multiplier = camera_bop_decay(self.camera_bop_multiplier, dt_frames);
             self.update_camera_bop(cameras, cursor, sample_rate, bpm, dt_frames);
         }
@@ -554,7 +554,6 @@ mod tests {
         let mut cameras = CameraRegistry::with_default_fnf();
         let mut fx = CameraFx::default();
         fx.reset(&mut cameras, 1.0);
-        fx.enable_zooming();
         fx.set_camera_bop(CameraBopEvent {
             rate: 1.0,
             offset: 0.0,
@@ -568,6 +567,27 @@ mod tests {
 
         assert!((cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom) - 1.03).abs() < 1e-6);
         assert!((cameras.get(CameraId(1)).map_or(0.0, |camera| camera.zoom) - 1.06).abs() < 1e-6);
+    }
+
+    #[test]
+    fn reset_enables_camera_bop_after_countdown() {
+        let mut cameras = CameraRegistry::with_default_fnf();
+        let mut fx = CameraFx::default();
+        fx.reset(&mut cameras, 1.0);
+
+        fx.update(&mut cameras, Samples(-6_000), 48_000, 120.0);
+        assert_eq!(
+            cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom),
+            1.0
+        );
+        assert_eq!(
+            cameras.get(CameraId(1)).map_or(0.0, |camera| camera.zoom),
+            1.0
+        );
+
+        fx.update(&mut cameras, Samples(0), 48_000, 120.0);
+        assert!((cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom) - 1.015).abs() < 1e-6);
+        assert!((cameras.get(CameraId(1)).map_or(0.0, |camera| camera.zoom) - 1.03).abs() < 1e-6);
     }
 
     #[test]
