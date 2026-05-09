@@ -188,11 +188,25 @@ struct Run {
     instance_count: u32,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SpriteBatcher {
     instances: Vec<SpriteInstance>,
     instance_buf: Option<wgpu::Buffer>,
     instance_capacity: u32,
+    camera_bindings: HashMap<CameraId, CameraBinding>,
+    atlas_bindings: HashMap<(AssetId, FilterMode), wgpu::BindGroup>,
+}
+
+impl Default for SpriteBatcher {
+    fn default() -> Self {
+        Self {
+            instances: Vec::new(),
+            instance_buf: None,
+            instance_capacity: 0,
+            camera_bindings: HashMap::new(),
+            atlas_bindings: HashMap::new(),
+        }
+    }
 }
 
 impl SpriteBatcher {
@@ -264,12 +278,45 @@ impl SpriteBatcher {
         }
         self.upload_instances(rs);
 
-        let camera_bindings = camera_bindings_for_runs(rs, pipeline, cameras, &runs);
+        for id in unique_run_cameras(&runs) {
+            if let Some(camera) = cameras.get(id) {
+                let uniform = CameraUniform {
+                    view_proj: camera
+                        .view_proj(REFERENCE_WIDTH as f32, REFERENCE_HEIGHT as f32)
+                        .to_cols_array_2d(),
+                };
+                let bytes = bytemuck::bytes_of(&uniform);
 
-        let mut atlas_bind_groups = HashMap::new();
+                if let Some(binding) = self.camera_bindings.get(&id) {
+                    rs.queue.write_buffer(&binding.buffer, 0, bytes);
+                } else {
+                    let buffer = rs.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("rustic.sprite.camera_ub"),
+                        size: bytes.len() as u64,
+                        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: true,
+                    });
+                    buffer
+                        .slice(..)
+                        .get_mapped_range_mut()
+                        .copy_from_slice(bytes);
+                    buffer.unmap();
+                    let bind_group = rs.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("rustic.sprite.camera_bg"),
+                        layout: &pipeline.camera_bgl,
+                        entries: &[wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: buffer.as_entire_binding(),
+                        }],
+                    });
+                    self.camera_bindings.insert(id, CameraBinding { bind_group, buffer });
+                }
+            }
+        }
+
         for run in &runs {
             let key = (run.atlas, run.filter);
-            if !atlas_bind_groups.contains_key(&key) {
+            if !self.atlas_bindings.contains_key(&key) {
                 if let Some(tex) = atlases.get(&run.atlas) {
                     let atlas_bg = rs.device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("rustic.sprite.atlas_bg"),
@@ -285,7 +332,7 @@ impl SpriteBatcher {
                             },
                         ],
                     });
-                    atlas_bind_groups.insert(key, atlas_bg);
+                    self.atlas_bindings.insert(key, atlas_bg);
                 }
             }
         }
@@ -317,12 +364,12 @@ impl SpriteBatcher {
             // Rebind camera if it changed.
             if current_camera != Some(run.camera) {
                 current_camera = Some(run.camera);
-                current_cam_bg = camera_binding_for_camera(run.camera, &camera_bindings);
+                current_cam_bg = self.camera_bindings.get(&run.camera).map(|b| &b.bind_group);
             }
             let Some(cam_bg) = current_cam_bg else {
                 continue;
             };
-            let Some(atlas_bg) = atlas_bind_groups.get(&(run.atlas, run.filter)) else {
+            let Some(atlas_bg) = self.atlas_bindings.get(&(run.atlas, run.filter)) else {
                 continue;
             };
 
@@ -357,59 +404,10 @@ impl SpriteBatcher {
     }
 }
 
+#[derive(Debug)]
 struct CameraBinding {
-    camera: CameraId,
     bind_group: wgpu::BindGroup,
-    _buffer: wgpu::Buffer,
-}
-
-fn camera_bindings_for_runs(
-    rs: &RenderState,
-    pipeline: &SpritePipeline,
-    cameras: &CameraRegistry,
-    runs: &[Run],
-) -> Vec<CameraBinding> {
-    unique_run_cameras(runs)
-        .into_iter()
-        .filter_map(|id| {
-            cameras
-                .get(id)
-                .map(|camera| camera_binding(rs, pipeline, camera))
-        })
-        .collect()
-}
-
-fn camera_binding(rs: &RenderState, pipeline: &SpritePipeline, camera: &Camera) -> CameraBinding {
-    let uniform = CameraUniform {
-        view_proj: camera
-            .view_proj(REFERENCE_WIDTH as f32, REFERENCE_HEIGHT as f32)
-            .to_cols_array_2d(),
-    };
-    let bytes = bytemuck::bytes_of(&uniform);
-    let buffer = rs.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("rustic.sprite.camera_ub"),
-        size: bytes.len() as u64,
-        usage: wgpu::BufferUsages::UNIFORM,
-        mapped_at_creation: true,
-    });
-    buffer
-        .slice(..)
-        .get_mapped_range_mut()
-        .copy_from_slice(bytes);
-    buffer.unmap();
-    let bind_group = rs.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("rustic.sprite.camera_bg"),
-        layout: &pipeline.camera_bgl,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: buffer.as_entire_binding(),
-        }],
-    });
-    CameraBinding {
-        camera: camera.id,
-        bind_group,
-        _buffer: buffer,
-    }
+    buffer: wgpu::Buffer,
 }
 
 fn unique_run_cameras(runs: &[Run]) -> Vec<CameraId> {
@@ -420,16 +418,6 @@ fn unique_run_cameras(runs: &[Run]) -> Vec<CameraId> {
         }
     }
     ids
-}
-
-fn camera_binding_for_camera(
-    camera: CameraId,
-    bindings: &[CameraBinding],
-) -> Option<&wgpu::BindGroup> {
-    bindings
-        .iter()
-        .find(|binding| binding.camera == camera)
-        .map(|binding| &binding.bind_group)
 }
 
 fn scrolled_world_pos(c: &DrawCommand, camera: &Camera) -> glam::Vec2 {
