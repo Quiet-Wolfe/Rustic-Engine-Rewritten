@@ -266,6 +266,30 @@ impl SpriteBatcher {
 
         let camera_bindings = camera_bindings_for_runs(rs, pipeline, cameras, &runs);
 
+        let mut atlas_bind_groups = HashMap::new();
+        for run in &runs {
+            let key = (run.atlas, run.filter);
+            if !atlas_bind_groups.contains_key(&key) {
+                if let Some(tex) = atlases.get(&run.atlas) {
+                    let atlas_bg = rs.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("rustic.sprite.atlas_bg"),
+                        layout: &pipeline.atlas_bgl,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&tex.view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::Sampler(rs.sampler_for(run.filter)),
+                            },
+                        ],
+                    });
+                    atlas_bind_groups.insert(key, atlas_bg);
+                }
+            }
+        }
+
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("rustic.sprite.pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -298,26 +322,12 @@ impl SpriteBatcher {
             let Some(cam_bg) = current_cam_bg else {
                 continue;
             };
-            let Some(tex) = atlases.get(&run.atlas) else {
+            let Some(atlas_bg) = atlas_bind_groups.get(&(run.atlas, run.filter)) else {
                 continue;
             };
 
-            let atlas_bg = rs.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("rustic.sprite.atlas_bg"),
-                layout: &pipeline.atlas_bgl,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&tex.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(rs.sampler_for(run.filter)),
-                    },
-                ],
-            });
             pass.set_bind_group(0, cam_bg, &[]);
-            pass.set_bind_group(1, &atlas_bg, &[]);
+            pass.set_bind_group(1, atlas_bg, &[]);
             pass.draw(
                 0..4,
                 run.instance_offset..(run.instance_offset + run.instance_count),
