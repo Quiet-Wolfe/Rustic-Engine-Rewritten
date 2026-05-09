@@ -53,6 +53,14 @@ impl Atlas {
                     sprite.name
                 )));
             }
+            // ref: flxanimate:flxanimate/frames/FlxAnimateFrames.hx:120-126
+            // Rotated frames are stored 90° CCW in the atlas; swap w/h to get
+            // the logical (un-rotated) size the animation matrices were designed for.
+            let logical_size = if sprite.rotated {
+                Vec2::new(sprite.h, sprite.w)
+            } else {
+                Vec2::new(sprite.w, sprite.h)
+            };
             frames.push(Frame {
                 name: sprite.name,
                 uv_min: Vec2::new(sprite.x / width, sprite.y / height),
@@ -60,7 +68,7 @@ impl Atlas {
                     (sprite.x + sprite.w) / width,
                     (sprite.y + sprite.h) / height,
                 ),
-                size: Vec2::new(sprite.w, sprite.h),
+                size: logical_size,
                 rotated: sprite.rotated,
             });
         }
