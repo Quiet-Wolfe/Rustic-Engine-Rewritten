@@ -75,7 +75,8 @@ fn vs_main(input: VsIn) -> VsOut {
     var atlas_uv = input.quad_uv;
     if (input.uv_rotated > 0.5) {
         // Funkin's Sparrow exporter marks these as angle -90.
-        atlas_uv = vec2<f32>(input.quad_uv.y, 1.0 - input.quad_uv.x);
+        // This means the atlas frame is rotated 90 degrees CW.
+        atlas_uv = vec2<f32>(1.0 - input.quad_uv.y, input.quad_uv.x);
     }
     let uv = mix(input.uv_min, input.uv_max, atlas_uv);
 
