@@ -51,7 +51,7 @@ pub(crate) fn reconfigure_surface(rt: &mut Runtime, width: u32, height: u32) {
             present_mode: rt.surface_cfg.present_mode,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency: 2,
         },
     );
 }
