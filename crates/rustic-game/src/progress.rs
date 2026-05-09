@@ -9,6 +9,7 @@ use rustic_core::time::Samples;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ResolvedOpponentNote {
+    pub note_id: rustic_core::ids::NoteId,
     pub lane: Lane,
     pub is_sustain: bool,
     pub hold_end_at: Option<Samples>,
@@ -28,6 +29,7 @@ impl PlayState {
                 hits.push((
                     note.id,
                     ResolvedOpponentNote {
+                        note_id: note.id,
                         lane: note.lane,
                         is_sustain: note.is_sustain,
                         hold_end_at: (note.sustain_samples > 0)
@@ -76,6 +78,7 @@ mod tests {
         assert_eq!(
             hits,
             vec![ResolvedOpponentNote {
+                note_id: NoteId::new(0),
                 lane: Lane::Left,
                 is_sustain: false,
                 hold_end_at: None
@@ -103,6 +106,7 @@ mod tests {
         assert_eq!(
             hits,
             vec![ResolvedOpponentNote {
+                note_id: NoteId::new(0),
                 lane: Lane::Left,
                 is_sustain: false,
                 hold_end_at: Some(Samples(4_000))

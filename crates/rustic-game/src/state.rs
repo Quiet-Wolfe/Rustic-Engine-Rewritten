@@ -42,6 +42,10 @@ pub struct PlayState {
     /// separately from `notes` so the chart stays immutable and rewind
     /// only needs to replay the resolved set.
     pub resolved_notes: Vec<NoteId>,
+    /// Tracks hold notes that were released early. The mapped value is the
+    /// remaining samples at the time of drop.
+    #[serde(skip)]
+    pub dropped_holds: std::collections::HashMap<NoteId, i64>,
     /// Hit window in milliseconds. The serialized name stays generic so old
     /// prototype saves can fall back cleanly.
     pub windows: JudgmentWindowsSerde,
@@ -68,6 +72,7 @@ impl Default for PlayState {
             events: Vec::new(),
             next_event_index: 0,
             resolved_notes: Vec::new(),
+            dropped_holds: std::collections::HashMap::new(),
             windows: JudgmentWindows::base_fnf().into(),
             score: 0,
             hold_score_carry: 0.0,

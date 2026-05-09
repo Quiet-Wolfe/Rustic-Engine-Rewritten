@@ -111,7 +111,12 @@ impl PlayState {
 
     /// Visible v0.8.5 hold-trail strips, derived from hold heads rather
     /// than the legacy per-step sustain children.
-    pub fn hold_trail_views(&self, cursor: Samples, sample_rate: u32) -> Vec<HoldTrailView> {
+    pub fn hold_trail_views(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        is_held: impl Fn(Lane, bool) -> bool,
+    ) -> Vec<HoldTrailView> {
         let sample_rate_u32 = sample_rate.max(1);
         let sample_rate = sample_rate_u32 as f32;
         let song_ms = cursor.0 as f32 * 1000.0 / sample_rate;
@@ -129,13 +134,18 @@ impl PlayState {
                 continue;
             }
 
+            let currently_held = is_held(note.lane, note.opponent);
+            let dropped_ms = self.dropped_holds.get(&note.id).map(|s| *s as f32 * 1000.0 / sample_rate);
+
             let rounded_speed = round_decimal(
                 self.effective_scroll_speed(cursor, sample_rate_u32, note.opponent),
                 2,
             );
             let scroll = NOTE_SCROLL_FACTOR * rounded_speed;
-            let remaining_ms = if song_ms > note_ms {
+            let remaining_ms = if song_ms > note_ms && currently_held {
                 end_ms - song_ms
+            } else if let Some(dropped) = dropped_ms {
+                dropped
             } else {
                 sustain_ms
             };
@@ -144,10 +154,10 @@ impl PlayState {
                 continue;
             }
 
-            let approach_offset = if song_ms > note_ms {
+            let approach_offset = if song_ms > note_ms && currently_held {
                 0.0
             } else {
-                (note_ms - song_ms) * scroll
+                (note_ms - song_ms) * scroll + (sustain_ms - remaining_ms) * scroll
             };
             out.push(HoldTrailView {
                 id: note.id,
@@ -374,7 +384,7 @@ mod tests {
         child.is_sustain = true;
         state.notes.push(child);
 
-        let incoming = state.hold_trail_views(Samples(0), 48_000);
+        let incoming = state.hold_trail_views(Samples(0), 48_000, |_, _| false);
         assert_eq!(incoming.len(), 1);
         assert!(!incoming[0].head_resolved);
         assert_eq!(incoming[0].x, 688.0);
@@ -382,7 +392,7 @@ mod tests {
         assert!((incoming[0].y - 554.6).abs() < 1e-3);
 
         state.resolved_notes.push(rustic_core::ids::NoteId::new(0));
-        let clipped = state.hold_trail_views(Samples(60_000), 48_000);
+        let clipped = state.hold_trail_views(Samples(60_000), 48_000, |_, _| true);
         assert_eq!(clipped.len(), 1);
         assert!(clipped[0].head_resolved);
         assert!((clipped[0].height - 112.5).abs() < 1e-4);

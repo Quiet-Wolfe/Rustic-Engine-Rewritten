@@ -12,6 +12,7 @@ pub struct ActiveHolds {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ActiveHold {
+    note_id: rustic_core::ids::NoteId,
     end_at: Samples,
     scored_until: Samples,
 }
@@ -24,14 +25,16 @@ pub struct HoldTick {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HoldRelease {
+    pub note_id: rustic_core::ids::NoteId,
     pub hold_end_at: Samples,
     pub elapsed_samples: i64,
 }
 
 impl ActiveHolds {
-    pub fn start(&mut self, lane: Lane, hold_end_at: Samples, cursor: Samples) {
+    pub fn start(&mut self, lane: Lane, hold_end_at: Samples, cursor: Samples, note_id: rustic_core::ids::NoteId) {
         if hold_end_at > cursor {
             self.active[lane_index(lane)] = Some(ActiveHold {
+                note_id,
                 end_at: hold_end_at,
                 scored_until: cursor,
             });
@@ -41,6 +44,7 @@ impl ActiveHolds {
     pub fn release(&mut self, lane: Lane, cursor: Samples) -> Option<HoldRelease> {
         let active = self.active[lane_index(lane)].take()?;
         Some(HoldRelease {
+            note_id: active.note_id,
             hold_end_at: active.end_at,
             elapsed_samples: elapsed_until(active, cursor),
         })
@@ -110,6 +114,7 @@ mod tests {
 
     fn hold_release(end_at: i64, elapsed_samples: i64) -> Option<HoldRelease> {
         Some(HoldRelease {
+            note_id: rustic_core::ids::NoteId::new(0),
             hold_end_at: Samples(end_at),
             elapsed_samples,
         })
@@ -125,7 +130,7 @@ mod tests {
     #[test]
     fn active_holds_report_drops_and_completions_once() {
         let mut holds = ActiveHolds::default();
-        holds.start(Lane::Left, Samples(200), Samples(100));
+        holds.start(Lane::Left, Samples(200), Samples(100), rustic_core::ids::NoteId::new(0));
 
         let lanes: Vec<_> = holds.active_lanes(Samples(150)).collect();
         assert_eq!(lanes, vec![Lane::Left]);
@@ -135,7 +140,7 @@ mod tests {
         );
         assert_eq!(holds.release(Lane::Left, Samples(170)), None);
 
-        holds.start(Lane::Down, Samples(300), Samples(200));
+        holds.start(Lane::Down, Samples(300), Samples(200), rustic_core::ids::NoteId::new(0));
         assert_eq!(holds.complete_elapsed(Samples(299)), Vec::<Lane>::new());
         assert_eq!(holds.complete_elapsed(Samples(300)), vec![Lane::Down]);
         assert_eq!(holds.complete_elapsed(Samples(301)), Vec::<Lane>::new());
@@ -144,7 +149,7 @@ mod tests {
     #[test]
     fn active_holds_score_elapsed_time_until_release_or_completion() {
         let mut holds = ActiveHolds::default();
-        holds.start(Lane::Left, Samples(200), Samples(100));
+        holds.start(Lane::Left, Samples(200), Samples(100), rustic_core::ids::NoteId::new(0));
 
         assert_eq!(
             holds.score_ticks(Samples(140)),
@@ -155,7 +160,7 @@ mod tests {
             hold_release(200, 40)
         );
 
-        holds.start(Lane::Down, Samples(300), Samples(200));
+        holds.start(Lane::Down, Samples(300), Samples(200), rustic_core::ids::NoteId::new(0));
         assert_eq!(
             holds.score_ticks(Samples(350)),
             vec![hold_tick(Lane::Down, 100)]

@@ -369,7 +369,7 @@ impl App {
                 opponent_receptors.confirm(hit.lane, cursor, confirm_duration);
                 anim.opponent_note_hit(hit.lane, cursor, sample_rate, bpm);
                 if let Some(hold_end_at) = hit.hold_end_at {
-                    opponent_receptors.start_hold(hit.lane, hold_end_at, cursor);
+                    opponent_receptors.start_hold(hit.lane, hold_end_at, cursor, hit.note_id);
                     self.hold_covers
                         .start_opponent(hit.lane, cursor, hold_end_at);
                 }
@@ -406,8 +406,8 @@ impl App {
         let (Some(play_state), Some(note_skin)) = (&self.play_state, &self.note_skin) else {
             return;
         };
-        for view in play_state.hold_trail_views(cursor, sample_rate) {
-            if view.head_resolved && !self.held_lanes.is_held(view.lane) {
+        for view in play_state.hold_trail_views(cursor, sample_rate, |lane, opp| if opp { true } else { self.held_lanes.is_held(lane) }) {
+            if view.head_resolved && !view.opponent && !self.held_lanes.is_held(view.lane) {
                 continue;
             }
             for cmd in note_skin.hold_trail_commands(&view) {
@@ -547,7 +547,7 @@ impl App {
                             self.note_splashes.push(lane, cursor);
                         }
                         if let Some(hold_end_at) = outcome.hold_end_at {
-                            self.active_holds.start(lane, hold_end_at, cursor);
+                            self.active_holds.start(lane, hold_end_at, cursor, outcome.note_id);
                             self.hold_covers.start(lane, cursor, hold_end_at);
                         }
                     }
@@ -566,13 +566,13 @@ impl App {
             self.enter_game_over(cursor);
         }
     }
-    fn register_hold_drop(&mut self, lane: Lane, cursor: Samples, hold_end_at: Samples) {
+    fn register_hold_drop(&mut self, lane: Lane, cursor: Samples, hold_end_at: Samples, note_id: rustic_core::ids::NoteId) {
         let sample_rate = play_sample_rate(&self.mixer);
         let Some(play_state) = self.play_state.as_mut() else {
             return;
         };
         let remaining_samples = hold_end_at.0.saturating_sub(cursor.0);
-        let Some(drop) = play_state.register_hold_drop(remaining_samples, sample_rate) else {
+        let Some(drop) = play_state.register_hold_drop(note_id, remaining_samples, sample_rate) else {
             return;
         };
         let anim = &mut self.character_anim;
@@ -731,7 +731,7 @@ impl ApplicationHandler for App {
                             if let Some(release) = self.active_holds.release(lane, song_cursor) {
                                 self.register_hold_tick(release.elapsed_samples);
                                 if release.hold_end_at > song_cursor {
-                                    self.register_hold_drop(lane, song_cursor, release.hold_end_at);
+                                    self.register_hold_drop(lane, song_cursor, release.hold_end_at, release.note_id);
                                 }
                             }
                             self.hold_covers.end(lane, song_cursor);

@@ -23,6 +23,7 @@ use rustic_core::time::Samples;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct HitOutcome {
+    pub note_id: rustic_core::ids::NoteId,
     pub judgment: Judgment,
     pub is_sustain: bool,
     pub hold_end_at: Option<Samples>,
@@ -138,9 +139,11 @@ impl PlayState {
     /// miss tally.
     pub fn register_hold_drop(
         &mut self,
+        note_id: rustic_core::ids::NoteId,
         remaining_samples: i64,
         sample_rate: u32,
     ) -> Option<HoldDropOutcome> {
+        self.dropped_holds.insert(note_id, remaining_samples.max(0));
         let remaining_ms = remaining_samples.max(0) as f64 * 1000.0 / f64::from(sample_rate.max(1));
         let delta = hold_drop_score_delta(remaining_ms)?;
         let previous_combo = self.combo;
@@ -208,6 +211,7 @@ impl PlayState {
 
         let hit = self.register_timed_hit(abs_diff_ms);
         Some(HitOutcome {
+            note_id: id,
             judgment: hit.judgment,
             is_sustain: false,
             hold_end_at,
@@ -400,7 +404,7 @@ mod tests {
         s.combo = 7;
         s.score = 500;
 
-        let drop = s.register_hold_drop(48_000, 48_000);
+        let drop = s.register_hold_drop(NoteId::new(0), 48_000, 48_000);
 
         assert_eq!(drop.map(|drop| drop.score_delta), Some(-125));
         assert_eq!(s.score, 375);
@@ -414,7 +418,7 @@ mod tests {
         s.combo = 7;
         s.score = 500;
 
-        let delta = s.register_hold_drop(7_680, 48_000);
+        let delta = s.register_hold_drop(NoteId::new(0), 7_680, 48_000);
 
         assert_eq!(delta, None);
         assert_eq!(s.score, 500);
@@ -426,7 +430,7 @@ mod tests {
         let mut s = PlayState::new();
         s.combo = 10;
 
-        let drop = s.register_hold_drop(48_000, 48_000);
+        let drop = s.register_hold_drop(NoteId::new(0), 48_000, 48_000);
 
         assert_eq!(drop.and_then(|drop| drop.combo_popup), Some(0));
     }
@@ -436,7 +440,7 @@ mod tests {
         let mut s = PlayState::new();
         s.combo = 70;
 
-        let drop = s.register_hold_drop(48_000, 48_000);
+        let drop = s.register_hold_drop(NoteId::new(0), 48_000, 48_000);
 
         assert_eq!(drop.map(|drop| drop.combo_count), Some(70));
     }

@@ -44,8 +44,8 @@ impl AutoReceptors {
         self.lanes.confirm(lane, cursor, confirm_duration);
     }
 
-    pub fn start_hold(&mut self, lane: Lane, hold_end_at: Samples, cursor: Samples) {
-        self.holds.start(lane, hold_end_at, cursor);
+    pub fn start_hold(&mut self, lane: Lane, hold_end_at: Samples, cursor: Samples, note_id: rustic_core::ids::NoteId) {
+        self.holds.start(lane, hold_end_at, cursor, note_id);
     }
 
     pub fn receptor_state(&self, lane: Lane, cursor: Samples) -> ReceptorState {
@@ -331,7 +331,7 @@ mod tests {
             }
         );
 
-        receptors.start_hold(Lane::Left, Samples(500), Samples(10));
+        receptors.start_hold(Lane::Left, Samples(500), Samples(10), rustic_core::ids::NoteId::new(0));
         receptors.update(Samples(200), Samples(100));
         assert_eq!(
             receptors.receptor_state(Lane::Left, Samples(200)),
