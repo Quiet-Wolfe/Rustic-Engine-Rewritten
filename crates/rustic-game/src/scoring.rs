@@ -221,40 +221,54 @@ impl PlayState {
         })
     }
 
-    /// Resolve generated player-side sustain children while a hit hold lane is
-    /// held. They are bookkeeping only; active hold ticks own score/health.
-    pub fn resolve_held_sustains_in_lane(
+    /// Attempt to pick up a hold note that was missed at the head or dropped early,
+    /// returning its note ID and end cursor if successfully picked up.
+    pub fn pickup_hold_in_lane(
         &mut self,
         cursor: Samples,
         lane: Lane,
         sample_rate: u32,
-    ) -> u32 {
-        let hit_window = JudgmentWindows::from(self.windows).hit_window_ms.0;
+    ) -> Option<(rustic_core::ids::NoteId, Samples)> {
         let ms_per_sample = 1000.0 / sample_rate as f64;
-        let mut hits = Vec::new();
+        let mut best: Option<(usize, f64)> = None;
 
-        for n in &self.notes {
-            if n.opponent || !n.is_sustain || n.lane != lane {
+        for (i, n) in self.notes.iter().enumerate() {
+            if n.opponent || n.lane != lane || n.sustain_samples <= 0 {
                 continue;
             }
-            if self.resolved_notes.contains(&n.id) {
+            let end_at = n.hit_at.0 + n.sustain_samples;
+            if cursor.0 < n.hit_at.0 || cursor.0 >= end_at {
                 continue;
             }
-            if !self.is_active_sustain_child(n.id) {
-                continue;
-            }
-            let diff_ms = (n.hit_at.0 - cursor.0) as f64 * ms_per_sample;
-            if diff_ms > -hit_window && diff_ms < hit_window * 0.5 {
-                hits.push(n.id);
+            // If it's in dropped_holds, it was hit and then dropped.
+            // If it's in resolved_notes but not dropped_holds, it was missed entirely at the head.
+            // If it's not in resolved_notes yet, the head hasn't passed the hit window, but cursor > hit_at, so it's overlapping.
+            // Wait, if it's NOT resolved, picking up the tail should probably resolve the head as a miss?
+            // FNF lets you hit the sustain even if the head hasn't fully missed yet.
+            // But if we pick it up, we need to make sure we don't hit the head later.
+            
+            let diff_ms = (cursor.0 - n.hit_at.0) as f64 * ms_per_sample;
+            if best.map(|(_, b)| diff_ms < b).unwrap_or(true) {
+                best = Some((i, diff_ms));
             }
         }
 
-        let count = hits.len() as u32;
-        for id in hits {
+        let (idx, _) = best?;
+        let note = &self.notes[idx];
+        let id = note.id;
+        let hold_end_at = Samples(note.hit_at.0 + note.sustain_samples);
+
+        // If the head wasn't resolved yet, picking up the tail means we missed the head.
+        // We should explicitly mark it as a miss if it's not resolved, because we failed to hit the head.
+        if !self.resolved_notes.contains(&id) {
             self.resolved_notes.push(id);
-            self.register_sustain_hit();
+            self.register_note_miss(); // They missed the head but caught the tail
         }
-        count
+
+        // Remove from dropped_holds so we can score it fully again.
+        self.dropped_holds.remove(&id);
+
+        Some((id, hold_end_at))
     }
 
     /// Mark every player-side tap note whose hit_at is more than the hit
@@ -295,21 +309,6 @@ impl PlayState {
         // Upstream caps at max health from above; below min health is allowed
         // and triggers game over via `is_dead`.
         self.health = if next > MAX_HEALTH { MAX_HEALTH } else { next };
-    }
-
-    fn is_active_sustain_child(&self, sustain_id: rustic_core::ids::NoteId) -> bool {
-        let Some(child) = self.notes.iter().find(|note| note.id == sustain_id) else {
-            return false;
-        };
-        self.notes.iter().any(|head| {
-            !head.opponent
-                && !head.is_sustain
-                && head.lane == child.lane
-                && head.sustain_samples > 0
-                && self.resolved_notes.contains(&head.id)
-                && child.hit_at > head.hit_at
-                && child.hit_at.0 <= head.hit_at.0 + head.sustain_samples
-        })
     }
 }
 
@@ -619,38 +618,6 @@ mod tests {
         assert_eq!(s.sicks, 0);
         assert!(!s.resolved_notes.contains(&NoteId::new(0)));
         assert!((s.health - INITIAL_HEALTH).abs() < 1e-5);
-    }
-
-    #[test]
-    fn held_lane_resolves_sustain_children_after_head_hit() {
-        let mut s = PlayState::new();
-        add_hold_head(&mut s, 0, Lane::Left, 48_000, 48_000);
-        add_sustain(&mut s, 1, Lane::Left, 62_400);
-        add_sustain(&mut s, 2, Lane::Left, 76_800);
-        s.resolved_notes.push(NoteId::new(0));
-
-        let count = s.resolve_held_sustains_in_lane(Samples(62_400), Lane::Left, 48_000);
-
-        assert_eq!(count, 1);
-        assert!(s.resolved_notes.contains(&NoteId::new(1)));
-        assert!(!s.resolved_notes.contains(&NoteId::new(2)));
-        assert_eq!(s.score, 0);
-        assert_eq!(s.combo, 0);
-        assert!((s.health - INITIAL_HEALTH).abs() < 1e-6);
-    }
-
-    #[test]
-    fn held_lane_does_not_resolve_sustain_children_when_head_was_not_hit() {
-        let mut s = PlayState::new();
-        add_hold_head(&mut s, 0, Lane::Left, 48_000, 48_000);
-        add_sustain(&mut s, 1, Lane::Left, 62_400);
-
-        let count = s.resolve_held_sustains_in_lane(Samples(62_400), Lane::Left, 48_000);
-
-        assert_eq!(count, 0);
-        assert!(!s.resolved_notes.contains(&NoteId::new(1)));
-        assert_eq!(s.score, 0);
-        assert!((s.health - INITIAL_HEALTH).abs() < 1e-6);
     }
 
     #[test]

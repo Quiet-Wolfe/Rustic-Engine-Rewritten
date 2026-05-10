@@ -110,8 +110,12 @@ impl HeldLanes {
     }
 
     pub fn is_confirming(&self, lane: Lane, cursor: Samples) -> bool {
-        let until = self.confirm_until[lane_index(lane)];
-        until.0 > 0 && until >= cursor
+        let index = lane_index(lane);
+        let until = self.confirm_until[index];
+        if until.0 == 0 {
+            return false;
+        }
+        until >= cursor || self.pressed[index]
     }
 
     pub fn receptor_state(&self, lane: Lane, cursor: Samples) -> ReceptorState {
@@ -233,8 +237,9 @@ mod tests {
         );
         assert_eq!(
             held.receptor_state(Lane::Left, Samples(61)),
-            ReceptorState::Pressed {
-                started_at: Samples(25)
+            ReceptorState::Confirm {
+                started_at: Samples(50),
+                hold: false
             }
         );
     }
