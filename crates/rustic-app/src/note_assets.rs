@@ -235,8 +235,8 @@ impl NoteSkin {
                         cursor,
                         sample_rate,
                         Samples(started_at.0 + self.confirm_animation_duration(sample_rate).0),
-                        24, // FNF usually runs confirm-hold at 24 fps
-                        true, // Loop the confirm-hold animation!
+                        60, // Loop quicker while holding
+                        true,
                     )
                 } else {
                     animated_note_frame(
