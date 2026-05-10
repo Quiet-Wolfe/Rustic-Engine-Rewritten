@@ -94,6 +94,11 @@ impl HeldLanes {
         self.confirm_until[index] = self.confirm_until[index].max(until);
     }
 
+    pub fn complete_hold(&mut self, lane: Lane) {
+        let index = lane_index(lane);
+        self.hold_confirming[index] = false;
+    }
+
     pub fn play_static(&mut self, lane: Lane) {
         let index = lane_index(lane);
         self.confirm_started[index] = Samples(0);
