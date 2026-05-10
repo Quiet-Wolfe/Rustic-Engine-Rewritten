@@ -235,7 +235,7 @@ impl NoteSkin {
                         cursor,
                         sample_rate,
                         Samples(started_at.0 + self.confirm_animation_duration(sample_rate).0),
-                        60, // Loop quicker while holding
+                        RECEPTOR_ANIMATION_FPS,
                         true,
                     )
                 } else {
