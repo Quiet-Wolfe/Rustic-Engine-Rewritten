@@ -214,11 +214,11 @@ fn animated_note_frame_uses_started_cursor_and_clamps() {
         .collect();
 
     assert_eq!(
-        animated_note_frame(&frames, Samples(12_000), 48_000, Samples(10_000)).name,
+        animated_note_frame(&frames, Samples(12_000), 48_000, Samples(10_000), 24, false).name,
         "confirm0001"
     );
     assert_eq!(
-        animated_note_frame(&frames, Samples(96_000), 48_000, Samples(10_000)).name,
+        animated_note_frame(&frames, Samples(96_000), 48_000, Samples(10_000), 24, false).name,
         "confirm0002"
     );
 }

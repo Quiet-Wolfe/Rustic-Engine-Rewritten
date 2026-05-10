@@ -223,7 +223,7 @@ impl NoteSkin {
         match state {
             ReceptorState::Static => &self.static_frames[index],
             ReceptorState::Pressed { started_at } => {
-                animated_note_frame(&self.press_frames[index], cursor, sample_rate, started_at)
+                animated_note_frame(&self.press_frames[index], cursor, sample_rate, started_at, RECEPTOR_ANIMATION_FPS, false)
             }
             ReceptorState::Confirm { started_at, hold } => {
                 if hold
@@ -235,6 +235,8 @@ impl NoteSkin {
                         cursor,
                         sample_rate,
                         Samples(started_at.0 + self.confirm_animation_duration(sample_rate).0),
+                        24, // FNF usually runs confirm-hold at 24 fps
+                        true, // Loop the confirm-hold animation!
                     )
                 } else {
                     animated_note_frame(
@@ -242,6 +244,8 @@ impl NoteSkin {
                         cursor,
                         sample_rate,
                         started_at,
+                        RECEPTOR_ANIMATION_FPS,
+                        false,
                     )
                 }
             }
@@ -535,14 +539,16 @@ fn animated_note_frame(
     cursor: Samples,
     sample_rate: u32,
     started_at: Samples,
+    fps: u16,
+    looped: bool,
 ) -> &SparrowFrame {
     let index = animation_frame_index(
         cursor,
         sample_rate,
         started_at,
-        RECEPTOR_ANIMATION_FPS,
+        fps,
         frames.len(),
-        false,
+        looped,
     );
     &frames[index]
 }
