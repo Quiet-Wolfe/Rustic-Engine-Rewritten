@@ -36,6 +36,7 @@ pub mod screen;
 pub mod settings;
 pub mod song_audio;
 pub mod stage_object_assets;
+pub mod story_menu_assets;
 pub mod title_assets;
 
 pub use app::run;

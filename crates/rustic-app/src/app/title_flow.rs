@@ -2,8 +2,8 @@ use super::App;
 use crate::app_text::song_select_text_commands;
 use crate::camera_fx::CameraFx;
 use crate::main_menu_assets::{load_main_menu_assets, MainMenuAction};
-use crate::preview_song::{PreviewDifficulty, PreviewSong};
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
+use crate::story_menu_assets::load_story_menu_assets;
 use crate::title_assets::load_title_screen_assets;
 use rustic_core::input::InputAction;
 use rustic_core::time::Samples;
@@ -16,6 +16,7 @@ use winit::event_loop::ActiveEventLoop;
 pub(super) enum AppMode {
     Title,
     MainMenu,
+    StoryMenu,
     SongSelect,
     Play,
 }
@@ -25,6 +26,8 @@ impl App {
         self.mode = AppMode::Title;
         self.title_start = Instant::now();
         self.title_assets = None;
+        self.main_menu_assets = None;
+        self.story_menu_assets = None;
         self.play_state = None;
         self.static_cmds = RenderCommandList::new();
         self.cmds = RenderCommandList::new();
@@ -74,6 +77,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.story_menu_assets = None;
         self.clear_play_state_for_menu();
         self.update_window_title();
 
@@ -108,9 +112,58 @@ impl App {
         self.append_debug_overlay_commands(cursor, sample_rate);
     }
 
+    pub(super) fn load_story_menu(&mut self) {
+        self.mode = AppMode::StoryMenu;
+        self.title_start = Instant::now();
+        self.title_assets = None;
+        self.main_menu_assets = None;
+        self.story_menu_assets = None;
+        self.clear_play_state_for_menu();
+        self.update_window_title();
+
+        let Some(runtime) = self.runtime.as_ref() else {
+            return;
+        };
+        match load_story_menu_assets(&runtime.rs.device, &runtime.rs.queue) {
+            Ok(mut story) => {
+                self.atlases = std::mem::take(&mut story.textures);
+                self.story_menu_index = self
+                    .story_menu_index
+                    .min(story.item_count().saturating_sub(1));
+                self.story_menu_difficulty =
+                    story.difficulty_for_level(self.story_menu_index, self.story_menu_difficulty);
+                self.story_menu_assets = Some(story);
+                self.rebuild_story_menu_commands();
+            }
+            Err(e) => {
+                tracing::warn!(target: "rustic.asset", "story menu unavailable: {e:#}");
+                self.enter_song_select();
+            }
+        }
+    }
+
+    pub(super) fn rebuild_story_menu_commands(&mut self) {
+        let sample_rate = play_sample_rate(&self.mixer);
+        let cursor = self.title_cursor(sample_rate);
+        if let Some(assets) = self.story_menu_assets.as_ref() {
+            self.cmds = assets.commands(
+                self.story_menu_index,
+                self.story_menu_difficulty,
+                cursor,
+                sample_rate,
+            );
+            self.text_cmds =
+                assets.text_commands(self.story_menu_index, self.story_menu_difficulty);
+        } else {
+            self.cmds = RenderCommandList::new();
+            self.text_cmds = TextCommandList::new();
+        }
+        self.append_debug_overlay_commands(cursor, sample_rate);
+    }
+
     pub(super) fn input_cursor(&mut self) -> Samples {
         match self.mode {
-            AppMode::Title | AppMode::MainMenu | AppMode::SongSelect => {
+            AppMode::Title | AppMode::MainMenu | AppMode::StoryMenu | AppMode::SongSelect => {
                 self.title_cursor(play_sample_rate(&self.mixer))
             }
             AppMode::Play => self.advance_song_clock(),
@@ -126,6 +179,7 @@ impl App {
         match self.mode {
             AppMode::Title => self.handle_title_input(action, state, event_loop),
             AppMode::MainMenu => self.handle_main_menu_input(action, state),
+            AppMode::StoryMenu => self.handle_story_menu_input(action, state),
             AppMode::SongSelect => self.handle_song_select_input(action, state),
             AppMode::Play => false,
         }
@@ -182,15 +236,72 @@ impl App {
             .as_ref()
             .and_then(|assets| assets.action_for(self.main_menu_index));
         match action {
-            Some(MainMenuAction::StoryMode) => {
-                self.preview_selection = crate::preview_song::PreviewSelection::new(
-                    PreviewSong::BOPEEBO,
-                    PreviewDifficulty::Normal,
-                );
-                self.enter_play();
-            }
+            Some(MainMenuAction::StoryMode) => self.load_story_menu(),
             Some(MainMenuAction::Freeplay) => self.enter_song_select(),
             Some(MainMenuAction::Options | MainMenuAction::Credits) | None => {}
+        }
+    }
+
+    fn handle_story_menu_input(&mut self, action: InputAction, state: ElementState) -> bool {
+        if state != ElementState::Pressed {
+            return true;
+        }
+        // ref: bdedc0aa:source/funkin/ui/story/StoryMenuState.hx:357-428
+        let item_count = self
+            .story_menu_assets
+            .as_ref()
+            .map(|assets| assets.item_count())
+            .unwrap_or(0)
+            .max(1);
+        let old_index = self.story_menu_index;
+        let old_difficulty = self.story_menu_difficulty;
+        match action {
+            InputAction::LaneUp | InputAction::UiUp => {
+                self.story_menu_index = (self.story_menu_index + item_count - 1) % item_count;
+                self.clamp_story_difficulty();
+            }
+            InputAction::LaneDown | InputAction::UiDown => {
+                self.story_menu_index = (self.story_menu_index + 1) % item_count;
+                self.clamp_story_difficulty();
+            }
+            InputAction::LaneLeft | InputAction::UiLeft => {
+                if let Some(assets) = self.story_menu_assets.as_ref() {
+                    self.story_menu_difficulty = assets
+                        .previous_difficulty(self.story_menu_index, self.story_menu_difficulty);
+                }
+            }
+            InputAction::LaneRight | InputAction::UiRight => {
+                if let Some(assets) = self.story_menu_assets.as_ref() {
+                    self.story_menu_difficulty =
+                        assets.next_difficulty(self.story_menu_index, self.story_menu_difficulty);
+                }
+            }
+            InputAction::Confirm => self.confirm_story_menu_item(),
+            InputAction::Back => self.load_main_menu(),
+            _ => {}
+        }
+        if self.mode == AppMode::StoryMenu
+            && (self.story_menu_index != old_index || self.story_menu_difficulty != old_difficulty)
+        {
+            self.rebuild_story_menu_commands();
+        }
+        true
+    }
+
+    fn clamp_story_difficulty(&mut self) {
+        if let Some(assets) = self.story_menu_assets.as_ref() {
+            self.story_menu_difficulty =
+                assets.difficulty_for_level(self.story_menu_index, self.story_menu_difficulty);
+        }
+    }
+
+    fn confirm_story_menu_item(&mut self) {
+        let selection = self.story_menu_assets.as_ref().and_then(|assets| {
+            assets.preview_selection(self.story_menu_index, self.story_menu_difficulty)
+        });
+        if let Some(selection) = selection {
+            self.preview_selection = selection;
+            self.enter_play();
         }
     }
 
@@ -228,6 +339,7 @@ impl App {
         self.mode = AppMode::SongSelect;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.story_menu_assets = None;
         self.clear_play_state_for_menu();
         self.rebuild_song_select_commands();
     }
@@ -266,6 +378,7 @@ impl App {
         self.mode = AppMode::Play;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.story_menu_assets = None;
         self.load_selected_song();
     }
 

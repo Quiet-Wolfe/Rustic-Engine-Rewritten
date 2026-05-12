@@ -30,6 +30,7 @@ use crate::scene_assets::{
 use crate::screen::ScreenStack;
 use crate::song_audio::{load_preview_stems_for, play_sample_rate, set_vocals_gain};
 use crate::stage_object_assets::StagePropSet;
+use crate::story_menu_assets::StoryMenuAssets;
 use crate::title_assets::TitleScreenAssets;
 use anyhow::Result;
 use rustic_asset::ChartEventKind;
@@ -87,6 +88,9 @@ struct App {
     title_assets: Option<TitleScreenAssets>,
     main_menu_assets: Option<MainMenuAssets>,
     main_menu_index: usize,
+    story_menu_assets: Option<StoryMenuAssets>,
+    story_menu_index: usize,
+    story_menu_difficulty: crate::preview_song::PreviewDifficulty,
     title_start: Instant,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -140,6 +144,9 @@ impl App {
             title_assets: None,
             main_menu_assets: None,
             main_menu_index: 0,
+            story_menu_assets: None,
+            story_menu_index: 1,
+            story_menu_difficulty: crate::preview_song::PreviewDifficulty::Normal,
             title_start: now,
             play_state: None,
             song_start: now,
@@ -283,6 +290,10 @@ impl App {
         }
         if self.mode == AppMode::SongSelect {
             self.rebuild_song_select_commands();
+            return;
+        }
+        if self.mode == AppMode::StoryMenu {
+            self.rebuild_story_menu_commands();
             return;
         }
         if self.mode == AppMode::MainMenu {

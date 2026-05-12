@@ -17,6 +17,7 @@ use rustic_app::regression::{
     load_scenario_play_state, load_scenario_scene, scenario_cameras, scenario_stage_prop_commands,
     RegressionFrameKind, RegressionScenario, FIRST_GOLDEN_SCENARIOS, REGRESSION_SAMPLE_RATE,
 };
+use rustic_app::story_menu_assets::load_story_menu_assets;
 use rustic_app::title_assets::load_title_screen_assets;
 use rustic_asset::ChartEventKind;
 use rustic_core::time::Samples;
@@ -143,6 +144,9 @@ fn build_scenario(
     if scenario.frame_kind == RegressionFrameKind::MainMenu {
         return build_main_menu_scenario(harness, scenario);
     }
+    if scenario.frame_kind == RegressionFrameKind::StoryMenu {
+        return build_story_menu_scenario(harness, scenario);
+    }
 
     let scene = load_scenario_scene(&harness.rs.device, &harness.rs.queue, *scenario)
         .context("load regression scene")?;
@@ -226,6 +230,38 @@ fn build_main_menu_scenario(
     Ok((
         sprite_cmds,
         TextCommandList::new(),
+        menu.textures,
+        CameraRegistry::with_default_fnf(),
+    ))
+}
+
+fn build_story_menu_scenario(
+    harness: &Harness,
+    scenario: &RegressionScenario,
+) -> Result<(
+    RenderCommandList,
+    TextCommandList,
+    HashMap<rustic_core::ids::AssetId, rustic_render::Texture>,
+    CameraRegistry,
+)> {
+    let menu = load_story_menu_assets(&harness.rs.device, &harness.rs.queue)
+        .context("load story menu assets")?;
+    let selected_index = if scenario.song == rustic_app::preview_song::PreviewSong::TUTORIAL {
+        0
+    } else {
+        1
+    };
+    let difficulty = menu.difficulty_for_level(selected_index, scenario.difficulty);
+    let sprite_cmds = menu.commands(
+        selected_index,
+        difficulty,
+        scenario.cursor(),
+        REGRESSION_SAMPLE_RATE,
+    );
+    let text_cmds = menu.text_commands(selected_index, difficulty);
+    Ok((
+        sprite_cmds,
+        text_cmds,
         menu.textures,
         CameraRegistry::with_default_fnf(),
     ))

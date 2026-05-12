@@ -33,6 +33,7 @@ pub struct RegressionScenario {
 pub enum RegressionFrameKind {
     Title,
     MainMenu,
+    StoryMenu,
     Stage,
     Gameplay,
 }
@@ -78,6 +79,13 @@ pub const FIRST_GOLDEN_SCENARIOS: &[RegressionScenario] = &[
         PreviewDifficulty::Normal,
         600,
         RegressionFrameKind::MainMenu,
+    ),
+    RegressionScenario::new(
+        "story_menu_week1",
+        PreviewSong::BOPEEBO,
+        PreviewDifficulty::Normal,
+        600,
+        RegressionFrameKind::StoryMenu,
     ),
     RegressionScenario::new(
         "stage_idle_bopeebo",
