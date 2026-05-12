@@ -9,18 +9,7 @@ impl App {
         if self.game_over.take().is_none() {
             return;
         }
-        if let Some(play_state) = self.play_state.as_mut() {
-            play_state.restart();
-        }
-        let bpm = self.play_state.as_ref().map_or(100.0, |state| state.bpm);
-        self.reset_song_runtime(bpm);
-        if let Err(e) = self.mixer.edit(|mixer| {
-            mixer.seek(Samples(0))?;
-            mixer.pause();
-            Ok(())
-        }) {
-            tracing::warn!(target: "rustic.audio", "reset game over audio: {e:#}");
-        }
+        self.load_selected_song();
     }
 
     pub(super) fn enter_game_over(&mut self, cursor: Samples) {
