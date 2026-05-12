@@ -45,15 +45,17 @@ If a grep check becomes noisy, replace it with a custom AST check or
 - Backend/adapter info is written into regression artifacts so accidental
   backend changes are obvious.
 
-### Initial golden set
+### Current golden set
 
-Captured before Phase 7 ships:
+Tracked in `tests/golden/`:
 
-1. Title screen.
-2. Boyfriend idle two-beat loop.
-3. Stage with camera bump.
-4. Gameplay HUD.
-5. Notes crossing receptors.
+1. `stage_idle_bopeebo.png`.
+2. `stage_idle_tutorial.png`.
+3. `bf_idle_two_beat_bopeebo.png`.
+4. `stage_camera_bump_bopeebo.png`.
+5. `gameplay_notes_crossing_bopeebo.png`.
+
+Still pending from the PLAN.md initial list: title-screen coverage.
 
 ### When lavapipe is too unstable
 

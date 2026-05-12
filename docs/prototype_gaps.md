@@ -13,8 +13,9 @@ behavior on purpose.
   times out. `RUSTIC_AUDIO=off` forces this path, and
   `RUSTIC_AUDIO_OPEN_TIMEOUT_MS` tunes the bounded probe.
 - OG VCR bitmap font assets are present in `assets/source/fonts` and are wired
-  for the gameplay score HUD. Full `glyphon` text is still pending for broader
-  menu/debug UI.
+  for the gameplay score HUD. `glyphon` text is wired for prototype preview
+  labels, the F3 overlay, and visual-regression headers; full menu typography
+  is still pending.
 
 ## Known Visual/Timing Gaps
 
