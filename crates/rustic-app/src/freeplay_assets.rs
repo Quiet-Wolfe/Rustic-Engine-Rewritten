@@ -10,20 +10,22 @@
 //! ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:48-242
 // LINT-ALLOW: long-file freeplay asset loading and layout stay co-located for fidelity.
 
-use crate::asset_roots::baked_assets_root;
-use crate::freeplay_dj::{load_freeplay_dj, FreeplayDJ};
+use crate::freeplay_dj::FreeplayDJ;
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
-use anyhow::Result;
-use rustic_asset::{OverlayResolver, SparrowFrame};
+use rustic_asset::SparrowFrame;
 use rustic_core::ids::AssetId;
 use rustic_core::time::Samples;
-use rustic_render::{FilterMode, RenderCommandList, TextCommand, TextCommandList, Texture};
+use rustic_render::{RenderCommandList, TextCommand, TextCommandList, Texture};
 use std::collections::HashMap;
 
 #[path = "freeplay_assets_helpers.rs"]
 mod helpers;
 pub use helpers::REQUIRED_FREEPLAY_ASSETS;
 use helpers::*;
+
+#[path = "freeplay_loader.rs"]
+mod freeplay_loader;
+pub use freeplay_loader::load_freeplay_assets;
 
 // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:607
 const CAPSULE_REAL_SCALED: f32 = 0.8;
@@ -206,11 +208,8 @@ impl FreeplayAssets {
         let capsule_pos = capsule_position(offset);
         let _ = selected_index;
         // ranking is at (420, 41) within capsule, scaled by realScaled.
-        let ranking_pos = capsule_pos
-            + glam::vec2(
-                420.0 * CAPSULE_REAL_SCALED,
-                41.0 * CAPSULE_REAL_SCALED,
-            );
+        let ranking_pos =
+            capsule_pos + glam::vec2(420.0 * CAPSULE_REAL_SCALED, 41.0 * CAPSULE_REAL_SCALED);
         commands.push(sparrow_scaled_command(
             atlas.texture_id,
             atlas.width,
@@ -224,7 +223,11 @@ impl FreeplayAssets {
     }
 
     /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:341,510-525 (difficultyDots)
-    fn push_difficulty_dots(&self, commands: &mut RenderCommandList, difficulty: PreviewDifficulty) {
+    fn push_difficulty_dots(
+        &self,
+        commands: &mut RenderCommandList,
+        difficulty: PreviewDifficulty,
+    ) {
         let Some(sep) = self.seperator.as_ref() else {
             return;
         };
@@ -242,15 +245,33 @@ impl FreeplayAssets {
         for (idx, kind) in dots.iter().enumerate() {
             let selected = *kind == difficulty;
             let mut color = if selected {
-                glam::Vec4::new(0xFA as f32 / 255.0, 0xFA as f32 / 255.0, 0xFA as f32 / 255.0, 1.0)
+                glam::Vec4::new(
+                    0xFA as f32 / 255.0,
+                    0xFA as f32 / 255.0,
+                    0xFA as f32 / 255.0,
+                    1.0,
+                )
             } else {
-                glam::Vec4::new(0x91 as f32 / 255.0, 0x91 as f32 / 255.0, 0x91 as f32 / 255.0, 0.9)
+                glam::Vec4::new(
+                    0x91 as f32 / 255.0,
+                    0x91 as f32 / 255.0,
+                    0x91 as f32 / 255.0,
+                    0.9,
+                )
             };
-            if matches!(kind, PreviewDifficulty::Nightmare | PreviewDifficulty::Erect) {
+            if matches!(
+                kind,
+                PreviewDifficulty::Nightmare | PreviewDifficulty::Erect
+            ) {
                 color = if selected {
                     glam::Vec4::new(0xC2 as f32 / 255.0, 0x8A as f32 / 255.0, 1.0, 1.0)
                 } else {
-                    glam::Vec4::new(0x34 as f32 / 255.0, 0x29 as f32 / 255.0, 0x6A as f32 / 255.0, 0.9)
+                    glam::Vec4::new(
+                        0x34 as f32 / 255.0,
+                        0x29 as f32 / 255.0,
+                        0x6A as f32 / 255.0,
+                        0.9,
+                    )
                 };
             }
             commands.push(sep.command(
@@ -352,10 +373,7 @@ impl FreeplayAssets {
             let alpha = 1.0 - darkness;
             let mut text = TextCommand::new(
                 (*glyph).to_string(),
-                glam::vec2(
-                    400.0 + (i as f32 * 80.0) + 50.0,
-                    75.0 + 50.0,
-                ),
+                glam::vec2(400.0 + (i as f32 * 80.0) + 50.0, 75.0 + 50.0),
                 36.0 * scale,
             );
             text.color = glam::Vec4::new(1.0, 1.0, 1.0, alpha);
@@ -619,270 +637,4 @@ enum CapsuleKind {
     /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:971-981
     Random,
     Song(PreviewSong),
-}
-
-pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<FreeplayAssets> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
-    let mut textures = HashMap::new();
-    textures.insert(
-        WHITE_TEXTURE_ID,
-        Texture::from_rgba8(
-            device,
-            queue,
-            &[255, 255, 255, 255],
-            1,
-            1,
-            FilterMode::Nearest,
-            Some("rustic.freeplay.white"),
-        ),
-    );
-    let pink_back = load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/pinkBack.png",
-        FilterMode::Linear,
-    )?;
-    let bg_image = load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplayBGweek1-bf.png",
-        FilterMode::Linear,
-    )?;
-    let (capsule_atlas, capsule_atlas_data) = load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.xml",
-    )?;
-    let capsule_selected_frames = clone_frames(&capsule_atlas_data, "mp3 capsule w backing0");
-    let capsule_unselected_frames =
-        clone_frames(&capsule_atlas_data, "mp3 capsule w backing NOT SELECTED");
-    let (selector_atlas, selector_atlas_data) = load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplaySelector/freeplaySelector.xml",
-    )?;
-    let selector_frames = clone_frames(&selector_atlas_data, "arrow pointer loop");
-    let difficulty_easy = load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplayeasy.png",
-        FilterMode::Linear,
-    )?;
-    let difficulty_normal = load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplaynormal.png",
-        FilterMode::Linear,
-    )?;
-    let difficulty_hard = load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplayhard.png",
-        FilterMode::Linear,
-    )?;
-    let difficulty_erect = load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplayerect.png",
-        FilterMode::Linear,
-    )
-    .unwrap_or(StaticTexture {
-        texture_id: difficulty_hard.texture_id,
-        width: difficulty_hard.width,
-        height: difficulty_hard.height,
-        filter: difficulty_hard.filter,
-    });
-    let (difficulty_nightmare, nightmare_atlas) = load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplaynightmare.xml",
-    )?;
-    let difficulty_nightmare_frames = clone_frames(&nightmare_atlas, "idle");
-
-    let mut songs = vec![FreeplayCapsule {
-        kind: CapsuleKind::Random,
-        display_name: "RANDOM".to_string(),
-    }];
-    songs.extend(
-        PreviewSong::CYCLABLE_WEEK1
-            .iter()
-            .map(|song| FreeplayCapsule {
-                kind: CapsuleKind::Song(*song),
-                display_name: song.display_name().to_ascii_uppercase(),
-            }),
-    );
-
-    let dj = match load_freeplay_dj(device, queue) {
-        Ok(mut dj) => {
-            if let Some((tex_id, tex)) = dj.take_texture() {
-                textures.insert(tex_id, tex);
-            }
-            Some(dj)
-        }
-        Err(e) => {
-            tracing::warn!(target: "rustic.asset", "freeplay DJ unavailable: {e:#}");
-            None
-        }
-    };
-
-    let (bignumbers_atlas, bignumbers_digits) = match load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplayCapsule/bignumbers.xml",
-    ) {
-        Ok((handle, atlas)) => {
-            let digits = digit_frames(&atlas);
-            (Some(handle), digits)
-        }
-        Err(e) => {
-            tracing::warn!(target: "rustic.asset", "freeplay bignumbers unavailable: {e:#}");
-            (
-                None,
-                [None, None, None, None, None, None, None, None, None, None],
-            )
-        }
-    };
-
-    let (highscore_atlas, highscore_frames) = match load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/highscore.xml",
-    ) {
-        Ok((handle, atlas)) => {
-            let frames = clone_frames(&atlas, "highscore small instance 1");
-            (Some(handle), frames)
-        }
-        Err(e) => {
-            tracing::warn!(target: "rustic.asset", "freeplay highscore unavailable: {e:#}");
-            (None, Vec::new())
-        }
-    };
-
-    let album_cover = match load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/albumRoll/volume1.png",
-        FilterMode::Linear,
-    ) {
-        Ok(tex) => Some(tex),
-        Err(e) => {
-            tracing::warn!(target: "rustic.asset", "freeplay album cover unavailable: {e:#}");
-            None
-        }
-    };
-    let (album_title_atlas, album_title_frame) = match load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/albumRoll/volume1-text.xml",
-    ) {
-        Ok((handle, atlas)) => {
-            let frame = atlas.first_animation_frame("idle", &[]).cloned();
-            (Some(handle), frame)
-        }
-        Err(e) => {
-            tracing::warn!(target: "rustic.asset", "freeplay album title unavailable: {e:#}");
-            (None, None)
-        }
-    };
-
-    let mini_arrow = load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/miniArrow.png",
-        FilterMode::Linear,
-    )
-    .ok();
-    let seperator = load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/seperator.png",
-        FilterMode::Linear,
-    )
-    .ok();
-    let (sparkle_atlas, sparkle_frames) = match load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/sparkle.xml",
-    ) {
-        Ok((handle, atlas)) => {
-            let frames = clone_frames(&atlas, "sparkle Export0");
-            (Some(handle), frames)
-        }
-        Err(e) => {
-            tracing::warn!(target: "rustic.asset", "freeplay sparkle unavailable: {e:#}");
-            (None, Vec::new())
-        }
-    };
-    let clear_box = load_static_texture(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/clearBox.png",
-        FilterMode::Linear,
-    )
-    .ok();
-
-    Ok(FreeplayAssets {
-        songs,
-        pink_back,
-        bg_image,
-        capsule_atlas,
-        capsule_selected_frames,
-        capsule_unselected_frames,
-        selector_atlas,
-        selector_frames,
-        difficulty_easy,
-        difficulty_normal,
-        difficulty_hard,
-        difficulty_erect,
-        difficulty_nightmare,
-        difficulty_nightmare_frames,
-        dj,
-        bignumbers_atlas,
-        bignumbers_digits,
-        highscore_atlas,
-        highscore_frames,
-        album_cover,
-        album_title_atlas,
-        album_title_frame,
-        mini_arrow,
-        seperator,
-        sparkle_atlas,
-        sparkle_frames,
-        clear_box,
-        textures,
-    })
 }
