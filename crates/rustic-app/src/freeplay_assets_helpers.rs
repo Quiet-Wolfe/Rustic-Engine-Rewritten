@@ -289,6 +289,7 @@ pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
     "images/freeplay/albumRoll/volume1-text.xml",
     "data/ui/freeplay/albums/volume1.json",
     "images/freeplay/seperator.png",
+    "images/freeplay/clearBox.png",
 ];
 
 #[cfg(test)]

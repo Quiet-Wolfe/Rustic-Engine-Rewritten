@@ -116,6 +116,7 @@ pub struct FreeplayAssets {
     seperator: Option<StaticTexture>,
     sparkle_atlas: Option<SparrowAtlasHandle>,
     sparkle_frames: Vec<SparrowFrame>,
+    clear_box: Option<StaticTexture>,
     pub textures: HashMap<AssetId, Texture>,
 }
 
@@ -147,6 +148,14 @@ impl FreeplayAssets {
             ORANGE_BAR_COLOR,
             -85,
         ));
+        // alsoOrangeLOL: small 100-wide hot-yellow strip at the orange bar's left edge.
+        // ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:58
+        commands.push(solid_command(
+            glam::vec2(0.0, ORANGE_BAR_Y),
+            glam::vec2(100.0, ORANGE_BAR_HEIGHT),
+            glam::Vec4::new(1.0, 0xD4 as f32 / 255.0, 0.0, 1.0),
+            -84,
+        ));
 
         let bg_scale = bg_image_scale(&self.bg_image);
         let bg_pos = glam::vec2(pink_back_size.x * 0.74, 0.0);
@@ -171,6 +180,7 @@ impl FreeplayAssets {
         self.push_difficulty(&mut commands, selection.difficulty, cursor, sample_rate);
         self.push_highscore(&mut commands);
         self.push_score(&mut commands);
+        self.push_clear_box(&mut commands);
         self.push_album(&mut commands);
         self.push_letter_sort(&mut commands);
         self.push_difficulty_dots(&mut commands, selection.difficulty);
@@ -488,6 +498,19 @@ impl FreeplayAssets {
                 316,
             ));
         }
+    }
+
+    fn push_clear_box(&self, commands: &mut RenderCommandList) {
+        // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:613 (clearBoxSprite)
+        let Some(tex) = self.clear_box.as_ref() else {
+            return;
+        };
+        commands.push(tex.command(
+            glam::vec2(1280.0 - 115.0, 65.0),
+            glam::Vec4::ONE,
+            308,
+            glam::vec2(tex.width as f32, tex.height as f32),
+        ));
     }
 
     fn push_highscore(&self, commands: &mut RenderCommandList) {
@@ -822,6 +845,15 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
             (None, Vec::new())
         }
     };
+    let clear_box = load_static_texture(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/clearBox.png",
+        FilterMode::Linear,
+    )
+    .ok();
 
     Ok(FreeplayAssets {
         songs,
@@ -850,6 +882,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         seperator,
         sparkle_atlas,
         sparkle_frames,
+        clear_box,
         textures,
     })
 }
