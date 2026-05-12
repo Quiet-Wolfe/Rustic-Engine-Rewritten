@@ -363,7 +363,7 @@ impl App {
         self.opponent_receptors.update(cursor, confirm_duration);
         for lane in self.active_holds.complete_elapsed(cursor) {
             if self.held_lanes.is_held(lane) {
-                self.held_lanes.complete_hold(lane);
+                self.held_lanes.complete_hold(lane, cursor);
             } else {
                 self.held_lanes.play_static(lane);
             }

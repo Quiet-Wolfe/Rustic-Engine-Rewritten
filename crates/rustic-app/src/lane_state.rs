@@ -100,8 +100,12 @@ impl HeldLanes {
         self.confirm_until[index] = self.confirm_until[index].max(until);
     }
 
-    pub fn complete_hold(&mut self, lane: Lane) {
+    pub fn complete_hold(&mut self, lane: Lane, cursor: Samples) {
         let index = lane_index(lane);
+        if self.pressed[index] {
+            self.pressed_started[index] = cursor;
+            self.confirm_until[index] = Samples(0);
+        }
         self.hold_confirming[index] = false;
     }
 
@@ -126,7 +130,7 @@ impl HeldLanes {
         if until.0 == 0 {
             return false;
         }
-        until >= cursor || self.pressed[index]
+        until >= cursor
     }
 
     pub fn receptor_state(&self, lane: Lane, cursor: Samples) -> ReceptorState {
@@ -248,9 +252,33 @@ mod tests {
         );
         assert_eq!(
             held.receptor_state(Lane::Left, Samples(61)),
+            ReceptorState::Pressed {
+                started_at: Samples(25)
+            }
+        );
+    }
+
+    #[test]
+    fn player_confirm_falls_back_to_press_when_key_stays_down() {
+        let mut held = HeldLanes::default();
+        held.apply(&event_at(
+            InputAction::LaneLeft,
+            InputState::Pressed,
+            Samples(25),
+        ));
+        held.confirm(Lane::Left, Samples(50), Samples(10));
+
+        assert_eq!(
+            held.receptor_state(Lane::Left, Samples(60)),
             ReceptorState::Confirm {
                 started_at: Samples(50),
                 hold: false
+            }
+        );
+        assert_eq!(
+            held.receptor_state(Lane::Left, Samples(61)),
+            ReceptorState::Pressed {
+                started_at: Samples(25)
             }
         );
     }
@@ -303,7 +331,8 @@ mod tests {
             Samples(25),
         ));
         held.confirm(Lane::Left, Samples(50), Samples(100));
-        held.play_press(Lane::Left, Samples(80));
+        held.hold_confirm(Lane::Left, Samples(80), Samples(100));
+        held.complete_hold(Lane::Left, Samples(80));
 
         assert_eq!(
             held.receptor_state(Lane::Left, Samples(81)),
