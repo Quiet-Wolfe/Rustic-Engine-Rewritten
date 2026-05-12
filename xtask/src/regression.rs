@@ -16,6 +16,7 @@ use rustic_app::regression::{
     load_scenario_play_state, load_scenario_scene, scenario_cameras, scenario_stage_prop_commands,
     RegressionFrameKind, RegressionScenario, FIRST_GOLDEN_SCENARIOS, REGRESSION_SAMPLE_RATE,
 };
+use rustic_app::title_assets::load_title_screen_assets;
 use rustic_asset::ChartEventKind;
 use rustic_core::time::Samples;
 use rustic_render::{
@@ -135,6 +136,10 @@ fn build_scenario(
     HashMap<rustic_core::ids::AssetId, rustic_render::Texture>,
     CameraRegistry,
 )> {
+    if scenario.frame_kind == RegressionFrameKind::Title {
+        return build_title_scenario(harness, scenario);
+    }
+
     let scene = load_scenario_scene(&harness.rs.device, &harness.rs.queue, *scenario)
         .context("load regression scene")?;
     let play_state = load_scenario_play_state(*scenario).context("load regression PlayState")?;
@@ -180,6 +185,26 @@ fn build_scenario(
 
     let cameras = scenario_cameras(&scene, &play_state, *scenario);
     Ok((sprite_cmds, text_cmds, scene.textures, cameras))
+}
+
+fn build_title_scenario(
+    harness: &Harness,
+    scenario: &RegressionScenario,
+) -> Result<(
+    RenderCommandList,
+    TextCommandList,
+    HashMap<rustic_core::ids::AssetId, rustic_render::Texture>,
+    CameraRegistry,
+)> {
+    let title = load_title_screen_assets(&harness.rs.device, &harness.rs.queue)
+        .context("load title screen assets")?;
+    let sprite_cmds = title.commands(scenario.cursor(), REGRESSION_SAMPLE_RATE);
+    Ok((
+        sprite_cmds,
+        TextCommandList::new(),
+        title.textures,
+        CameraRegistry::with_default_fnf(),
+    ))
 }
 
 fn build_character_anim(

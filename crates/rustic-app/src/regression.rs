@@ -31,6 +31,7 @@ pub struct RegressionScenario {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegressionFrameKind {
+    Title,
     Stage,
     Gameplay,
 }
@@ -63,6 +64,13 @@ impl RegressionScenario {
 
 /// Curated set used by the first golden batch per `PLAN.md` Section 14.
 pub const FIRST_GOLDEN_SCENARIOS: &[RegressionScenario] = &[
+    RegressionScenario::new(
+        "title_skipped_intro",
+        PreviewSong::BOPEEBO,
+        PreviewDifficulty::Normal,
+        1200,
+        RegressionFrameKind::Title,
+    ),
     RegressionScenario::new(
         "stage_idle_bopeebo",
         PreviewSong::BOPEEBO,
