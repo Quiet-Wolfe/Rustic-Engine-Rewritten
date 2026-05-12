@@ -171,7 +171,47 @@ impl FreeplayAssets {
         self.push_score(&mut commands);
         self.push_album(&mut commands);
         self.push_letter_sort(&mut commands);
+        self.push_difficulty_dots(&mut commands, selection.difficulty);
         commands
+    }
+
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:341,510-525 (difficultyDots)
+    fn push_difficulty_dots(&self, commands: &mut RenderCommandList, difficulty: PreviewDifficulty) {
+        let Some(sep) = self.seperator.as_ref() else {
+            return;
+        };
+        let dots: [PreviewDifficulty; 5] = [
+            PreviewDifficulty::Easy,
+            PreviewDifficulty::Normal,
+            PreviewDifficulty::Hard,
+            PreviewDifficulty::Erect,
+            PreviewDifficulty::Nightmare,
+        ];
+        let base_x = 260.0;
+        let base_y = 170.0;
+        let spacing = 30.0;
+        let scale = 6.0; // seperator.png is tiny, scale up to be visible
+        for (idx, kind) in dots.iter().enumerate() {
+            let selected = *kind == difficulty;
+            let mut color = if selected {
+                glam::Vec4::new(0xFA as f32 / 255.0, 0xFA as f32 / 255.0, 0xFA as f32 / 255.0, 1.0)
+            } else {
+                glam::Vec4::new(0x91 as f32 / 255.0, 0x91 as f32 / 255.0, 0x91 as f32 / 255.0, 0.9)
+            };
+            if matches!(kind, PreviewDifficulty::Nightmare | PreviewDifficulty::Erect) {
+                color = if selected {
+                    glam::Vec4::new(0xC2 as f32 / 255.0, 0x8A as f32 / 255.0, 1.0, 1.0)
+                } else {
+                    glam::Vec4::new(0x34 as f32 / 255.0, 0x29 as f32 / 255.0, 0x6A as f32 / 255.0, 0.9)
+                };
+            }
+            commands.push(sep.command(
+                glam::vec2(base_x + idx as f32 * spacing, base_y),
+                color,
+                325,
+                glam::vec2(sep.width as f32 * scale, sep.height as f32 * scale),
+            ));
+        }
     }
 
     /// ref: bdedc0aa:source/funkin/ui/freeplay/LetterSort.hx:38-86
@@ -222,6 +262,22 @@ impl FreeplayAssets {
         ost.color = glam::Vec4::new(1.0, 1.0, 1.0, 0.9);
         ost.z = 300;
         commands.push(ost);
+
+        // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:347 (txtCompletion)
+        let mut completion = TextCommand::new("100%", glam::vec2(1280.0 - 95.0, 87.0), 32.0);
+        completion.color = glam::Vec4::new(1.0, 1.0, 1.0, 1.0);
+        completion.z = 312;
+        commands.push(completion);
+
+        // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:350 (charSelectHint)
+        let mut hint = TextCommand::new(
+            "Press [ LOL ] to change characters",
+            glam::vec2(420.0, 26.0),
+            24.0,
+        );
+        hint.color = glam::Vec4::new(1.0, 1.0, 1.0, 0.7);
+        hint.z = 305;
+        commands.push(hint);
 
         for (index, capsule) in self.songs.iter().enumerate() {
             let offset = index as f32 - selected_index as f32;
