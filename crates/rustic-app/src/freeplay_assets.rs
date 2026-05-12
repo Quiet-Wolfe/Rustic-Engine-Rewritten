@@ -637,6 +637,27 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
     AssetId::new(hash)
 }
 
+/// Logical paths to assets the Freeplay screen depends on. Loaders above
+/// reference these by string; this list is the authoritative inventory so
+/// the `required_assets_present` test catches accidental deletes.
+///
+/// Do not remove entries here without removing the matching call site —
+/// the Freeplay screen will not render correctly without all of them.
+pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
+    "images/freeplay/pinkBack.png",
+    "images/freeplay/freeplayBGweek1-bf.png",
+    "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png",
+    "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.xml",
+    "images/freeplay/freeplaySelector/freeplaySelector.png",
+    "images/freeplay/freeplaySelector/freeplaySelector.xml",
+    "images/freeplay/freeplayeasy.png",
+    "images/freeplay/freeplaynormal.png",
+    "images/freeplay/freeplayhard.png",
+    "images/freeplay/freeplayerect.png",
+    "images/freeplay/freeplaynightmare.png",
+    "images/freeplay/freeplaynightmare.xml",
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -659,5 +680,31 @@ mod tests {
     #[test]
     fn frame_for_cursor_handles_empty() {
         assert!(frame_for_cursor(&[], Samples(0), 48_000, 24, true).is_none());
+    }
+
+    /// Locks the freeplay source asset inventory: if any of these files
+    /// disappear from `assets/source/`, this test fails loudly. The
+    /// Freeplay screen requires every entry — do not delete them.
+    #[test]
+    fn required_assets_present() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace = manifest_dir
+            .parent()
+            .and_then(std::path::Path::parent)
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| manifest_dir.to_path_buf());
+        let source_root = workspace.join("assets/source");
+        let mut missing = Vec::new();
+        for logical in REQUIRED_FREEPLAY_ASSETS {
+            let path = source_root.join(logical);
+            if !path.exists() {
+                missing.push(path.display().to_string());
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "freeplay assets missing — DO NOT DELETE these files, they are required for the OG-fidelity port:\n{}",
+            missing.join("\n"),
+        );
     }
 }
