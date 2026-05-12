@@ -114,6 +114,8 @@ pub struct FreeplayAssets {
     album_title_frame: Option<SparrowFrame>,
     mini_arrow: Option<StaticTexture>,
     seperator: Option<StaticTexture>,
+    sparkle_atlas: Option<SparrowAtlasHandle>,
+    sparkle_frames: Vec<SparrowFrame>,
     pub textures: HashMap<AssetId, Texture>,
 }
 
@@ -172,7 +174,43 @@ impl FreeplayAssets {
         self.push_album(&mut commands);
         self.push_letter_sort(&mut commands);
         self.push_difficulty_dots(&mut commands, selection.difficulty);
+        self.push_sparkles(&mut commands, selected_index, cursor, sample_rate);
         commands
+    }
+
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:165-176,237-241
+    fn push_sparkles(
+        &self,
+        commands: &mut RenderCommandList,
+        selected_index: usize,
+        cursor: Samples,
+        sample_rate: u32,
+    ) {
+        let (Some(atlas), Some(frame)) = (
+            self.sparkle_atlas.as_ref(),
+            frame_for_cursor(&self.sparkle_frames, cursor, sample_rate, 24, true),
+        ) else {
+            return;
+        };
+        let offset = 0.0f32; // selected capsule sits at offset 0
+        let capsule_pos = capsule_position(offset);
+        let _ = selected_index;
+        // ranking is at (420, 41) within capsule, scaled by realScaled.
+        let ranking_pos = capsule_pos
+            + glam::vec2(
+                420.0 * CAPSULE_REAL_SCALED,
+                41.0 * CAPSULE_REAL_SCALED,
+            );
+        commands.push(sparrow_scaled_command(
+            atlas.texture_id,
+            atlas.width,
+            atlas.height,
+            frame,
+            ranking_pos,
+            glam::Vec2::splat(0.8),
+            glam::Vec4::new(1.0, 1.0, 1.0, 0.7),
+            340,
+        ));
     }
 
     /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:341,510-525 (difficultyDots)
@@ -768,6 +806,22 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         FilterMode::Linear,
     )
     .ok();
+    let (sparkle_atlas, sparkle_frames) = match load_sparrow_atlas(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/sparkle.xml",
+    ) {
+        Ok((handle, atlas)) => {
+            let frames = clone_frames(&atlas, "sparkle Export0");
+            (Some(handle), frames)
+        }
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "freeplay sparkle unavailable: {e:#}");
+            (None, Vec::new())
+        }
+    };
 
     Ok(FreeplayAssets {
         songs,
@@ -794,6 +848,8 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         album_title_frame,
         mini_arrow,
         seperator,
+        sparkle_atlas,
+        sparkle_frames,
         textures,
     })
 }
