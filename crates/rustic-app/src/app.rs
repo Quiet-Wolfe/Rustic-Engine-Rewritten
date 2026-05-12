@@ -1,4 +1,5 @@
 use crate::active_holds::ActiveHolds;
+// LINT-ALLOW: long-file app owns prototype runtime wiring until screen modules split.
 use crate::app_runtime::create_runtime as create_app_runtime;
 use crate::app_text::preview_text_commands;
 use crate::app_types::{AppOptions, Runtime};
@@ -272,6 +273,10 @@ impl App {
     fn rebuild_frame_commands(&mut self) {
         if self.mode == AppMode::Title {
             self.rebuild_title_commands();
+            return;
+        }
+        if self.mode == AppMode::SongSelect {
+            self.rebuild_song_select_commands();
             return;
         }
         self.text_cmds = preview_text_commands(self.preview_selection);
@@ -712,12 +717,12 @@ impl ApplicationHandler for App {
                         self.toggle_debug_overlay();
                         return;
                     }
+                    if self.handle_mode_input(action, event.state, event_loop) {
+                        return;
+                    }
                     if event.state == ElementState::Pressed
                         && self.handle_preview_selection_input(action)
                     {
-                        return;
-                    }
-                    if self.handle_title_input(action, event.state, event_loop) {
                         return;
                     }
                     if event.state == ElementState::Pressed

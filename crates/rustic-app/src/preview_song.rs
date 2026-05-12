@@ -1,4 +1,5 @@
 //! Development preview song selection for the current gameplay slice.
+// LINT-ALLOW: long-file preview song data and focused selection tests stay together.
 
 use std::env;
 
@@ -93,6 +94,10 @@ impl PreviewSong {
 
     pub fn next(self) -> Self {
         next_in(&Self::CYCLABLE_WEEK1, self)
+    }
+
+    pub fn previous(self) -> Self {
+        previous_in(&Self::CYCLABLE_WEEK1, self)
     }
 
     pub fn available_difficulties(self) -> &'static [PreviewDifficulty] {
@@ -209,9 +214,24 @@ impl PreviewSelection {
         }
     }
 
+    pub fn previous_song(self) -> Self {
+        let song = self.song.previous();
+        Self {
+            song,
+            difficulty: difficulty_for_song(song, self.difficulty),
+        }
+    }
+
     pub fn next_difficulty(self) -> Self {
         Self {
             difficulty: next_in_slice(self.song.available_difficulties(), self.difficulty),
+            ..self
+        }
+    }
+
+    pub fn previous_difficulty(self) -> Self {
+        Self {
+            difficulty: previous_in_slice(self.song.available_difficulties(), self.difficulty),
             ..self
         }
     }
@@ -233,10 +253,23 @@ fn next_in<T: Copy + PartialEq, const N: usize>(values: &[T; N], current: T) -> 
     next_in_slice(values, current)
 }
 
+fn previous_in<T: Copy + PartialEq, const N: usize>(values: &[T; N], current: T) -> T {
+    previous_in_slice(values, current)
+}
+
 fn next_in_slice<T: Copy + PartialEq>(values: &[T], current: T) -> T {
     assert!(!values.is_empty(), "preview option list must not be empty");
     match values.iter().position(|value| *value == current) {
         Some(index) => values[(index + 1) % values.len()],
+        None => values[0],
+    }
+}
+
+fn previous_in_slice<T: Copy + PartialEq>(values: &[T], current: T) -> T {
+    assert!(!values.is_empty(), "preview option list must not be empty");
+    match values.iter().position(|value| *value == current) {
+        Some(0) => values[values.len() - 1],
+        Some(index) => values[index - 1],
         None => values[0],
     }
 }
@@ -352,6 +385,18 @@ mod tests {
                 .next_song()
                 .difficulty,
             PreviewDifficulty::Normal
+        );
+        assert_eq!(
+            PreviewSelection::from_keys(Some("tutorial"), Some("easy"))
+                .previous_song()
+                .song,
+            PreviewSong::DADBATTLE
+        );
+        assert_eq!(
+            PreviewSelection::from_keys(Some("bopeebo"), Some("easy"))
+                .previous_difficulty()
+                .difficulty,
+            PreviewDifficulty::Nightmare
         );
     }
 }

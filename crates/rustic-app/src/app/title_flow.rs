@@ -1,4 +1,5 @@
 use super::App;
+use crate::app_text::song_select_text_commands;
 use crate::camera_fx::CameraFx;
 use crate::song_audio::play_sample_rate;
 use crate::title_assets::load_title_screen_assets;
@@ -12,6 +13,7 @@ use winit::event_loop::ActiveEventLoop;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AppMode {
     Title,
+    SongSelect,
     Play,
 }
 
@@ -56,31 +58,90 @@ impl App {
         self.append_debug_overlay_commands(cursor, sample_rate);
     }
 
+    pub(super) fn rebuild_song_select_commands(&mut self) {
+        self.cmds = RenderCommandList::new();
+        self.text_cmds = song_select_text_commands(self.preview_selection);
+        let sample_rate = play_sample_rate(&self.mixer);
+        let cursor = self.title_cursor(sample_rate);
+        self.append_debug_overlay_commands(cursor, sample_rate);
+    }
+
     pub(super) fn input_cursor(&mut self) -> Samples {
         match self.mode {
-            AppMode::Title => self.title_cursor(play_sample_rate(&self.mixer)),
+            AppMode::Title | AppMode::SongSelect => {
+                self.title_cursor(play_sample_rate(&self.mixer))
+            }
             AppMode::Play => self.advance_song_clock(),
         }
     }
 
-    pub(super) fn handle_title_input(
+    pub(super) fn handle_mode_input(
         &mut self,
         action: InputAction,
         state: ElementState,
         event_loop: &ActiveEventLoop,
     ) -> bool {
-        if self.mode != AppMode::Title {
-            return false;
+        match self.mode {
+            AppMode::Title => self.handle_title_input(action, state, event_loop),
+            AppMode::SongSelect => self.handle_song_select_input(action, state),
+            AppMode::Play => false,
         }
+    }
+
+    fn handle_title_input(
+        &mut self,
+        action: InputAction,
+        state: ElementState,
+        event_loop: &ActiveEventLoop,
+    ) -> bool {
         if state != ElementState::Pressed {
             return true;
         }
+        // ref: bdedc0aa:source/funkin/ui/title/TitleState.hx:249-302
         match action {
-            InputAction::Confirm => self.enter_play(),
+            InputAction::Confirm => self.enter_song_select(),
             InputAction::Back => event_loop.exit(),
             _ => {}
         }
         true
+    }
+
+    fn handle_song_select_input(&mut self, action: InputAction, state: ElementState) -> bool {
+        if state != ElementState::Pressed {
+            return true;
+        }
+        // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:1815-1868
+        let old = self.preview_selection;
+        match action {
+            InputAction::LaneUp | InputAction::UiUp => {
+                self.preview_selection = self.preview_selection.previous_song();
+            }
+            InputAction::LaneDown | InputAction::UiDown => {
+                self.preview_selection = self.preview_selection.next_song();
+            }
+            InputAction::LaneLeft | InputAction::UiLeft => {
+                self.preview_selection = self.preview_selection.previous_difficulty();
+            }
+            InputAction::LaneRight | InputAction::UiRight => {
+                self.preview_selection = self.preview_selection.next_difficulty();
+            }
+            InputAction::Confirm => self.enter_play(),
+            InputAction::Back => self.load_title_screen(),
+            _ => {}
+        }
+        if self.mode == AppMode::SongSelect && self.preview_selection != old {
+            self.update_window_title();
+            self.rebuild_song_select_commands();
+        }
+        true
+    }
+
+    fn enter_song_select(&mut self) {
+        self.mode = AppMode::SongSelect;
+        self.title_assets = None;
+        self.title_start = Instant::now();
+        self.atlases.clear();
+        self.rebuild_song_select_commands();
     }
 
     fn enter_play(&mut self) {

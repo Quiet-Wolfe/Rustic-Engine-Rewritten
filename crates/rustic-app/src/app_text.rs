@@ -1,6 +1,6 @@
 //! Runtime text overlays for prototype-only app feedback.
 
-use crate::preview_song::PreviewSelection;
+use crate::preview_song::{PreviewSelection, PreviewSong};
 use rustic_render::{TextCommand, TextCommandList};
 
 pub(crate) struct DebugOverlayLine {
@@ -27,6 +27,43 @@ pub(crate) fn preview_text_commands(selection: PreviewSelection) -> TextCommandL
     hint.color = glam::vec4(0.85, 0.85, 0.85, 0.7);
     hint.z = 100;
     commands.push(hint);
+
+    commands
+}
+
+pub(crate) fn song_select_text_commands(selection: PreviewSelection) -> TextCommandList {
+    let mut commands = TextCommandList::new();
+
+    let mut title = TextCommand::new("Freeplay", glam::vec2(78.0, 62.0), 54.0);
+    title.color = glam::vec4(1.0, 0.84, 0.26, 0.98);
+    title.z = 90;
+    commands.push(title);
+
+    let mut difficulty = TextCommand::new(
+        format!("< {} >", selection.difficulty.as_str()),
+        glam::vec2(82.0, 130.0),
+        28.0,
+    );
+    difficulty.color = glam::vec4(0.92, 0.95, 1.0, 0.82);
+    difficulty.z = 90;
+    commands.push(difficulty);
+
+    for (index, song) in PreviewSong::CYCLABLE_WEEK1.iter().enumerate() {
+        let selected = *song == selection.song;
+        let prefix = if selected { ">" } else { " " };
+        let mut cmd = TextCommand::new(
+            format!("{prefix} {}", song.display_name()),
+            glam::vec2(112.0, 220.0 + index as f32 * 58.0),
+            if selected { 40.0 } else { 30.0 },
+        );
+        cmd.color = if selected {
+            glam::vec4(1.0, 1.0, 1.0, 0.98)
+        } else {
+            glam::vec4(0.72, 0.76, 0.86, 0.72)
+        };
+        cmd.z = 90;
+        commands.push(cmd);
+    }
 
     commands
 }
@@ -64,5 +101,16 @@ mod tests {
         assert_eq!(commands.as_slice()[0].position.y, 94.0);
         assert_eq!(commands.as_slice()[1].position.y, 112.0);
         assert_eq!(commands.as_slice()[0].z, 120);
+    }
+
+    #[test]
+    fn song_select_highlights_current_preview_song() {
+        let commands =
+            song_select_text_commands(PreviewSelection::from_keys(Some("fresh"), Some("hard")));
+        let selected = commands
+            .iter()
+            .find(|cmd| cmd.text.starts_with(">"))
+            .map(|cmd| cmd.text.as_str());
+        assert_eq!(selected, Some("> Fresh"));
     }
 }
