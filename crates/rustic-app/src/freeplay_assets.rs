@@ -11,9 +11,12 @@
 // LINT-ALLOW: long-file freeplay asset loading and layout stay co-located for fidelity.
 
 use crate::asset_roots::baked_assets_root;
+use crate::freeplay_dj::{load_freeplay_dj, FreeplayDJ};
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
 use anyhow::{Context, Result};
-use rustic_asset::{load_png, load_sparrow, AssetPath, OverlayResolver, SparrowAtlas, SparrowFrame};
+use rustic_asset::{
+    load_png, load_sparrow, AssetPath, OverlayResolver, SparrowAtlas, SparrowFrame,
+};
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
 use rustic_core::time::Samples;
@@ -82,6 +85,7 @@ pub struct FreeplayAssets {
     difficulty_erect: StaticTexture,
     difficulty_nightmare: SparrowAtlasHandle,
     difficulty_nightmare_frames: Vec<SparrowFrame>,
+    dj: Option<FreeplayDJ>,
     pub textures: HashMap<AssetId, Texture>,
 }
 
@@ -125,6 +129,12 @@ impl FreeplayAssets {
                 self.bg_image.height as f32 * bg_scale,
             ),
         ));
+
+        if let Some(dj) = self.dj.as_ref() {
+            for cmd in dj.commands(cursor, sample_rate) {
+                commands.push(cmd);
+            }
+        }
 
         let selected_index = self.index_of(selection.song).unwrap_or(0);
         self.push_capsules(&mut commands, selected_index, cursor, sample_rate);
@@ -207,8 +217,7 @@ impl FreeplayAssets {
             } else {
                 &self.capsule_unselected_frames
             };
-            let Some(frame) =
-                frame_for_cursor(frames, cursor, sample_rate, CAPSULE_ANIM_FPS, true)
+            let Some(frame) = frame_for_cursor(frames, cursor, sample_rate, CAPSULE_ANIM_FPS, true)
             else {
                 continue;
             };
@@ -465,6 +474,19 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         })
         .collect();
 
+    let dj = match load_freeplay_dj(device, queue) {
+        Ok(mut dj) => {
+            if let Some((tex_id, tex)) = dj.take_texture() {
+                textures.insert(tex_id, tex);
+            }
+            Some(dj)
+        }
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "freeplay DJ unavailable: {e:#}");
+            None
+        }
+    };
+
     Ok(FreeplayAssets {
         songs,
         pink_back,
@@ -480,6 +502,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         difficulty_erect,
         difficulty_nightmare,
         difficulty_nightmare_frames,
+        dj,
         textures,
     })
 }
