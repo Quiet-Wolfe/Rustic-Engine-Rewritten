@@ -17,6 +17,7 @@ use crate::hud_assets::HudSkin;
 use crate::hud_bop::health_icon_scale;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, AutoReceptors, HeldLanes};
+use crate::main_menu_assets::MainMenuAssets;
 use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKind};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
@@ -83,6 +84,8 @@ struct App {
     preview_selection: PreviewSelection,
     mode: AppMode,
     title_assets: Option<TitleScreenAssets>,
+    main_menu_assets: Option<MainMenuAssets>,
+    main_menu_index: usize,
     title_start: Instant,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -134,6 +137,8 @@ impl App {
             preview_selection: PreviewSelection::from_env(),
             mode: AppMode::Title,
             title_assets: None,
+            main_menu_assets: None,
+            main_menu_index: 0,
             title_start: now,
             play_state: None,
             song_start: now,
@@ -277,6 +282,10 @@ impl App {
         }
         if self.mode == AppMode::SongSelect {
             self.rebuild_song_select_commands();
+            return;
+        }
+        if self.mode == AppMode::MainMenu {
+            self.rebuild_main_menu_commands();
             return;
         }
         self.text_cmds = preview_text_commands(self.preview_selection);

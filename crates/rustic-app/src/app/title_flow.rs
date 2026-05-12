@@ -1,6 +1,8 @@
 use super::App;
 use crate::app_text::song_select_text_commands;
 use crate::camera_fx::CameraFx;
+use crate::main_menu_assets::{load_main_menu_assets, MainMenuAction};
+use crate::preview_song::{PreviewDifficulty, PreviewSong};
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
 use crate::title_assets::load_title_screen_assets;
 use rustic_core::input::InputAction;
@@ -13,6 +15,7 @@ use winit::event_loop::ActiveEventLoop;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AppMode {
     Title,
+    MainMenu,
     SongSelect,
     Play,
 }
@@ -66,9 +69,48 @@ impl App {
         self.append_debug_overlay_commands(cursor, sample_rate);
     }
 
+    pub(super) fn load_main_menu(&mut self) {
+        self.mode = AppMode::MainMenu;
+        self.title_start = Instant::now();
+        self.title_assets = None;
+        self.main_menu_assets = None;
+        self.clear_play_state_for_menu();
+        self.update_window_title();
+
+        let Some(runtime) = self.runtime.as_ref() else {
+            return;
+        };
+        match load_main_menu_assets(&runtime.rs.device, &runtime.rs.queue) {
+            Ok(mut menu) => {
+                self.atlases = std::mem::take(&mut menu.textures);
+                self.main_menu_index = self
+                    .main_menu_index
+                    .min(menu.item_count().saturating_sub(1));
+                self.main_menu_assets = Some(menu);
+                self.rebuild_main_menu_commands();
+            }
+            Err(e) => {
+                tracing::warn!(target: "rustic.asset", "main menu unavailable: {e:#}");
+                self.enter_song_select();
+            }
+        }
+    }
+
+    pub(super) fn rebuild_main_menu_commands(&mut self) {
+        self.text_cmds = TextCommandList::new();
+        let sample_rate = play_sample_rate(&self.mixer);
+        let cursor = self.title_cursor(sample_rate);
+        self.cmds = self
+            .main_menu_assets
+            .as_ref()
+            .map(|assets| assets.commands(self.main_menu_index, cursor, sample_rate))
+            .unwrap_or_else(RenderCommandList::new);
+        self.append_debug_overlay_commands(cursor, sample_rate);
+    }
+
     pub(super) fn input_cursor(&mut self) -> Samples {
         match self.mode {
-            AppMode::Title | AppMode::SongSelect => {
+            AppMode::Title | AppMode::MainMenu | AppMode::SongSelect => {
                 self.title_cursor(play_sample_rate(&self.mixer))
             }
             AppMode::Play => self.advance_song_clock(),
@@ -83,6 +125,7 @@ impl App {
     ) -> bool {
         match self.mode {
             AppMode::Title => self.handle_title_input(action, state, event_loop),
+            AppMode::MainMenu => self.handle_main_menu_input(action, state),
             AppMode::SongSelect => self.handle_song_select_input(action, state),
             AppMode::Play => false,
         }
@@ -99,11 +142,56 @@ impl App {
         }
         // ref: bdedc0aa:source/funkin/ui/title/TitleState.hx:249-302
         match action {
-            InputAction::Confirm => self.enter_song_select(),
+            InputAction::Confirm => self.load_main_menu(),
             InputAction::Back => event_loop.exit(),
             _ => {}
         }
         true
+    }
+
+    fn handle_main_menu_input(&mut self, action: InputAction, state: ElementState) -> bool {
+        if state != ElementState::Pressed {
+            return true;
+        }
+        // ref: bdedc0aa:source/funkin/ui/mainmenu/MainMenuState.hx:145-232
+        let item_count = self
+            .main_menu_assets
+            .as_ref()
+            .map(|assets| assets.item_count())
+            .unwrap_or(0)
+            .max(1);
+        match action {
+            InputAction::LaneUp | InputAction::UiUp => {
+                self.main_menu_index = (self.main_menu_index + item_count - 1) % item_count;
+                self.rebuild_main_menu_commands();
+            }
+            InputAction::LaneDown | InputAction::UiDown => {
+                self.main_menu_index = (self.main_menu_index + 1) % item_count;
+                self.rebuild_main_menu_commands();
+            }
+            InputAction::Confirm => self.confirm_main_menu_item(),
+            InputAction::Back => self.load_title_screen(),
+            _ => {}
+        }
+        true
+    }
+
+    fn confirm_main_menu_item(&mut self) {
+        let action = self
+            .main_menu_assets
+            .as_ref()
+            .and_then(|assets| assets.action_for(self.main_menu_index));
+        match action {
+            Some(MainMenuAction::StoryMode) => {
+                self.preview_selection = crate::preview_song::PreviewSelection::new(
+                    PreviewSong::BOPEEBO,
+                    PreviewDifficulty::Normal,
+                );
+                self.enter_play();
+            }
+            Some(MainMenuAction::Freeplay) => self.enter_song_select(),
+            Some(MainMenuAction::Options | MainMenuAction::Credits) | None => {}
+        }
     }
 
     fn handle_song_select_input(&mut self, action: InputAction, state: ElementState) -> bool {
@@ -126,7 +214,7 @@ impl App {
                 self.preview_selection = self.preview_selection.next_difficulty();
             }
             InputAction::Confirm => self.enter_play(),
-            InputAction::Back => self.load_title_screen(),
+            InputAction::Back => self.load_main_menu(),
             _ => {}
         }
         if self.mode == AppMode::SongSelect && self.preview_selection != old {
@@ -139,6 +227,12 @@ impl App {
     pub(super) fn enter_song_select(&mut self) {
         self.mode = AppMode::SongSelect;
         self.title_assets = None;
+        self.main_menu_assets = None;
+        self.clear_play_state_for_menu();
+        self.rebuild_song_select_commands();
+    }
+
+    fn clear_play_state_for_menu(&mut self) {
         self.play_state = None;
         self.game_over = None;
         self.characters = None;
@@ -155,7 +249,6 @@ impl App {
         self.active_holds = Default::default();
         self.held_lanes = Default::default();
         self.opponent_receptors = Default::default();
-        self.title_start = Instant::now();
         self.static_cmds = RenderCommandList::new();
         self.atlases.clear();
         set_vocals_gain(&self.mixer, 1.0);
@@ -167,12 +260,12 @@ impl App {
             tracing::warn!(target: "rustic.audio", "pause song select audio: {e:#}");
         }
         self.update_window_title();
-        self.rebuild_song_select_commands();
     }
 
     fn enter_play(&mut self) {
         self.mode = AppMode::Play;
         self.title_assets = None;
+        self.main_menu_assets = None;
         self.load_selected_song();
     }
 
