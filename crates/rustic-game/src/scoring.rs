@@ -246,7 +246,7 @@ impl PlayState {
             // Wait, if it's NOT resolved, picking up the tail should probably resolve the head as a miss?
             // FNF lets you hit the sustain even if the head hasn't fully missed yet.
             // But if we pick it up, we need to make sure we don't hit the head later.
-            
+
             let diff_ms = (cursor.0 - n.hit_at.0) as f64 * ms_per_sample;
             if best.map(|(_, b)| diff_ms < b).unwrap_or(true) {
                 best = Some((i, diff_ms));

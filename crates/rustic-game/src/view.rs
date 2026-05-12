@@ -135,7 +135,10 @@ impl PlayState {
             }
 
             let currently_held = is_held(note.lane, note.opponent);
-            let dropped_ms = self.dropped_holds.get(&note.id).map(|s| *s as f32 * 1000.0 / sample_rate);
+            let dropped_ms = self
+                .dropped_holds
+                .get(&note.id)
+                .map(|s| *s as f32 * 1000.0 / sample_rate);
 
             let rounded_speed = round_decimal(
                 self.effective_scroll_speed(cursor, sample_rate_u32, note.opponent),

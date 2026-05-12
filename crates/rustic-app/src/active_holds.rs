@@ -31,7 +31,13 @@ pub struct HoldRelease {
 }
 
 impl ActiveHolds {
-    pub fn start(&mut self, lane: Lane, hold_end_at: Samples, cursor: Samples, note_id: rustic_core::ids::NoteId) {
+    pub fn start(
+        &mut self,
+        lane: Lane,
+        hold_end_at: Samples,
+        cursor: Samples,
+        note_id: rustic_core::ids::NoteId,
+    ) {
         if hold_end_at > cursor {
             self.active[lane_index(lane)] = Some(ActiveHold {
                 note_id,
@@ -130,7 +136,12 @@ mod tests {
     #[test]
     fn active_holds_report_drops_and_completions_once() {
         let mut holds = ActiveHolds::default();
-        holds.start(Lane::Left, Samples(200), Samples(100), rustic_core::ids::NoteId::new(0));
+        holds.start(
+            Lane::Left,
+            Samples(200),
+            Samples(100),
+            rustic_core::ids::NoteId::new(0),
+        );
 
         let lanes: Vec<_> = holds.active_lanes(Samples(150)).collect();
         assert_eq!(lanes, vec![Lane::Left]);
@@ -140,7 +151,12 @@ mod tests {
         );
         assert_eq!(holds.release(Lane::Left, Samples(170)), None);
 
-        holds.start(Lane::Down, Samples(300), Samples(200), rustic_core::ids::NoteId::new(0));
+        holds.start(
+            Lane::Down,
+            Samples(300),
+            Samples(200),
+            rustic_core::ids::NoteId::new(0),
+        );
         assert_eq!(holds.complete_elapsed(Samples(299)), Vec::<Lane>::new());
         assert_eq!(holds.complete_elapsed(Samples(300)), vec![Lane::Down]);
         assert_eq!(holds.complete_elapsed(Samples(301)), Vec::<Lane>::new());
@@ -149,7 +165,12 @@ mod tests {
     #[test]
     fn active_holds_score_elapsed_time_until_release_or_completion() {
         let mut holds = ActiveHolds::default();
-        holds.start(Lane::Left, Samples(200), Samples(100), rustic_core::ids::NoteId::new(0));
+        holds.start(
+            Lane::Left,
+            Samples(200),
+            Samples(100),
+            rustic_core::ids::NoteId::new(0),
+        );
 
         assert_eq!(
             holds.score_ticks(Samples(140)),
@@ -160,7 +181,12 @@ mod tests {
             hold_release(200, 40)
         );
 
-        holds.start(Lane::Down, Samples(300), Samples(200), rustic_core::ids::NoteId::new(0));
+        holds.start(
+            Lane::Down,
+            Samples(300),
+            Samples(200),
+            rustic_core::ids::NoteId::new(0),
+        );
         assert_eq!(
             holds.score_ticks(Samples(350)),
             vec![hold_tick(Lane::Down, 100)]

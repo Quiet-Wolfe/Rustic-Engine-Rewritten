@@ -222,9 +222,14 @@ impl NoteSkin {
         let index = lane_index(lane);
         match state {
             ReceptorState::Static => &self.static_frames[index],
-            ReceptorState::Pressed { started_at } => {
-                animated_note_frame(&self.press_frames[index], cursor, sample_rate, started_at, RECEPTOR_ANIMATION_FPS, false)
-            }
+            ReceptorState::Pressed { started_at } => animated_note_frame(
+                &self.press_frames[index],
+                cursor,
+                sample_rate,
+                started_at,
+                RECEPTOR_ANIMATION_FPS,
+                false,
+            ),
             ReceptorState::Confirm { started_at, hold } => {
                 if hold
                     && cursor.0.saturating_sub(started_at.0)
@@ -542,14 +547,7 @@ fn animated_note_frame(
     fps: u16,
     looped: bool,
 ) -> &SparrowFrame {
-    let index = animation_frame_index(
-        cursor,
-        sample_rate,
-        started_at,
-        fps,
-        frames.len(),
-        looped,
-    );
+    let index = animation_frame_index(cursor, sample_rate, started_at, fps, frames.len(), looped);
     &frames[index]
 }
 
