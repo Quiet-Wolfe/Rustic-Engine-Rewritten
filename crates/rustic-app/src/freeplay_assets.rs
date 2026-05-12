@@ -62,6 +62,12 @@ const SCORE_DIGIT_SPACING: f32 = 36.0;
 const HIGHSCORE_X: f32 = 1280.0 - 420.0;
 const HIGHSCORE_Y: f32 = 70.0;
 const HIGHSCORE_SCALE: f32 = 0.5;
+// ref: bdedc0aa:source/funkin/ui/freeplay/AlbumRoll.hx:50-53
+const ALBUM_ART_X: f32 = 1280.0 - 360.0;
+const ALBUM_ART_Y: f32 = 220.0;
+const ALBUM_ART_SCALE: f32 = 0.5;
+const ALBUM_TITLE_X: f32 = 1280.0 - 360.0;
+const ALBUM_TITLE_Y: f32 = 480.0;
 
 // ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:62,57-58,129
 const PINKBACK_COLOR: glam::Vec4 = glam::Vec4::new(
@@ -103,6 +109,9 @@ pub struct FreeplayAssets {
     bignumbers_digits: [Option<SparrowFrame>; 10],
     highscore_atlas: Option<SparrowAtlasHandle>,
     highscore_frames: Vec<SparrowFrame>,
+    album_cover: Option<StaticTexture>,
+    album_title_atlas: Option<SparrowAtlasHandle>,
+    album_title_frame: Option<SparrowFrame>,
     pub textures: HashMap<AssetId, Texture>,
 }
 
@@ -158,6 +167,7 @@ impl FreeplayAssets {
         self.push_difficulty(&mut commands, selection.difficulty, cursor, sample_rate);
         self.push_highscore(&mut commands);
         self.push_score(&mut commands);
+        self.push_album(&mut commands);
         commands
     }
 
@@ -298,6 +308,35 @@ impl FreeplayAssets {
                 glam::Vec2::ONE,
                 glam::Vec4::ONE,
                 310,
+            ));
+        }
+    }
+
+    fn push_album(&self, commands: &mut RenderCommandList) {
+        if let Some(cover) = self.album_cover.as_ref() {
+            commands.push(cover.command(
+                glam::vec2(ALBUM_ART_X, ALBUM_ART_Y),
+                glam::Vec4::ONE,
+                315,
+                glam::vec2(
+                    cover.width as f32 * ALBUM_ART_SCALE,
+                    cover.height as f32 * ALBUM_ART_SCALE,
+                ),
+            ));
+        }
+        if let (Some(atlas), Some(frame)) = (
+            self.album_title_atlas.as_ref(),
+            self.album_title_frame.as_ref(),
+        ) {
+            commands.push(sparrow_scaled_command(
+                atlas.texture_id,
+                atlas.width,
+                atlas.height,
+                frame,
+                glam::vec2(ALBUM_TITLE_X, ALBUM_TITLE_Y),
+                glam::Vec2::ONE,
+                glam::Vec4::ONE,
+                316,
             ));
         }
     }
@@ -634,6 +673,39 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         }
     };
 
+    let album_cover = match load_static_texture(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/albumRoll/volume1.png",
+        FilterMode::Linear,
+    ) {
+        Ok(tex) => Some(tex),
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "freeplay album cover unavailable: {e:#}");
+            None
+        }
+    };
+    let (album_title_atlas, album_title_frame) = match load_sparrow_atlas(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/albumRoll/volume1-text.xml",
+    ) {
+        Ok((handle, atlas)) => {
+            let frame = atlas
+                .first_animation_frame("idle", &[])
+                .cloned();
+            (Some(handle), frame)
+        }
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "freeplay album title unavailable: {e:#}");
+            (None, None)
+        }
+    };
+
     Ok(FreeplayAssets {
         songs,
         pink_back,
@@ -654,6 +726,9 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         bignumbers_digits,
         highscore_atlas,
         highscore_frames,
+        album_cover,
+        album_title_atlas,
+        album_title_frame,
         textures,
     })
 }
@@ -850,6 +925,10 @@ pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
     "images/freeplay/sparkle.png",
     "images/freeplay/sparkle.xml",
     "images/freeplay/miniArrow.png",
+    "images/freeplay/albumRoll/volume1.png",
+    "images/freeplay/albumRoll/volume1-text.png",
+    "images/freeplay/albumRoll/volume1-text.xml",
+    "data/ui/freeplay/albums/volume1.json",
 ];
 
 #[cfg(test)]
