@@ -10,6 +10,7 @@ impl App {
         self.mode = super::title_flow::AppMode::Options;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.credits_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.options_menu_assets = None;

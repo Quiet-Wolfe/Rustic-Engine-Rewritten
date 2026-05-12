@@ -18,6 +18,7 @@ pub mod camera_fx;
 pub mod character_anim;
 pub mod countdown_assets;
 pub mod countdown_audio;
+pub mod credits_assets;
 pub mod freeplay_assets;
 pub mod freeplay_dj;
 pub mod game_over;

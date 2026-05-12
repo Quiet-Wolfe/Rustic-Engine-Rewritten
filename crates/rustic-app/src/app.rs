@@ -11,6 +11,7 @@ use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::countdown_audio::CountdownAudio;
+use crate::credits_assets::CreditsAssets;
 use crate::freeplay_assets::FreeplayAssets;
 use crate::game_over::GameOverState;
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
@@ -49,6 +50,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 
+mod credits_flow;
 mod debug_overlay;
 mod game_over_flow;
 mod options_flow;
@@ -94,6 +96,7 @@ struct App {
     title_assets: Option<TitleScreenAssets>,
     main_menu_assets: Option<MainMenuAssets>,
     main_menu_index: usize,
+    credits_assets: Option<CreditsAssets>,
     options_menu_assets: Option<OptionsMenuAssets>,
     options_menu_page: OptionsMenuPage,
     options_menu_index: usize,
@@ -158,6 +161,7 @@ impl App {
             title_assets: None,
             main_menu_assets: None,
             main_menu_index: 0,
+            credits_assets: None,
             options_menu_assets: None,
             options_menu_page: OptionsMenuPage::Root,
             options_menu_index: 0,
@@ -323,6 +327,10 @@ impl App {
         }
         if self.mode == AppMode::Options {
             self.rebuild_options_menu_commands();
+            return;
+        }
+        if self.mode == AppMode::Credits {
+            self.rebuild_credits_commands();
             return;
         }
         if self.mode == AppMode::MainMenu {

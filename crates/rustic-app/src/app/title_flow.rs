@@ -18,6 +18,7 @@ use winit::event_loop::ActiveEventLoop;
 pub(super) enum AppMode {
     Title,
     MainMenu,
+    Credits,
     Options,
     StoryMenu,
     SongSelect,
@@ -30,6 +31,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
@@ -87,6 +89,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
@@ -129,6 +132,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
@@ -182,6 +186,7 @@ impl App {
         match self.mode {
             AppMode::Title
             | AppMode::MainMenu
+            | AppMode::Credits
             | AppMode::Options
             | AppMode::StoryMenu
             | AppMode::SongSelect => self.title_cursor(play_sample_rate(&self.mixer)),
@@ -198,6 +203,7 @@ impl App {
         match self.mode {
             AppMode::Title => self.handle_title_input(action, state, event_loop),
             AppMode::MainMenu => self.handle_main_menu_input(action, state),
+            AppMode::Credits => self.handle_credits_input(action, state),
             AppMode::Options => self.handle_options_menu_input(action, state),
             AppMode::StoryMenu => self.handle_story_menu_input(action, state),
             AppMode::SongSelect => self.handle_song_select_input(action, state),
@@ -259,7 +265,8 @@ impl App {
             Some(MainMenuAction::StoryMode) => self.load_story_menu(),
             Some(MainMenuAction::Freeplay) => self.enter_song_select(),
             Some(MainMenuAction::Options) => self.load_options_menu(),
-            Some(MainMenuAction::Credits) | None => {}
+            Some(MainMenuAction::Credits) => self.load_credits_screen(),
+            None => {}
         }
     }
 
@@ -366,6 +373,7 @@ impl App {
         self.mode = AppMode::SongSelect;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
@@ -424,13 +432,14 @@ impl App {
         self.mode = AppMode::Play;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.load_selected_song();
     }
 
-    fn title_cursor(&self, sample_rate: u32) -> Samples {
+    pub(super) fn title_cursor(&self, sample_rate: u32) -> Samples {
         let elapsed = self.title_start.elapsed().as_secs_f64();
         Samples((elapsed * f64::from(sample_rate)).round() as i64)
     }
