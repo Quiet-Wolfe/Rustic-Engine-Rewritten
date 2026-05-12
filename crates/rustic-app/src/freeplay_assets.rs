@@ -13,17 +13,17 @@
 use crate::asset_roots::baked_assets_root;
 use crate::freeplay_dj::{load_freeplay_dj, FreeplayDJ};
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
-use anyhow::{Context, Result};
-use rustic_asset::{
-    load_png, load_sparrow, AssetPath, OverlayResolver, SparrowAtlas, SparrowFrame,
-};
-use rustic_core::ids::{AssetId, CameraId};
-use rustic_core::render::RenderLayer;
+use anyhow::Result;
+use rustic_asset::{OverlayResolver, SparrowFrame};
+use rustic_core::ids::AssetId;
 use rustic_core::time::Samples;
-use rustic_render::{
-    DrawCommand, FilterMode, RenderCommandList, TextCommand, TextCommandList, Texture,
-};
+use rustic_render::{FilterMode, RenderCommandList, TextCommand, TextCommandList, Texture};
 use std::collections::HashMap;
+
+#[path = "freeplay_assets_helpers.rs"]
+mod helpers;
+pub use helpers::REQUIRED_FREEPLAY_ASSETS;
+use helpers::*;
 
 // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:607
 const CAPSULE_REAL_SCALED: f32 = 0.8;
@@ -112,6 +112,8 @@ pub struct FreeplayAssets {
     album_cover: Option<StaticTexture>,
     album_title_atlas: Option<SparrowAtlasHandle>,
     album_title_frame: Option<SparrowFrame>,
+    mini_arrow: Option<StaticTexture>,
+    seperator: Option<StaticTexture>,
     pub textures: HashMap<AssetId, Texture>,
 }
 
@@ -168,7 +170,38 @@ impl FreeplayAssets {
         self.push_highscore(&mut commands);
         self.push_score(&mut commands);
         self.push_album(&mut commands);
+        self.push_letter_sort(&mut commands);
         commands
+    }
+
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/LetterSort.hx:38-86
+    fn push_letter_sort(&self, commands: &mut RenderCommandList) {
+        let group_x = 400.0;
+        let group_y = 75.0;
+        if let Some(arrow) = self.mini_arrow.as_ref() {
+            commands.push(arrow.command(
+                glam::vec2(group_x + -20.0 + arrow.width as f32, group_y + 15.0),
+                glam::Vec4::ONE,
+                330,
+                glam::vec2(-(arrow.width as f32), arrow.height as f32),
+            ));
+            commands.push(arrow.command(
+                glam::vec2(group_x + 380.0, group_y + 15.0),
+                glam::Vec4::ONE,
+                330,
+                glam::vec2(arrow.width as f32, arrow.height as f32),
+            ));
+        }
+        if let Some(sep) = self.seperator.as_ref() {
+            for i in 0..4 {
+                commands.push(sep.command(
+                    glam::vec2(group_x + (i as f32 * 80.0) + 60.0, group_y + 20.0),
+                    glam::Vec4::ONE,
+                    329,
+                    glam::vec2(sep.width as f32, sep.height as f32),
+                ));
+            }
+        }
     }
 
     pub fn text_commands(&self, selection: PreviewSelection) -> TextCommandList {
@@ -206,6 +239,26 @@ impl FreeplayAssets {
             commands.push(text);
         }
 
+        // ref: bdedc0aa:source/funkin/ui/freeplay/LetterSort.hx:54-73 letters
+        const LETTERS: [&str; 5] = ["#", "@", "ALL", "A", "B"];
+        for (i, glyph) in LETTERS.iter().enumerate() {
+            let is_center = i == 2;
+            let scale = if is_center { 1.0 } else { 0.8 };
+            let darkness = ((i as f32 - 2.0).abs() / 6.0).max(0.01);
+            let alpha = 1.0 - darkness;
+            let mut text = TextCommand::new(
+                (*glyph).to_string(),
+                glam::vec2(
+                    400.0 + (i as f32 * 80.0) + 50.0,
+                    75.0 + 50.0,
+                ),
+                36.0 * scale,
+            );
+            text.color = glam::Vec4::new(1.0, 1.0, 1.0, alpha);
+            text.z = 335;
+            commands.push(text);
+        }
+
         commands
     }
 
@@ -214,10 +267,12 @@ impl FreeplayAssets {
     }
 
     pub fn song_at(&self, index: usize) -> Option<PreviewSong> {
-        self.songs.get(index).and_then(|capsule| match capsule.kind {
-            CapsuleKind::Song(song) => Some(song),
-            CapsuleKind::Random => None,
-        })
+        self.songs
+            .get(index)
+            .and_then(|capsule| match capsule.kind {
+                CapsuleKind::Song(song) => Some(song),
+                CapsuleKind::Random => None,
+            })
     }
 
     pub fn is_random_at(&self, index: usize) -> bool {
@@ -342,10 +397,9 @@ impl FreeplayAssets {
     }
 
     fn push_highscore(&self, commands: &mut RenderCommandList) {
-        let (Some(atlas), Some(frame)) = (
-            self.highscore_atlas.as_ref(),
-            self.highscore_frames.first(),
-        ) else {
+        let (Some(atlas), Some(frame)) =
+            (self.highscore_atlas.as_ref(), self.highscore_frames.first())
+        else {
             return;
         };
         commands.push(sparrow_scaled_command(
@@ -450,77 +504,6 @@ enum CapsuleKind {
     Song(PreviewSong),
 }
 
-#[derive(Debug)]
-struct StaticTexture {
-    texture_id: AssetId,
-    width: u32,
-    height: u32,
-    filter: FilterMode,
-}
-
-impl StaticTexture {
-    fn command(
-        &self,
-        pos: glam::Vec2,
-        color: glam::Vec4,
-        z: i32,
-        draw_size: glam::Vec2,
-    ) -> DrawCommand {
-        let mut cmd = DrawCommand::sprite(self.texture_id, pos, draw_size);
-        cmd.camera = CameraId(1);
-        cmd.layer = RenderLayer::Overlay;
-        cmd.z = z;
-        cmd.pivot = glam::Vec2::ZERO;
-        cmd.filter = self.filter;
-        cmd.color = color;
-        cmd
-    }
-}
-
-#[derive(Debug)]
-struct SparrowAtlasHandle {
-    texture_id: AssetId,
-    width: u32,
-    height: u32,
-}
-
-fn capsule_position(offset: f32) -> glam::Vec2 {
-    let capsule_height_scaled = CAPSULE_FRAME_HEIGHT * CAPSULE_REAL_SCALED;
-    let y = offset * (capsule_height_scaled + CAPSULE_SPACING_PAD) + CAPSULE_BASE_Y;
-    let x = CAPSULE_BASE_X + CAPSULE_SIN_AMPLITUDE * offset.sin();
-    glam::vec2(x, y)
-}
-
-fn capsule_text_offset() -> glam::Vec2 {
-    // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:200
-    glam::vec2(
-        CAPSULE_FRAME_WIDTH * 0.26 * CAPSULE_REAL_SCALED,
-        40.0 * CAPSULE_REAL_SCALED,
-    )
-}
-
-fn bg_image_scale(bg: &StaticTexture) -> f32 {
-    PINKBACK_TARGET_HEIGHT / bg.height.max(1) as f32
-}
-
-/// Compute the once-per-beat capsule bump scale. The OG runs the
-/// xFrames sequence over the start of each beat at 24fps, then sits
-/// at 1.0 for the remainder.
-///
-/// ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:603,670-690
-fn capsule_beat_scale(cursor: Samples, sample_rate: u32) -> (f32, f32) {
-    let samples_per_beat = (f64::from(sample_rate.max(1)) * 60.0 / MENU_BPM).max(1.0);
-    let elapsed = cursor.0.max(0) as f64;
-    let phase = (elapsed % samples_per_beat).max(0.0);
-    let frame = (phase * f64::from(CAPSULE_BEAT_FPS) / f64::from(sample_rate.max(1))).floor()
-        as usize;
-    if frame >= CAPSULE_BEAT_XFRAMES.len() {
-        return (1.0, 1.0);
-    }
-    let sx = CAPSULE_BEAT_XFRAMES[frame];
-    (sx, 1.0 / sx.max(0.0001))
-}
-
 pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<FreeplayAssets> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
     let mut textures = HashMap::new();
@@ -621,10 +604,14 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         kind: CapsuleKind::Random,
         display_name: "RANDOM".to_string(),
     }];
-    songs.extend(PreviewSong::CYCLABLE_WEEK1.iter().map(|song| FreeplayCapsule {
-        kind: CapsuleKind::Song(*song),
-        display_name: song.display_name().to_ascii_uppercase(),
-    }));
+    songs.extend(
+        PreviewSong::CYCLABLE_WEEK1
+            .iter()
+            .map(|song| FreeplayCapsule {
+                kind: CapsuleKind::Song(*song),
+                display_name: song.display_name().to_ascii_uppercase(),
+            }),
+    );
 
     let dj = match load_freeplay_dj(device, queue) {
         Ok(mut dj) => {
@@ -652,7 +639,10 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         }
         Err(e) => {
             tracing::warn!(target: "rustic.asset", "freeplay bignumbers unavailable: {e:#}");
-            (None, [None, None, None, None, None, None, None, None, None, None])
+            (
+                None,
+                [None, None, None, None, None, None, None, None, None, None],
+            )
         }
     };
 
@@ -695,9 +685,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         "images/freeplay/albumRoll/volume1-text.xml",
     ) {
         Ok((handle, atlas)) => {
-            let frame = atlas
-                .first_animation_frame("idle", &[])
-                .cloned();
+            let frame = atlas.first_animation_frame("idle", &[]).cloned();
             (Some(handle), frame)
         }
         Err(e) => {
@@ -705,6 +693,25 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
             (None, None)
         }
     };
+
+    let mini_arrow = load_static_texture(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/miniArrow.png",
+        FilterMode::Linear,
+    )
+    .ok();
+    let seperator = load_static_texture(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/seperator.png",
+        FilterMode::Linear,
+    )
+    .ok();
 
     Ok(FreeplayAssets {
         songs,
@@ -729,255 +736,8 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         album_cover,
         album_title_atlas,
         album_title_frame,
+        mini_arrow,
+        seperator,
         textures,
     })
-}
-
-fn digit_frames(atlas: &SparrowAtlas) -> [Option<SparrowFrame>; 10] {
-    // ref: bdedc0aa:assets/preload/images/freeplay/freeplayCapsule/bignumbers.xml
-    const NAMES: [&str; 10] = [
-        "ZERO0000", "ONE0000", "TWO0000", "THREE0000", "FOUR0000", "FIVE0000", "SIX0000",
-        "SEVEN0000", "EIGHT0000", "NINE0000",
-    ];
-    let mut out: [Option<SparrowFrame>; 10] = Default::default();
-    for (idx, name) in NAMES.iter().enumerate() {
-        out[idx] = atlas.frames.iter().find(|f| f.name == *name).cloned();
-    }
-    out
-}
-
-fn load_static_texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    resolver: &OverlayResolver,
-    textures: &mut HashMap<AssetId, Texture>,
-    path: &str,
-    filter: FilterMode,
-) -> Result<StaticTexture> {
-    let path = AssetPath::new(path)?;
-    let image = load_png(resolver, &path).with_context(|| format!("load {path}"))?;
-    let texture_id = asset_id_for_path(&path);
-    let (width, height) = (image.width, image.height);
-    textures.insert(
-        texture_id,
-        Texture::from_png_image(device, queue, &image, filter, Some(path.as_str())),
-    );
-    Ok(StaticTexture {
-        texture_id,
-        width,
-        height,
-        filter,
-    })
-}
-
-fn load_sparrow_atlas(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    resolver: &OverlayResolver,
-    textures: &mut HashMap<AssetId, Texture>,
-    xml_path: &str,
-) -> Result<(SparrowAtlasHandle, SparrowAtlas)> {
-    let xml_path = AssetPath::new(xml_path)?;
-    let atlas = load_sparrow(resolver, &xml_path).with_context(|| format!("load {xml_path}"))?;
-    let texture_path = xml_path.sibling(&atlas.image_path)?;
-    let image =
-        load_png(resolver, &texture_path).with_context(|| format!("load {texture_path}"))?;
-    let texture_id = asset_id_for_path(&texture_path);
-    let (width, height) = (image.width, image.height);
-    textures.insert(
-        texture_id,
-        Texture::from_png_image(
-            device,
-            queue,
-            &image,
-            FilterMode::Linear,
-            Some(texture_path.as_str()),
-        ),
-    );
-    Ok((
-        SparrowAtlasHandle {
-            texture_id,
-            width,
-            height,
-        },
-        atlas,
-    ))
-}
-
-fn clone_frames(atlas: &SparrowAtlas, prefix: &str) -> Vec<SparrowFrame> {
-    atlas
-        .animation_frames(prefix, &[])
-        .into_iter()
-        .cloned()
-        .collect()
-}
-
-fn frame_for_cursor<'a>(
-    frames: &'a [SparrowFrame],
-    cursor: Samples,
-    sample_rate: u32,
-    fps: u16,
-    looped: bool,
-) -> Option<&'a SparrowFrame> {
-    if frames.is_empty() {
-        return None;
-    }
-    let elapsed = cursor.0.max(0) as u128;
-    let index = (elapsed * u128::from(fps) / u128::from(sample_rate.max(1))) as usize;
-    let frame_count = frames.len();
-    let index = if looped {
-        index % frame_count
-    } else {
-        index.min(frame_count - 1)
-    };
-    frames.get(index)
-}
-
-fn sparrow_scaled_command(
-    texture_id: AssetId,
-    texture_width: u32,
-    texture_height: u32,
-    frame: &SparrowFrame,
-    position: glam::Vec2,
-    scale: glam::Vec2,
-    color: glam::Vec4,
-    z: i32,
-) -> DrawCommand {
-    let mut cmd = DrawCommand::sprite(texture_id, position, frame_draw_size(frame) * scale);
-    cmd.camera = CameraId(1);
-    cmd.layer = RenderLayer::Overlay;
-    cmd.z = z;
-    cmd.pivot = glam::Vec2::ZERO;
-    cmd.filter = FilterMode::Linear;
-    cmd.color = color;
-    (cmd.uv_min, cmd.uv_max) = frame_uv(frame, texture_width, texture_height);
-    cmd.uv_rotated = frame.rotated;
-    cmd
-}
-
-fn solid_command(pos: glam::Vec2, size: glam::Vec2, color: glam::Vec4, z: i32) -> DrawCommand {
-    let mut cmd = DrawCommand::sprite(WHITE_TEXTURE_ID, pos, size);
-    cmd.camera = CameraId(1);
-    cmd.layer = RenderLayer::Background;
-    cmd.z = z;
-    cmd.pivot = glam::Vec2::ZERO;
-    cmd.filter = FilterMode::Nearest;
-    cmd.color = color;
-    cmd
-}
-
-fn frame_draw_size(frame: &SparrowFrame) -> glam::Vec2 {
-    if frame.rotated {
-        glam::vec2(frame.height as f32, frame.width as f32)
-    } else {
-        glam::vec2(frame.width as f32, frame.height as f32)
-    }
-}
-
-fn frame_uv(
-    frame: &SparrowFrame,
-    texture_width: u32,
-    texture_height: u32,
-) -> (glam::Vec2, glam::Vec2) {
-    let width = texture_width.max(1) as f32;
-    let height = texture_height.max(1) as f32;
-    (
-        glam::vec2(frame.x as f32 / width, frame.y as f32 / height),
-        glam::vec2(
-            (frame.x as f32 + frame.width as f32) / width,
-            (frame.y as f32 + frame.height as f32) / height,
-        ),
-    )
-}
-
-fn asset_id_for_path(path: &AssetPath) -> AssetId {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in path.as_str().as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    AssetId::new(hash)
-}
-
-/// Logical paths to assets the Freeplay screen depends on. Loaders above
-/// reference these by string; this list is the authoritative inventory so
-/// the `required_assets_present` test catches accidental deletes.
-///
-/// Do not remove entries here without removing the matching call site —
-/// the Freeplay screen will not render correctly without all of them.
-pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
-    "images/freeplay/pinkBack.png",
-    "images/freeplay/freeplayBGweek1-bf.png",
-    "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png",
-    "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.xml",
-    "images/freeplay/freeplayCapsule/bignumbers.png",
-    "images/freeplay/freeplayCapsule/bignumbers.xml",
-    "images/freeplay/freeplaySelector/freeplaySelector.png",
-    "images/freeplay/freeplaySelector/freeplaySelector.xml",
-    "images/freeplay/freeplayeasy.png",
-    "images/freeplay/freeplaynormal.png",
-    "images/freeplay/freeplayhard.png",
-    "images/freeplay/freeplayerect.png",
-    "images/freeplay/freeplaynightmare.png",
-    "images/freeplay/freeplaynightmare.xml",
-    "images/freeplay/highscore.png",
-    "images/freeplay/highscore.xml",
-    "images/freeplay/sparkle.png",
-    "images/freeplay/sparkle.xml",
-    "images/freeplay/miniArrow.png",
-    "images/freeplay/albumRoll/volume1.png",
-    "images/freeplay/albumRoll/volume1-text.png",
-    "images/freeplay/albumRoll/volume1-text.xml",
-    "data/ui/freeplay/albums/volume1.json",
-];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn capsule_position_uses_sin_offset() {
-        let center = capsule_position(0.0);
-        assert!((center.x - CAPSULE_BASE_X).abs() < 0.01);
-        assert!((center.y - CAPSULE_BASE_Y).abs() < 0.01);
-    }
-
-    #[test]
-    fn capsule_position_above_selected_is_negative() {
-        let above = capsule_position(-1.0);
-        let below = capsule_position(1.0);
-        assert!(above.y < CAPSULE_BASE_Y);
-        assert!(below.y > CAPSULE_BASE_Y);
-    }
-
-    #[test]
-    fn frame_for_cursor_handles_empty() {
-        assert!(frame_for_cursor(&[], Samples(0), 48_000, 24, true).is_none());
-    }
-
-    /// Locks the freeplay source asset inventory: if any of these files
-    /// disappear from `assets/source/`, this test fails loudly. The
-    /// Freeplay screen requires every entry — do not delete them.
-    #[test]
-    fn required_assets_present() {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let workspace = manifest_dir
-            .parent()
-            .and_then(std::path::Path::parent)
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_else(|| manifest_dir.to_path_buf());
-        let source_root = workspace.join("assets/source");
-        let mut missing = Vec::new();
-        for logical in REQUIRED_FREEPLAY_ASSETS {
-            let path = source_root.join(logical);
-            if !path.exists() {
-                missing.push(path.display().to_string());
-            }
-        }
-        assert!(
-            missing.is_empty(),
-            "freeplay assets missing — DO NOT DELETE these files, they are required for the OG-fidelity port:\n{}",
-            missing.join("\n"),
-        );
-    }
 }
