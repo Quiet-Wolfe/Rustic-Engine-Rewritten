@@ -29,6 +29,7 @@ pub mod note_assets;
 pub mod note_splash_assets;
 pub mod popup_assets;
 pub mod preview_song;
+pub mod regression;
 pub mod scene_assets;
 pub mod screen;
 pub mod settings;

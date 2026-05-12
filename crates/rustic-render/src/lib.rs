@@ -11,6 +11,7 @@
 
 pub mod batch;
 pub mod camera;
+pub mod capture;
 pub mod command;
 pub mod composite;
 pub mod error;
@@ -22,6 +23,7 @@ pub mod texture;
 
 pub use batch::{SpriteBatcher, SpriteInstance};
 pub use camera::{Camera, CameraRegistry};
+pub use capture::capture_reference_rgba;
 pub use command::{DrawCommand, RenderCommandList};
 pub use composite::Composite;
 pub use error::{RenderError, RenderResult};

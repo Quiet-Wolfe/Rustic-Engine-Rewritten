@@ -8,7 +8,10 @@
 //!   - `import-week1` — import normalized Tutorial/Week 1 v-slice chart,
 //!     metadata, level, and compatibility list data from the pinned local
 //!     `references/Funkin` checkout.
-//!   - `regression` — placeholder for the visual regression runner.
+//!   - `regression [--write] [<scenario>]` — capture deterministic reference
+//!     frames into `tests/golden/` and diff against existing goldens.
+
+mod regression;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -25,7 +28,7 @@ fn main() -> Result<()> {
             cmd_bake(check)
         }
         "import-week1" => cmd_import_week1(),
-        "regression" => cmd_regression(),
+        "regression" => cmd_regression(args.collect()),
         "" | "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -44,7 +47,9 @@ fn print_help() {
     println!("  bake [--check]   Bake assets/source/ into assets/baked/.");
     println!("                   --check fails if the manifest would change.");
     println!("  import-week1     Import OG Tutorial/Week 1 data from references/Funkin.");
-    println!("  regression       Run the visual regression suite (TODO).");
+    println!("  regression       Render the deterministic golden suite.");
+    println!("                   [--write] refreshes goldens; <scenario>");
+    println!("                   filters to a single scenario by label.");
     println!("  help             Show this message.");
 }
 
@@ -279,9 +284,11 @@ fn trim_reference_text(mut bytes: &[u8]) -> &[u8] {
     bytes
 }
 
-fn cmd_regression() -> Result<()> {
-    eprintln!("regression: not implemented yet (Phase 11). See docs/ci.md.");
-    Ok(())
+fn cmd_regression(args: Vec<String>) -> Result<()> {
+    let write = args.iter().any(|a| a == "--write");
+    let scenario = args.iter().find(|a| !a.starts_with("--")).cloned();
+    let workspace = workspace_root()?;
+    regression::run(&workspace, write, scenario.as_deref())
 }
 
 fn workspace_root() -> Result<PathBuf> {

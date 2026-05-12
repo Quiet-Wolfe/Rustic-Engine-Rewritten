@@ -105,22 +105,22 @@ impl PreviewSong {
     const BOPEEBO_ID: u32 = 1;
     const DADBATTLE_ID: u32 = 3;
 
-    pub(crate) const TUTORIAL: Self = Self {
+    pub const TUTORIAL: Self = Self {
         id: 0,
         folder: "tutorial",
         audio_prefix: "Tutorial",
     };
-    pub(crate) const BOPEEBO: Self = Self {
+    pub const BOPEEBO: Self = Self {
         id: 1,
         folder: "bopeebo",
         audio_prefix: "Bopeebo",
     };
-    pub(crate) const FRESH: Self = Self {
+    pub const FRESH: Self = Self {
         id: 2,
         folder: "fresh",
         audio_prefix: "Fresh",
     };
-    pub(crate) const DADBATTLE: Self = Self {
+    pub const DADBATTLE: Self = Self {
         id: 3,
         folder: "dadbattle",
         audio_prefix: "Dadbattle",

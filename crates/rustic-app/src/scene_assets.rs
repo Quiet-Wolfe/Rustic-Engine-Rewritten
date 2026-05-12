@@ -296,7 +296,7 @@ impl CharacterPose {
     }
 }
 
-pub(crate) fn load_preview_scene_for(
+pub fn load_preview_scene_for(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     selection: PreviewSelection,
@@ -435,7 +435,7 @@ pub(crate) fn load_preview_song_for(selection: PreviewSelection) -> Result<Parse
         .with_context(|| format!("load {} + {} [{}]", chart_path, metadata_path, difficulty))
 }
 
-pub(crate) fn load_preview_play_state_for(
+pub fn load_preview_play_state_for(
     selection: PreviewSelection,
     sample_rate: u32,
 ) -> Result<PlayState> {
