@@ -378,18 +378,6 @@ impl App {
             }
             song_events = play_state.resolve_song_events(cursor);
             opponent_hits = play_state.resolve_opponent_notes(cursor);
-            let held_lanes: Vec<_> = self.held_lanes.active_lanes().collect();
-            for lane in held_lanes {
-                if !self.active_holds.active_lanes(cursor).any(|l| l == lane) {
-                    if let Some((note_id, hold_end_at)) =
-                        play_state.pickup_hold_in_lane(cursor, lane, sample_rate)
-                    {
-                        self.active_holds.start(lane, hold_end_at, cursor, note_id);
-                        self.held_lanes.hold_confirm(lane, cursor, confirm_duration);
-                        self.hold_covers.start(lane, cursor, hold_end_at);
-                    }
-                }
-            }
             late_misses = play_state.expire_late_notes(cursor, sample_rate);
             dead = play_state.is_dead();
             bpm = Some(play_state.bpm);
