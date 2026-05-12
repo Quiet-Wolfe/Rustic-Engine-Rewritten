@@ -11,11 +11,12 @@ use glam::{vec2, vec4};
 use image::{ImageBuffer, RgbaImage};
 use rustic_app::bitmap_text_assets::load_vcr_ttf_bytes;
 use rustic_app::character_anim::CharacterAnimState;
+use rustic_app::lane_state::ReceptorState;
 use rustic_app::regression::{
-    load_scenario_play_state, load_scenario_scene, RegressionScenario, FIRST_GOLDEN_SCENARIOS,
-    REGRESSION_SAMPLE_RATE,
+    load_scenario_play_state, load_scenario_scene, scenario_cameras, scenario_stage_prop_commands,
+    RegressionFrameKind, RegressionScenario, FIRST_GOLDEN_SCENARIOS, REGRESSION_SAMPLE_RATE,
 };
-use rustic_core::ids::CameraId;
+use rustic_asset::ChartEventKind;
 use rustic_core::time::Samples;
 use rustic_render::{
     capture_reference_rgba, CameraRegistry, RenderCommandList, RenderState, SpriteBatcher,
@@ -104,13 +105,13 @@ impl Harness {
     }
 
     fn render_scenario(&mut self, scenario: &RegressionScenario) -> Result<Vec<u8>> {
-        let (sprite_cmds, text_cmds, atlases) = build_scenario(self, scenario)?;
+        let (sprite_cmds, text_cmds, atlases, cameras) = build_scenario(self, scenario)?;
         let bytes = capture_reference_rgba(
             &self.rs,
             &self.pipeline,
             &mut self.batcher,
             Some(&mut self.text),
-            &build_cameras(),
+            &cameras,
             &atlases,
             sprite_cmds.as_slice(),
             text_cmds.as_slice(),
@@ -125,17 +126,6 @@ impl Harness {
     }
 }
 
-fn build_cameras() -> CameraRegistry {
-    let mut cameras = CameraRegistry::with_default_fnf();
-    for id in [CameraId(0), CameraId(1), CameraId(2)] {
-        if let Some(cam) = cameras.get_mut(id) {
-            cam.zoom = 1.0;
-            cam.position = vec2(REFERENCE_WIDTH as f32 * 0.5, REFERENCE_HEIGHT as f32 * 0.5);
-        }
-    }
-    cameras
-}
-
 fn build_scenario(
     harness: &Harness,
     scenario: &RegressionScenario,
@@ -143,17 +133,25 @@ fn build_scenario(
     RenderCommandList,
     TextCommandList,
     HashMap<rustic_core::ids::AssetId, rustic_render::Texture>,
+    CameraRegistry,
 )> {
     let scene = load_scenario_scene(&harness.rs.device, &harness.rs.queue, *scenario)
         .context("load regression scene")?;
     let play_state = load_scenario_play_state(*scenario).context("load regression PlayState")?;
+    let cursor = scenario.cursor();
 
     let mut sprite_cmds = scene.commands.clone();
+    for cmd in scenario_stage_prop_commands(&scene, *scenario) {
+        sprite_cmds.push(cmd);
+    }
     if let Some(characters) = &scene.characters {
-        let anim = CharacterAnimState::default();
-        for cmd in characters.commands(anim.poses(), Samples(0), REGRESSION_SAMPLE_RATE) {
+        let anim = build_character_anim(&scene, &play_state, cursor);
+        for cmd in characters.commands(anim.poses(), cursor, REGRESSION_SAMPLE_RATE) {
             sprite_cmds.push(cmd);
         }
+    }
+    if scenario.frame_kind == RegressionFrameKind::Gameplay {
+        append_gameplay_commands(&mut sprite_cmds, &scene, &play_state, cursor);
     }
     if let Some(hud_skin) = &scene.hud_skin {
         for cmd in hud_skin.commands_with_icon_scale(play_state.health, 1.0) {
@@ -169,9 +167,10 @@ fn build_scenario(
     let mut text_cmds = TextCommandList::new();
     let mut header = TextCommand::new(
         format!(
-            "{} ({})",
+            "{} ({}) @ {}ms",
             scenario.song.display_name(),
-            scenario.difficulty.as_str()
+            scenario.difficulty.as_str(),
+            scenario.cursor_ms
         ),
         vec2(24.0, 24.0),
         32.0,
@@ -179,7 +178,76 @@ fn build_scenario(
     header.color = vec4(1.0, 1.0, 1.0, 0.85);
     text_cmds.push(header);
 
-    Ok((sprite_cmds, text_cmds, scene.textures))
+    let cameras = scenario_cameras(&scene, &play_state, *scenario);
+    Ok((sprite_cmds, text_cmds, scene.textures, cameras))
+}
+
+fn build_character_anim(
+    scene: &rustic_app::scene_assets::LoadedScene,
+    play_state: &rustic_game::PlayState,
+    cursor: Samples,
+) -> CharacterAnimState {
+    let mut anim = CharacterAnimState::default();
+    if let Some(characters) = &scene.characters {
+        anim.set_timings(characters.anim_timings());
+    }
+    let mut state = play_state.clone();
+    let mut step = Samples(0);
+    let frame_samples = i64::from(REGRESSION_SAMPLE_RATE / 60).max(1);
+    loop {
+        for event in state.resolve_song_events(step) {
+            if let ChartEventKind::PlayAnimation {
+                target,
+                animation,
+                force,
+            } = event.kind
+            {
+                anim.play_chart_animation(&target, &animation, step, force);
+            }
+        }
+        for hit in state.resolve_opponent_notes(step) {
+            anim.opponent_note_hit(hit.lane, step, REGRESSION_SAMPLE_RATE, state.bpm);
+        }
+        anim.update(step, REGRESSION_SAMPLE_RATE, state.bpm, false);
+        if step >= cursor {
+            break;
+        }
+        step = Samples((step.0 + frame_samples).min(cursor.0));
+    }
+    anim
+}
+
+fn append_gameplay_commands(
+    sprite_cmds: &mut RenderCommandList,
+    scene: &rustic_app::scene_assets::LoadedScene,
+    play_state: &rustic_game::PlayState,
+    cursor: Samples,
+) {
+    let Some(note_skin) = &scene.note_skin else {
+        return;
+    };
+
+    for view in play_state.hold_trail_views(cursor, REGRESSION_SAMPLE_RATE, |_, _| false) {
+        for cmd in note_skin.hold_trail_commands(&view) {
+            if cmd.world_pos.y + cmd.size.y >= -200.0 {
+                sprite_cmds.push(cmd);
+            }
+        }
+    }
+    for cmd in
+        note_skin.receptor_commands(cursor, REGRESSION_SAMPLE_RATE, |_, _| ReceptorState::Static)
+    {
+        sprite_cmds.push(cmd);
+    }
+    for view in play_state.note_views(cursor, REGRESSION_SAMPLE_RATE) {
+        if view.is_sustain {
+            continue;
+        }
+        let cmd = note_skin.command_for_view(&view);
+        if cmd.world_pos.y + cmd.size.y >= -200.0 {
+            sprite_cmds.push(cmd);
+        }
+    }
 }
 
 enum GoldenOutcome {
