@@ -3,6 +3,7 @@ use crate::app_runtime::reconfigure_surface;
 
 impl App {
     pub(super) fn redraw(&mut self) {
+        self.update_debug_frame_time();
         self.rebuild_frame_commands();
         let Some(rt) = self.runtime.as_mut() else {
             return;

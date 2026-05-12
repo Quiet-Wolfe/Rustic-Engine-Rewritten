@@ -3,6 +3,16 @@
 use crate::preview_song::PreviewSelection;
 use rustic_render::{TextCommand, TextCommandList};
 
+pub(crate) struct DebugOverlayLine {
+    text: String,
+}
+
+impl DebugOverlayLine {
+    pub(crate) fn new(text: impl Into<String>) -> Self {
+        Self { text: text.into() }
+    }
+}
+
 pub(crate) fn preview_text_commands(selection: PreviewSelection) -> TextCommandList {
     let mut commands = TextCommandList::new();
     let song = selection.song.display_name();
@@ -19,4 +29,40 @@ pub(crate) fn preview_text_commands(selection: PreviewSelection) -> TextCommandL
     commands.push(hint);
 
     commands
+}
+
+pub(crate) fn push_debug_overlay_text(
+    commands: &mut TextCommandList,
+    lines: impl IntoIterator<Item = DebugOverlayLine>,
+) {
+    let mut y = 94.0;
+    for line in lines {
+        let mut cmd = TextCommand::new(line.text, glam::vec2(24.0, y), 16.0);
+        cmd.color = glam::vec4(0.95, 1.0, 0.92, 0.82);
+        cmd.z = 120;
+        commands.push(cmd);
+        y += 18.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_overlay_lines_stack_vertically_above_preview_hints() {
+        let mut commands = TextCommandList::new();
+        push_debug_overlay_text(
+            &mut commands,
+            [
+                DebugOverlayLine::new("fps 60.0"),
+                DebugOverlayLine::new("camGame pos 640,360"),
+            ],
+        );
+
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands.as_slice()[0].position.y, 94.0);
+        assert_eq!(commands.as_slice()[1].position.y, 112.0);
+        assert_eq!(commands.as_slice()[0].z, 120);
+    }
 }

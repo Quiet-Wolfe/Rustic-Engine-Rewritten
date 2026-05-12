@@ -42,6 +42,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 
+mod debug_overlay;
 mod redraw;
 
 struct App {
@@ -80,6 +81,9 @@ struct App {
     song_start_cursor: Samples,
     song_started: bool,
     game_over: Option<GameOverState>,
+    debug_overlay: bool,
+    last_frame_at: Instant,
+    debug_fps: f32,
     batcher: SpriteBatcher,
     screens: ScreenStack,
     runtime: Option<Runtime>,
@@ -125,6 +129,9 @@ impl App {
             song_start_cursor: Samples(0),
             song_started: false,
             game_over: None,
+            debug_overlay: false,
+            last_frame_at: now,
+            debug_fps: 0.0,
             batcher: SpriteBatcher::new(),
             screens: ScreenStack::new(),
             runtime: None,
@@ -256,6 +263,7 @@ impl App {
         } else {
             self.advance_song_clock()
         };
+        self.append_debug_overlay_commands(cursor, sample_rate);
         if self.game_over.is_some() {
             self.rebuild_game_over_commands(cursor, sample_rate);
             return;
@@ -682,6 +690,10 @@ impl ApplicationHandler for App {
                         || lane_for_action(action)
                             .map(|lane| self.held_lanes.is_held(lane))
                             .unwrap_or(false);
+                    if event.state == ElementState::Pressed && action == InputAction::Debug {
+                        self.toggle_debug_overlay();
+                        return;
+                    }
                     if event.state == ElementState::Pressed
                         && self.handle_preview_selection_input(action)
                     {
