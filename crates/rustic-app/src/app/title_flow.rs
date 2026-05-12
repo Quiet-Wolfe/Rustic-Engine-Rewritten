@@ -296,10 +296,16 @@ impl App {
     }
 
     fn confirm_story_menu_item(&mut self) {
-        let selection = self.story_menu_assets.as_ref().and_then(|assets| {
+        let Some(assets) = self.story_menu_assets.as_ref() else {
+            return;
+        };
+        let difficulty =
+            assets.difficulty_for_level(self.story_menu_index, self.story_menu_difficulty);
+        if let Some(songs) = assets.preview_playlist(self.story_menu_index) {
+            self.start_story_playlist(songs, difficulty);
+        } else if let Some(selection) =
             assets.preview_selection(self.story_menu_index, self.story_menu_difficulty)
-        });
-        if let Some(selection) = selection {
+        {
             self.preview_selection = selection;
             self.enter_play();
         }
@@ -361,6 +367,7 @@ impl App {
         self.active_holds = Default::default();
         self.held_lanes = Default::default();
         self.opponent_receptors = Default::default();
+        self.clear_story_playlist();
         self.static_cmds = RenderCommandList::new();
         self.atlases.clear();
         set_vocals_gain(&self.mixer, 1.0);
@@ -374,7 +381,7 @@ impl App {
         self.update_window_title();
     }
 
-    fn enter_play(&mut self) {
+    pub(super) fn enter_play(&mut self) {
         self.mode = AppMode::Play;
         self.title_assets = None;
         self.main_menu_assets = None;

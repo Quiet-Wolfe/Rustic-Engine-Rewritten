@@ -16,6 +16,24 @@ pub struct ResolvedOpponentNote {
 }
 
 impl PlayState {
+    /// Last chart cursor that can still drive gameplay-visible note/event
+    /// progression. The app may add an audio/menu tail before transitioning.
+    pub fn chart_end_cursor(&self) -> Samples {
+        let note_end = self
+            .notes
+            .iter()
+            .map(|note| note.hit_at.0.saturating_add(note.sustain_samples))
+            .max()
+            .unwrap_or(0);
+        let event_end = self
+            .events
+            .iter()
+            .map(|event| event.at.0)
+            .max()
+            .unwrap_or(0);
+        Samples(note_end.max(event_end))
+    }
+
     /// Resolve opponent-side notes whose strum time has reached the current
     /// conductor cursor. Base FNF uses this to drive dad animations and
     /// remove the note; it does not change player score/combo/health.
@@ -112,5 +130,22 @@ mod tests {
                 hold_end_at: Some(Samples(4_000))
             }]
         );
+    }
+
+    #[test]
+    fn chart_end_cursor_uses_latest_note_tail_or_event() {
+        let mut state = PlayState::new();
+        state.notes.push(Note {
+            sustain_samples: 500,
+            ..note(0, 1_000, true)
+        });
+        state.events.push(crate::state::SongEvent {
+            at: Samples(2_000),
+            kind: rustic_asset::ChartEventKind::Unknown {
+                name: "test".to_string(),
+            },
+        });
+
+        assert_eq!(state.chart_end_cursor(), Samples(2_000));
     }
 }

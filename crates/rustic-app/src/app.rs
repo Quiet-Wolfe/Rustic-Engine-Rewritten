@@ -22,7 +22,7 @@ use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKi
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::popup_assets::{PopupSkin, ScorePopups};
-use crate::preview_song::PreviewSelection;
+use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
 use crate::scene_assets::{
     load_preview_play_state_for, load_preview_scene_for, CameraFocusPoints, CharacterSet,
     LoadedScene,
@@ -49,6 +49,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 mod debug_overlay;
 mod game_over_flow;
 mod redraw;
+mod song_flow;
 mod title_flow;
 
 use title_flow::AppMode;
@@ -90,7 +91,10 @@ struct App {
     main_menu_index: usize,
     story_menu_assets: Option<StoryMenuAssets>,
     story_menu_index: usize,
-    story_menu_difficulty: crate::preview_song::PreviewDifficulty,
+    story_menu_difficulty: PreviewDifficulty,
+    story_playlist: Vec<PreviewSong>,
+    story_playlist_index: usize,
+    story_playlist_difficulty: PreviewDifficulty,
     title_start: Instant,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -146,7 +150,10 @@ impl App {
             main_menu_index: 0,
             story_menu_assets: None,
             story_menu_index: 1,
-            story_menu_difficulty: crate::preview_song::PreviewDifficulty::Normal,
+            story_menu_difficulty: PreviewDifficulty::Normal,
+            story_playlist: Vec::new(),
+            story_playlist_index: 0,
+            story_playlist_difficulty: PreviewDifficulty::Normal,
             title_start: now,
             play_state: None,
             song_start: now,
@@ -356,6 +363,9 @@ impl App {
         if dead {
             self.enter_game_over(cursor);
             self.rebuild_game_over_commands(cursor, sample_rate);
+            return;
+        }
+        if self.finish_song_if_due(cursor, sample_rate) {
             return;
         }
         if let Some(bpm) = bpm {
@@ -687,7 +697,7 @@ impl ApplicationHandler for App {
                         && action == InputAction::Back
                         && self.game_over.is_some()
                     {
-                        self.enter_song_select();
+                        self.return_to_play_menu();
                         return;
                     }
                     self.held_lanes.apply(&evt);
