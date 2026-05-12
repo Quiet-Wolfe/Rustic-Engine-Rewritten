@@ -50,11 +50,12 @@ If a grep check becomes noisy, replace it with a custom AST check or
 Tracked in `tests/golden/`:
 
 1. `title_skipped_intro.png`.
-2. `stage_idle_bopeebo.png`.
-3. `stage_idle_tutorial.png`.
-4. `bf_idle_two_beat_bopeebo.png`.
-5. `stage_camera_bump_bopeebo.png`.
-6. `gameplay_notes_crossing_bopeebo.png`.
+2. `main_menu_initial.png`.
+3. `stage_idle_bopeebo.png`.
+4. `stage_idle_tutorial.png`.
+5. `bf_idle_two_beat_bopeebo.png`.
+6. `stage_camera_bump_bopeebo.png`.
+7. `gameplay_notes_crossing_bopeebo.png`.
 
 ### When lavapipe is too unstable
 

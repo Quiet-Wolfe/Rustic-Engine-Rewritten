@@ -12,6 +12,7 @@ use image::{ImageBuffer, RgbaImage};
 use rustic_app::bitmap_text_assets::load_vcr_ttf_bytes;
 use rustic_app::character_anim::CharacterAnimState;
 use rustic_app::lane_state::ReceptorState;
+use rustic_app::main_menu_assets::load_main_menu_assets;
 use rustic_app::regression::{
     load_scenario_play_state, load_scenario_scene, scenario_cameras, scenario_stage_prop_commands,
     RegressionFrameKind, RegressionScenario, FIRST_GOLDEN_SCENARIOS, REGRESSION_SAMPLE_RATE,
@@ -139,6 +140,9 @@ fn build_scenario(
     if scenario.frame_kind == RegressionFrameKind::Title {
         return build_title_scenario(harness, scenario);
     }
+    if scenario.frame_kind == RegressionFrameKind::MainMenu {
+        return build_main_menu_scenario(harness, scenario);
+    }
 
     let scene = load_scenario_scene(&harness.rs.device, &harness.rs.queue, *scenario)
         .context("load regression scene")?;
@@ -203,6 +207,26 @@ fn build_title_scenario(
         sprite_cmds,
         TextCommandList::new(),
         title.textures,
+        CameraRegistry::with_default_fnf(),
+    ))
+}
+
+fn build_main_menu_scenario(
+    harness: &Harness,
+    scenario: &RegressionScenario,
+) -> Result<(
+    RenderCommandList,
+    TextCommandList,
+    HashMap<rustic_core::ids::AssetId, rustic_render::Texture>,
+    CameraRegistry,
+)> {
+    let menu = load_main_menu_assets(&harness.rs.device, &harness.rs.queue)
+        .context("load main menu assets")?;
+    let sprite_cmds = menu.commands(0, scenario.cursor(), REGRESSION_SAMPLE_RATE);
+    Ok((
+        sprite_cmds,
+        TextCommandList::new(),
+        menu.textures,
         CameraRegistry::with_default_fnf(),
     ))
 }

@@ -32,6 +32,7 @@ pub struct RegressionScenario {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegressionFrameKind {
     Title,
+    MainMenu,
     Stage,
     Gameplay,
 }
@@ -70,6 +71,13 @@ pub const FIRST_GOLDEN_SCENARIOS: &[RegressionScenario] = &[
         PreviewDifficulty::Normal,
         1200,
         RegressionFrameKind::Title,
+    ),
+    RegressionScenario::new(
+        "main_menu_initial",
+        PreviewSong::BOPEEBO,
+        PreviewDifficulty::Normal,
+        600,
+        RegressionFrameKind::MainMenu,
     ),
     RegressionScenario::new(
         "stage_idle_bopeebo",
