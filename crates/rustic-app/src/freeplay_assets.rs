@@ -240,8 +240,9 @@ impl FreeplayAssets {
         ];
         let base_x = 260.0;
         let base_y = 170.0;
-        let spacing = 30.0;
-        let scale = 6.0; // seperator.png is tiny, scale up to be visible
+        // seperator.png is 17×17 and the OG uses it at native size for the dots.
+        let spacing = (sep.width as f32 + 8.0).max(18.0);
+        let scale = 1.0;
         for (idx, kind) in dots.iter().enumerate() {
             let selected = *kind == difficulty;
             let mut color = if selected {
@@ -435,7 +436,9 @@ impl FreeplayAssets {
             } else {
                 &self.capsule_unselected_frames
             };
-            let Some(frame) = frame_for_cursor(frames, cursor, sample_rate, CAPSULE_ANIM_FPS, true)
+            // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:96-98 (one-shot prefix)
+            let Some(frame) =
+                frame_for_cursor(frames, cursor, sample_rate, CAPSULE_ANIM_FPS, false)
             else {
                 continue;
             };
