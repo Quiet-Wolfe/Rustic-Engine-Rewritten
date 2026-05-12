@@ -37,6 +37,7 @@ pub enum RegressionFrameKind {
     Freeplay,
     Stage,
     Gameplay,
+    Pause,
 }
 
 impl RegressionScenario {
@@ -129,6 +130,13 @@ pub const FIRST_GOLDEN_SCENARIOS: &[RegressionScenario] = &[
         PreviewDifficulty::Normal,
         5400,
         RegressionFrameKind::Gameplay,
+    ),
+    RegressionScenario::new(
+        "pause_bopeebo",
+        PreviewSong::BOPEEBO,
+        PreviewDifficulty::Normal,
+        5400,
+        RegressionFrameKind::Pause,
     ),
 ];
 

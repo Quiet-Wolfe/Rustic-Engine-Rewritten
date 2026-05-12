@@ -172,6 +172,9 @@ impl App {
     }
 
     pub(super) fn input_cursor(&mut self) -> Samples {
+        if let Some(cursor) = self.pause_cursor() {
+            return cursor;
+        }
         match self.mode {
             AppMode::Title | AppMode::MainMenu | AppMode::StoryMenu | AppMode::SongSelect => {
                 self.title_cursor(play_sample_rate(&self.mixer))
@@ -357,6 +360,7 @@ impl App {
         self.main_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
+        self.pause_menu = None;
         self.clear_play_state_for_menu();
         self.load_freeplay_assets();
         self.rebuild_song_select_commands();
@@ -378,6 +382,7 @@ impl App {
     fn clear_play_state_for_menu(&mut self) {
         self.play_state = None;
         self.game_over = None;
+        self.pause_menu = None;
         self.characters = None;
         self.bitmap_text_skin = None;
         self.note_skin = None;

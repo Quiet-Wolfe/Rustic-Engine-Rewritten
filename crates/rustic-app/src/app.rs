@@ -22,6 +22,7 @@ use crate::main_menu_assets::MainMenuAssets;
 use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKind};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
+use crate::pause_menu::{ensure_pause_overlay_texture, PauseMenuState};
 use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
 use crate::scene_assets::{
@@ -49,6 +50,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 
 mod debug_overlay;
 mod game_over_flow;
+mod pause_flow;
 mod redraw;
 mod song_flow;
 mod title_flow;
@@ -97,6 +99,7 @@ struct App {
     story_playlist: Vec<PreviewSong>,
     story_playlist_index: usize,
     story_playlist_difficulty: PreviewDifficulty,
+    pause_menu: Option<PauseMenuState>,
     title_start: Instant,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -157,6 +160,7 @@ impl App {
             story_playlist: Vec::new(),
             story_playlist_index: 0,
             story_playlist_difficulty: PreviewDifficulty::Normal,
+            pause_menu: None,
             title_start: now,
             play_state: None,
             song_start: now,
@@ -186,6 +190,9 @@ impl App {
         self.static_cmds = self.cmds.clone();
         self.stage_props = scene.stage_props;
         self.atlases = scene.textures;
+        if let Some(runtime) = self.runtime.as_ref() {
+            ensure_pause_overlay_texture(&runtime.rs.device, &runtime.rs.queue, &mut self.atlases);
+        }
         self.characters = scene.characters;
         self.character_anim.set_timings(anim_timings);
         self.bitmap_text_skin = scene.bitmap_text_skin;
@@ -308,6 +315,10 @@ impl App {
         }
         if self.mode == AppMode::MainMenu {
             self.rebuild_main_menu_commands();
+            return;
+        }
+        if self.pause_menu.is_some() {
+            self.rebuild_pause_commands();
             return;
         }
         self.text_cmds = preview_text_commands(self.preview_selection);
@@ -633,6 +644,7 @@ impl App {
             }
             self.song_started = true;
             self.song_start = Instant::now();
+            self.song_start_cursor = Samples(0);
             if let Err(e) = self.mixer.edit(|mixer| {
                 mixer.seek(Samples(0))?;
                 mixer.resume();
@@ -648,7 +660,7 @@ impl App {
         }
         let elapsed = self.song_start.elapsed().as_secs_f64();
         let elapsed_samples = (elapsed * f64::from(play_sample_rate(&self.mixer))).round() as i64;
-        Samples(elapsed_samples)
+        Samples(self.song_start_cursor.0 + elapsed_samples)
     }
 }
 impl ApplicationHandler for App {
@@ -680,6 +692,9 @@ impl ApplicationHandler for App {
                             .unwrap_or(false);
                     if event.state == ElementState::Pressed && action == InputAction::Debug {
                         self.toggle_debug_overlay();
+                        return;
+                    }
+                    if self.handle_pause_input(action, event.state, song_cursor) {
                         return;
                     }
                     if self.handle_mode_input(action, event.state, event_loop) {

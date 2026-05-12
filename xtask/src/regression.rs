@@ -5,6 +5,7 @@
 //! either writes a fresh golden into `tests/golden/` or compares to an
 //! existing one. Pixel diffs above the per-image threshold fail with a
 //! non-zero exit.
+// LINT-ALLOW: long-file regression scenario builder keeps capture paths together.
 
 use anyhow::{Context, Result};
 use glam::{vec2, vec4};
@@ -14,6 +15,7 @@ use rustic_app::character_anim::CharacterAnimState;
 use rustic_app::freeplay_assets::load_freeplay_assets;
 use rustic_app::lane_state::ReceptorState;
 use rustic_app::main_menu_assets::load_main_menu_assets;
+use rustic_app::pause_menu::{ensure_pause_overlay_texture, PauseMenuState};
 use rustic_app::regression::{
     load_scenario_play_state, load_scenario_scene, scenario_cameras, scenario_stage_prop_commands,
     RegressionFrameKind, RegressionScenario, FIRST_GOLDEN_SCENARIOS, REGRESSION_SAMPLE_RATE,
@@ -167,7 +169,10 @@ fn build_scenario(
             sprite_cmds.push(cmd);
         }
     }
-    if scenario.frame_kind == RegressionFrameKind::Gameplay {
+    if matches!(
+        scenario.frame_kind,
+        RegressionFrameKind::Gameplay | RegressionFrameKind::Pause
+    ) {
         append_gameplay_commands(&mut sprite_cmds, &scene, &play_state, cursor);
     }
     if let Some(hud_skin) = &scene.hud_skin {
@@ -196,7 +201,16 @@ fn build_scenario(
     text_cmds.push(header);
 
     let cameras = scenario_cameras(&scene, &play_state, *scenario);
-    Ok((sprite_cmds, text_cmds, scene.textures, cameras))
+    let mut textures = scene.textures;
+    if scenario.frame_kind == RegressionFrameKind::Pause {
+        ensure_pause_overlay_texture(&harness.rs.device, &harness.rs.queue, &mut textures);
+        PauseMenuState::new(cursor).append_commands(
+            &mut sprite_cmds,
+            &mut text_cmds,
+            scenario.selection(),
+        );
+    }
+    Ok((sprite_cmds, text_cmds, textures, cameras))
 }
 
 fn build_title_scenario(

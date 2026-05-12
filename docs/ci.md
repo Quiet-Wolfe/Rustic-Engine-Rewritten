@@ -58,6 +58,7 @@ Tracked in `tests/golden/`:
 7. `bf_idle_two_beat_bopeebo.png`.
 8. `stage_camera_bump_bopeebo.png`.
 9. `gameplay_notes_crossing_bopeebo.png`.
+10. `pause_bopeebo.png`.
 
 ### When lavapipe is too unstable
 
