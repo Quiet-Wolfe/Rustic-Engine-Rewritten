@@ -49,6 +49,19 @@ const ORANGE_BAR_HEIGHT: f32 = 75.0;
 const FREEPLAY_TITLE_X: f32 = 8.0;
 const FREEPLAY_TITLE_Y: f32 = 8.0;
 const PINKBACK_TARGET_HEIGHT: f32 = 720.0;
+// ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:603 (xFrames)
+const CAPSULE_BEAT_XFRAMES: [f32; 7] = [1.7, 1.8, 0.85, 0.85, 0.97, 0.97, 1.0];
+const CAPSULE_BEAT_FPS: u16 = 24;
+// freeplayRandom-metadata.json BPM is 102.
+const MENU_BPM: f64 = 102.0;
+// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:335 (fpScoreDisplay anchor)
+const SCORE_X: f32 = 1280.0 - 353.0;
+const SCORE_Y: f32 = 60.0;
+const SCORE_DIGIT_COUNT: usize = 7;
+const SCORE_DIGIT_SPACING: f32 = 36.0;
+const HIGHSCORE_X: f32 = 1280.0 - 420.0;
+const HIGHSCORE_Y: f32 = 70.0;
+const HIGHSCORE_SCALE: f32 = 0.5;
 
 // ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:62,57-58,129
 const PINKBACK_COLOR: glam::Vec4 = glam::Vec4::new(
@@ -86,6 +99,10 @@ pub struct FreeplayAssets {
     difficulty_nightmare: SparrowAtlasHandle,
     difficulty_nightmare_frames: Vec<SparrowFrame>,
     dj: Option<FreeplayDJ>,
+    bignumbers_atlas: Option<SparrowAtlasHandle>,
+    bignumbers_digits: [Option<SparrowFrame>; 10],
+    highscore_atlas: Option<SparrowAtlasHandle>,
+    highscore_frames: Vec<SparrowFrame>,
     pub textures: HashMap<AssetId, Texture>,
 }
 
@@ -139,6 +156,8 @@ impl FreeplayAssets {
         let selected_index = self.index_of(selection.song).unwrap_or(0);
         self.push_capsules(&mut commands, selected_index, cursor, sample_rate);
         self.push_difficulty(&mut commands, selection.difficulty, cursor, sample_rate);
+        self.push_highscore(&mut commands);
+        self.push_score(&mut commands);
         commands
     }
 
@@ -185,13 +204,24 @@ impl FreeplayAssets {
     }
 
     pub fn song_at(&self, index: usize) -> Option<PreviewSong> {
-        self.songs.get(index).map(|capsule| capsule.song)
+        self.songs.get(index).and_then(|capsule| match capsule.kind {
+            CapsuleKind::Song(song) => Some(song),
+            CapsuleKind::Random => None,
+        })
+    }
+
+    pub fn is_random_at(&self, index: usize) -> bool {
+        matches!(
+            self.songs.get(index).map(|c| c.kind),
+            Some(CapsuleKind::Random)
+        )
     }
 
     pub fn index_of(&self, song: PreviewSong) -> Option<usize> {
-        self.songs
-            .iter()
-            .position(|capsule| capsule.song.id == song.id)
+        self.songs.iter().position(|capsule| match capsule.kind {
+            CapsuleKind::Song(s) => s.id == song.id,
+            CapsuleKind::Random => false,
+        })
     }
 
     fn pink_back_draw_size(&self) -> glam::Vec2 {
@@ -208,6 +238,7 @@ impl FreeplayAssets {
         cursor: Samples,
         sample_rate: u32,
     ) {
+        let (beat_scale_x, beat_scale_y) = capsule_beat_scale(cursor, sample_rate);
         for index in 0..self.songs.len() {
             let offset = index as f32 - selected_index as f32;
             let pos = capsule_position(offset);
@@ -221,17 +252,73 @@ impl FreeplayAssets {
             else {
                 continue;
             };
+            // Random capsule fades out below the selection until BF "does his hand";
+            // for now keep it half-alpha to match the OG's intro state.
+            let alpha = match self.songs[index].kind {
+                CapsuleKind::Random => {
+                    if is_selected {
+                        1.0
+                    } else {
+                        0.6
+                    }
+                }
+                CapsuleKind::Song(_) => 1.0,
+            };
             commands.push(sparrow_scaled_command(
                 self.capsule_atlas.texture_id,
                 self.capsule_atlas.width,
                 self.capsule_atlas.height,
                 frame,
                 pos,
-                glam::Vec2::splat(CAPSULE_REAL_SCALED),
-                glam::Vec4::ONE,
+                glam::vec2(
+                    CAPSULE_REAL_SCALED * beat_scale_x,
+                    CAPSULE_REAL_SCALED * beat_scale_y,
+                ),
+                glam::Vec4::new(1.0, 1.0, 1.0, alpha),
                 200 + index as i32,
             ));
         }
+    }
+
+    fn push_score(&self, commands: &mut RenderCommandList) {
+        let Some(atlas) = &self.bignumbers_atlas else {
+            return;
+        };
+        for digit_index in 0..SCORE_DIGIT_COUNT {
+            let Some(frame) = self.bignumbers_digits[0].as_ref() else {
+                return;
+            };
+            let x = SCORE_X + digit_index as f32 * SCORE_DIGIT_SPACING;
+            commands.push(sparrow_scaled_command(
+                atlas.texture_id,
+                atlas.width,
+                atlas.height,
+                frame,
+                glam::vec2(x, SCORE_Y),
+                glam::Vec2::ONE,
+                glam::Vec4::ONE,
+                310,
+            ));
+        }
+    }
+
+    fn push_highscore(&self, commands: &mut RenderCommandList) {
+        let (Some(atlas), Some(frame)) = (
+            self.highscore_atlas.as_ref(),
+            self.highscore_frames.first(),
+        ) else {
+            return;
+        };
+        commands.push(sparrow_scaled_command(
+            atlas.texture_id,
+            atlas.width,
+            atlas.height,
+            frame,
+            glam::vec2(HIGHSCORE_X, HIGHSCORE_Y),
+            glam::Vec2::splat(HIGHSCORE_SCALE),
+            glam::Vec4::ONE,
+            305,
+        ));
     }
 
     fn push_difficulty(
@@ -313,8 +400,15 @@ impl FreeplayAssets {
 
 #[derive(Debug)]
 struct FreeplayCapsule {
-    song: PreviewSong,
+    kind: CapsuleKind,
     display_name: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CapsuleKind {
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:971-981
+    Random,
+    Song(PreviewSong),
 }
 
 #[derive(Debug)]
@@ -368,6 +462,24 @@ fn capsule_text_offset() -> glam::Vec2 {
 
 fn bg_image_scale(bg: &StaticTexture) -> f32 {
     PINKBACK_TARGET_HEIGHT / bg.height.max(1) as f32
+}
+
+/// Compute the once-per-beat capsule bump scale. The OG runs the
+/// xFrames sequence over the start of each beat at 24fps, then sits
+/// at 1.0 for the remainder.
+///
+/// ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:603,670-690
+fn capsule_beat_scale(cursor: Samples, sample_rate: u32) -> (f32, f32) {
+    let samples_per_beat = (f64::from(sample_rate.max(1)) * 60.0 / MENU_BPM).max(1.0);
+    let elapsed = cursor.0.max(0) as f64;
+    let phase = (elapsed % samples_per_beat).max(0.0);
+    let frame = (phase * f64::from(CAPSULE_BEAT_FPS) / f64::from(sample_rate.max(1))).floor()
+        as usize;
+    if frame >= CAPSULE_BEAT_XFRAMES.len() {
+        return (1.0, 1.0);
+    }
+    let sx = CAPSULE_BEAT_XFRAMES[frame];
+    (sx, 1.0 / sx.max(0.0001))
 }
 
 pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<FreeplayAssets> {
@@ -466,13 +578,14 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
     )?;
     let difficulty_nightmare_frames = clone_frames(&nightmare_atlas, "idle");
 
-    let songs = PreviewSong::CYCLABLE_WEEK1
-        .iter()
-        .map(|song| FreeplayCapsule {
-            song: *song,
-            display_name: song.display_name().to_ascii_uppercase(),
-        })
-        .collect();
+    let mut songs = vec![FreeplayCapsule {
+        kind: CapsuleKind::Random,
+        display_name: "RANDOM".to_string(),
+    }];
+    songs.extend(PreviewSong::CYCLABLE_WEEK1.iter().map(|song| FreeplayCapsule {
+        kind: CapsuleKind::Song(*song),
+        display_name: song.display_name().to_ascii_uppercase(),
+    }));
 
     let dj = match load_freeplay_dj(device, queue) {
         Ok(mut dj) => {
@@ -484,6 +597,40 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         Err(e) => {
             tracing::warn!(target: "rustic.asset", "freeplay DJ unavailable: {e:#}");
             None
+        }
+    };
+
+    let (bignumbers_atlas, bignumbers_digits) = match load_sparrow_atlas(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/freeplayCapsule/bignumbers.xml",
+    ) {
+        Ok((handle, atlas)) => {
+            let digits = digit_frames(&atlas);
+            (Some(handle), digits)
+        }
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "freeplay bignumbers unavailable: {e:#}");
+            (None, [None, None, None, None, None, None, None, None, None, None])
+        }
+    };
+
+    let (highscore_atlas, highscore_frames) = match load_sparrow_atlas(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/highscore.xml",
+    ) {
+        Ok((handle, atlas)) => {
+            let frames = clone_frames(&atlas, "highscore small instance 1");
+            (Some(handle), frames)
+        }
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "freeplay highscore unavailable: {e:#}");
+            (None, Vec::new())
         }
     };
 
@@ -503,8 +650,25 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         difficulty_nightmare,
         difficulty_nightmare_frames,
         dj,
+        bignumbers_atlas,
+        bignumbers_digits,
+        highscore_atlas,
+        highscore_frames,
         textures,
     })
+}
+
+fn digit_frames(atlas: &SparrowAtlas) -> [Option<SparrowFrame>; 10] {
+    // ref: bdedc0aa:assets/preload/images/freeplay/freeplayCapsule/bignumbers.xml
+    const NAMES: [&str; 10] = [
+        "ZERO0000", "ONE0000", "TWO0000", "THREE0000", "FOUR0000", "FIVE0000", "SIX0000",
+        "SEVEN0000", "EIGHT0000", "NINE0000",
+    ];
+    let mut out: [Option<SparrowFrame>; 10] = Default::default();
+    for (idx, name) in NAMES.iter().enumerate() {
+        out[idx] = atlas.frames.iter().find(|f| f.name == *name).cloned();
+    }
+    out
 }
 
 fn load_static_texture(
@@ -671,6 +835,8 @@ pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
     "images/freeplay/freeplayBGweek1-bf.png",
     "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png",
     "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.xml",
+    "images/freeplay/freeplayCapsule/bignumbers.png",
+    "images/freeplay/freeplayCapsule/bignumbers.xml",
     "images/freeplay/freeplaySelector/freeplaySelector.png",
     "images/freeplay/freeplaySelector/freeplaySelector.xml",
     "images/freeplay/freeplayeasy.png",
@@ -679,6 +845,11 @@ pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
     "images/freeplay/freeplayerect.png",
     "images/freeplay/freeplaynightmare.png",
     "images/freeplay/freeplaynightmare.xml",
+    "images/freeplay/highscore.png",
+    "images/freeplay/highscore.xml",
+    "images/freeplay/sparkle.png",
+    "images/freeplay/sparkle.xml",
+    "images/freeplay/miniArrow.png",
 ];
 
 #[cfg(test)]
