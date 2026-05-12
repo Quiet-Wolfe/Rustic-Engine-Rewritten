@@ -22,6 +22,7 @@ use crate::main_menu_assets::MainMenuAssets;
 use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKind};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
+use crate::options_menu_assets::{OptionsMenuAssets, OptionsMenuPage};
 use crate::pause_menu::{ensure_pause_overlay_texture, PauseMenuState};
 use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
@@ -50,6 +51,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 
 mod debug_overlay;
 mod game_over_flow;
+mod options_flow;
 mod pause_flow;
 mod redraw;
 mod song_flow;
@@ -92,6 +94,9 @@ struct App {
     title_assets: Option<TitleScreenAssets>,
     main_menu_assets: Option<MainMenuAssets>,
     main_menu_index: usize,
+    options_menu_assets: Option<OptionsMenuAssets>,
+    options_menu_page: OptionsMenuPage,
+    options_menu_index: usize,
     freeplay_assets: Option<FreeplayAssets>,
     story_menu_assets: Option<StoryMenuAssets>,
     story_menu_index: usize,
@@ -153,6 +158,9 @@ impl App {
             title_assets: None,
             main_menu_assets: None,
             main_menu_index: 0,
+            options_menu_assets: None,
+            options_menu_page: OptionsMenuPage::Root,
+            options_menu_index: 0,
             freeplay_assets: None,
             story_menu_assets: None,
             story_menu_index: 1,
@@ -311,6 +319,10 @@ impl App {
         }
         if self.mode == AppMode::StoryMenu {
             self.rebuild_story_menu_commands();
+            return;
+        }
+        if self.mode == AppMode::Options {
+            self.rebuild_options_menu_commands();
             return;
         }
         if self.mode == AppMode::MainMenu {

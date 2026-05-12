@@ -18,6 +18,7 @@ use winit::event_loop::ActiveEventLoop;
 pub(super) enum AppMode {
     Title,
     MainMenu,
+    Options,
     StoryMenu,
     SongSelect,
     Play,
@@ -29,6 +30,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.play_state = None;
@@ -85,6 +87,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.clear_play_state_for_menu();
@@ -126,6 +129,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.clear_play_state_for_menu();
@@ -176,9 +180,11 @@ impl App {
             return cursor;
         }
         match self.mode {
-            AppMode::Title | AppMode::MainMenu | AppMode::StoryMenu | AppMode::SongSelect => {
-                self.title_cursor(play_sample_rate(&self.mixer))
-            }
+            AppMode::Title
+            | AppMode::MainMenu
+            | AppMode::Options
+            | AppMode::StoryMenu
+            | AppMode::SongSelect => self.title_cursor(play_sample_rate(&self.mixer)),
             AppMode::Play => self.advance_song_clock(),
         }
     }
@@ -192,6 +198,7 @@ impl App {
         match self.mode {
             AppMode::Title => self.handle_title_input(action, state, event_loop),
             AppMode::MainMenu => self.handle_main_menu_input(action, state),
+            AppMode::Options => self.handle_options_menu_input(action, state),
             AppMode::StoryMenu => self.handle_story_menu_input(action, state),
             AppMode::SongSelect => self.handle_song_select_input(action, state),
             AppMode::Play => false,
@@ -251,7 +258,8 @@ impl App {
         match action {
             Some(MainMenuAction::StoryMode) => self.load_story_menu(),
             Some(MainMenuAction::Freeplay) => self.enter_song_select(),
-            Some(MainMenuAction::Options | MainMenuAction::Credits) | None => {}
+            Some(MainMenuAction::Options) => self.load_options_menu(),
+            Some(MainMenuAction::Credits) | None => {}
         }
     }
 
@@ -358,6 +366,7 @@ impl App {
         self.mode = AppMode::SongSelect;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.pause_menu = None;
@@ -379,7 +388,7 @@ impl App {
         }
     }
 
-    fn clear_play_state_for_menu(&mut self) {
+    pub(super) fn clear_play_state_for_menu(&mut self) {
         self.play_state = None;
         self.game_over = None;
         self.pause_menu = None;
@@ -415,6 +424,7 @@ impl App {
         self.mode = AppMode::Play;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.load_selected_song();
