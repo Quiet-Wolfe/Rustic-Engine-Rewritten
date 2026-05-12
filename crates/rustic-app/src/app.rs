@@ -28,6 +28,7 @@ use crate::scene_assets::{
 use crate::screen::ScreenStack;
 use crate::song_audio::{load_preview_stems_for, play_sample_rate, set_vocals_gain};
 use crate::stage_object_assets::StagePropSet;
+use crate::title_assets::TitleScreenAssets;
 use anyhow::Result;
 use rustic_asset::ChartEventKind;
 use rustic_audio::{AudioOutput, SharedMixer};
@@ -44,6 +45,9 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 
 mod debug_overlay;
 mod redraw;
+mod title_flow;
+
+use title_flow::AppMode;
 
 struct App {
     options: AppOptions,
@@ -76,6 +80,9 @@ struct App {
     held_lanes: HeldLanes,
     opponent_receptors: AutoReceptors,
     preview_selection: PreviewSelection,
+    mode: AppMode,
+    title_assets: Option<TitleScreenAssets>,
+    title_start: Instant,
     play_state: Option<PlayState>,
     song_start: Instant,
     song_start_cursor: Samples,
@@ -124,6 +131,9 @@ impl App {
             held_lanes: HeldLanes::default(),
             opponent_receptors: AutoReceptors::default(),
             preview_selection: PreviewSelection::from_env(),
+            mode: AppMode::Title,
+            title_assets: None,
+            title_start: now,
             play_state: None,
             song_start: now,
             song_start_cursor: Samples(0),
@@ -139,7 +149,7 @@ impl App {
     }
     fn create_runtime(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
         self.runtime = Some(create_app_runtime(&self.options, event_loop)?);
-        self.load_selected_song();
+        self.load_title_screen();
         Ok(())
     }
     fn apply_scene(&mut self, scene: LoadedScene) {
@@ -252,10 +262,18 @@ impl App {
             InputAction::UiRight => self.preview_selection.next_difficulty(),
             _ => return false,
         };
-        self.load_selected_song();
+        if self.mode == AppMode::Title {
+            self.update_window_title();
+        } else {
+            self.load_selected_song();
+        }
         true
     }
     fn rebuild_frame_commands(&mut self) {
+        if self.mode == AppMode::Title {
+            self.rebuild_title_commands();
+            return;
+        }
         self.text_cmds = preview_text_commands(self.preview_selection);
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = if let Some(game_over) = self.game_over {
@@ -684,7 +702,7 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) => self.handle_resize(size.width, size.height),
             WindowEvent::KeyboardInput { event, .. } => {
                 if let Some(action) = map_key(event.physical_key) {
-                    let song_cursor = self.advance_song_clock();
+                    let song_cursor = self.input_cursor();
                     let evt = build_event(action, event.state, self.boot_instant, song_cursor);
                     let already_held = event.repeat
                         || lane_for_action(action)
@@ -697,6 +715,9 @@ impl ApplicationHandler for App {
                     if event.state == ElementState::Pressed
                         && self.handle_preview_selection_input(action)
                     {
+                        return;
+                    }
+                    if self.handle_title_input(action, event.state, event_loop) {
                         return;
                     }
                     if event.state == ElementState::Pressed
