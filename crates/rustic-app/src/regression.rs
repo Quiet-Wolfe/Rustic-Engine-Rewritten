@@ -33,6 +33,8 @@ pub struct RegressionScenario {
 pub enum RegressionFrameKind {
     Title,
     MainMenu,
+    Credits,
+    Options,
     StoryMenu,
     Freeplay,
     Stage,
@@ -81,6 +83,20 @@ pub const FIRST_GOLDEN_SCENARIOS: &[RegressionScenario] = &[
         PreviewDifficulty::Normal,
         600,
         RegressionFrameKind::MainMenu,
+    ),
+    RegressionScenario::new(
+        "options_menu_root",
+        PreviewSong::BOPEEBO,
+        PreviewDifficulty::Normal,
+        600,
+        RegressionFrameKind::Options,
+    ),
+    RegressionScenario::new(
+        "credits_scroll_start",
+        PreviewSong::BOPEEBO,
+        PreviewDifficulty::Normal,
+        4000,
+        RegressionFrameKind::Credits,
     ),
     RegressionScenario::new(
         "story_menu_week1",

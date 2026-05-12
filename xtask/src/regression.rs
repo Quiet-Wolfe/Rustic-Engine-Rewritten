@@ -12,9 +12,11 @@ use glam::{vec2, vec4};
 use image::{ImageBuffer, RgbaImage};
 use rustic_app::bitmap_text_assets::load_vcr_ttf_bytes;
 use rustic_app::character_anim::CharacterAnimState;
+use rustic_app::credits_assets::load_credits_assets;
 use rustic_app::freeplay_assets::load_freeplay_assets;
 use rustic_app::lane_state::ReceptorState;
 use rustic_app::main_menu_assets::load_main_menu_assets;
+use rustic_app::options_menu_assets::{load_options_menu_assets, OptionsMenuPage};
 use rustic_app::pause_menu::{ensure_pause_overlay_texture, PauseMenuState};
 use rustic_app::regression::{
     load_scenario_play_state, load_scenario_scene, scenario_cameras, scenario_stage_prop_commands,
@@ -147,6 +149,12 @@ fn build_scenario(
     if scenario.frame_kind == RegressionFrameKind::MainMenu {
         return build_main_menu_scenario(harness, scenario);
     }
+    if scenario.frame_kind == RegressionFrameKind::Options {
+        return build_options_menu_scenario(harness);
+    }
+    if scenario.frame_kind == RegressionFrameKind::Credits {
+        return build_credits_scenario(harness, scenario);
+    }
     if scenario.frame_kind == RegressionFrameKind::StoryMenu {
         return build_story_menu_scenario(harness, scenario);
     }
@@ -249,6 +257,46 @@ fn build_main_menu_scenario(
         sprite_cmds,
         TextCommandList::new(),
         menu.textures,
+        CameraRegistry::with_default_fnf(),
+    ))
+}
+
+fn build_options_menu_scenario(
+    harness: &Harness,
+) -> Result<(
+    RenderCommandList,
+    TextCommandList,
+    HashMap<rustic_core::ids::AssetId, rustic_render::Texture>,
+    CameraRegistry,
+)> {
+    let options = load_options_menu_assets(&harness.rs.device, &harness.rs.queue)
+        .context("load options menu assets")?;
+    let sprite_cmds = options.commands();
+    let text_cmds = options.text_commands(OptionsMenuPage::Root, 0);
+    Ok((
+        sprite_cmds,
+        text_cmds,
+        options.textures,
+        CameraRegistry::with_default_fnf(),
+    ))
+}
+
+fn build_credits_scenario(
+    harness: &Harness,
+    scenario: &RegressionScenario,
+) -> Result<(
+    RenderCommandList,
+    TextCommandList,
+    HashMap<rustic_core::ids::AssetId, rustic_render::Texture>,
+    CameraRegistry,
+)> {
+    let credits = load_credits_assets(&harness.rs.device, &harness.rs.queue);
+    let sprite_cmds = credits.commands();
+    let text_cmds = credits.text_commands(scenario.cursor(), REGRESSION_SAMPLE_RATE);
+    Ok((
+        sprite_cmds,
+        text_cmds,
+        credits.textures,
         CameraRegistry::with_default_fnf(),
     ))
 }
