@@ -1,4 +1,4 @@
-use rustic_render::{Composite, RenderState, SpritePipeline, SurfaceConfig};
+use rustic_render::{Composite, RenderState, SpritePipeline, SurfaceConfig, TextSystem};
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -27,4 +27,5 @@ pub(crate) struct Runtime {
     pub(crate) rs: RenderState,
     pub(crate) pipeline: SpritePipeline,
     pub(crate) composite: Composite,
+    pub(crate) text: Option<TextSystem>,
 }

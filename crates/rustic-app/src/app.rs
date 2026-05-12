@@ -1,5 +1,6 @@
 use crate::active_holds::ActiveHolds;
-use crate::app_runtime::{create_runtime as create_app_runtime, reconfigure_surface};
+use crate::app_runtime::create_runtime as create_app_runtime;
+use crate::app_text::preview_text_commands;
 use crate::app_types::{AppOptions, Runtime};
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::bitmap_text_assets::BitmapTextSkin;
@@ -34,12 +35,14 @@ use rustic_core::ids::AssetId;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
 use rustic_game::{Judgment, Lane, PlayState};
-use rustic_render::{CameraRegistry, RenderCommandList, SpriteBatcher, Texture};
+use rustic_render::{CameraRegistry, RenderCommandList, SpriteBatcher, TextCommandList, Texture};
 use std::collections::HashMap;
 use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
+
+mod redraw;
 
 struct App {
     options: AppOptions,
@@ -53,6 +56,7 @@ struct App {
     static_cmds: RenderCommandList,
     stage_props: StagePropSet,
     cmds: RenderCommandList,
+    text_cmds: TextCommandList,
     atlases: HashMap<AssetId, Texture>,
     characters: Option<CharacterSet>,
     bitmap_text_skin: Option<BitmapTextSkin>,
@@ -97,6 +101,7 @@ impl App {
             static_cmds: RenderCommandList::new(),
             stage_props: StagePropSet::default(),
             cmds: RenderCommandList::new(),
+            text_cmds: TextCommandList::new(),
             atlases: HashMap::new(),
             characters: None,
             bitmap_text_skin: None,
@@ -243,65 +248,8 @@ impl App {
         self.load_selected_song();
         true
     }
-    fn redraw(&mut self) {
-        self.rebuild_frame_commands();
-        let Some(rt) = self.runtime.as_mut() else {
-            return;
-        };
-        let frame = match rt.surface.get_current_texture() {
-            Ok(f) => f,
-            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                let (width, height) = (rt.surface_cfg.width, rt.surface_cfg.height);
-                reconfigure_surface(rt, width, height);
-                return;
-            }
-            Err(e) => {
-                tracing::warn!(target: "rustic.render", "surface error: {e:?}");
-                return;
-            }
-        };
-
-        let target = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = rt
-            .rs
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("rustic.frame.encoder"),
-            });
-
-        self.batcher.draw_to_reference(
-            &rt.rs,
-            &mut encoder,
-            &rt.pipeline,
-            &self.cameras,
-            &self.atlases,
-            self.cmds.as_slice(),
-            wgpu::Color {
-                r: 0.07,
-                g: 0.07,
-                b: 0.10,
-                a: 1.0,
-            },
-        );
-        rt.composite.encode(
-            &mut encoder,
-            &target,
-            rt.surface_cfg.width,
-            rt.surface_cfg.height,
-            wgpu::Color::BLACK,
-        );
-        rt.rs.queue.submit(Some(encoder.finish()));
-        frame.present();
-    }
-    fn handle_resize(&mut self, w: u32, h: u32) {
-        let Some(rt) = self.runtime.as_mut() else {
-            return;
-        };
-        reconfigure_surface(rt, w, h);
-    }
     fn rebuild_frame_commands(&mut self) {
+        self.text_cmds = preview_text_commands(self.preview_selection);
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = if let Some(game_over) = self.game_over {
             game_over.cursor(sample_rate)
@@ -340,7 +288,9 @@ impl App {
             let held_lanes: Vec<_> = self.held_lanes.active_lanes().collect();
             for lane in held_lanes {
                 if !self.active_holds.active_lanes(cursor).any(|l| l == lane) {
-                    if let Some((note_id, hold_end_at)) = play_state.pickup_hold_in_lane(cursor, lane, sample_rate) {
+                    if let Some((note_id, hold_end_at)) =
+                        play_state.pickup_hold_in_lane(cursor, lane, sample_rate)
+                    {
                         self.active_holds.start(lane, hold_end_at, cursor, note_id);
                         self.held_lanes.hold_confirm(lane, cursor, confirm_duration);
                         self.hold_covers.start(lane, cursor, hold_end_at);
@@ -410,7 +360,13 @@ impl App {
         let (Some(play_state), Some(note_skin)) = (&self.play_state, &self.note_skin) else {
             return;
         };
-        for view in play_state.hold_trail_views(cursor, sample_rate, |lane, opp| if opp { true } else { self.held_lanes.is_held(lane) }) {
+        for view in play_state.hold_trail_views(cursor, sample_rate, |lane, opp| {
+            if opp {
+                true
+            } else {
+                self.held_lanes.is_held(lane)
+            }
+        }) {
             if view.head_resolved && !view.opponent && !self.held_lanes.is_held(view.lane) {
                 continue;
             }
@@ -551,7 +507,8 @@ impl App {
                             self.note_splashes.push(lane, cursor);
                         }
                         if let Some(hold_end_at) = outcome.hold_end_at {
-                            self.active_holds.start(lane, hold_end_at, cursor, outcome.note_id);
+                            self.active_holds
+                                .start(lane, hold_end_at, cursor, outcome.note_id);
                             self.hold_covers.start(lane, cursor, hold_end_at);
                         }
                     }
@@ -570,13 +527,20 @@ impl App {
             self.enter_game_over(cursor);
         }
     }
-    fn register_hold_drop(&mut self, lane: Lane, cursor: Samples, hold_end_at: Samples, note_id: rustic_core::ids::NoteId) {
+    fn register_hold_drop(
+        &mut self,
+        lane: Lane,
+        cursor: Samples,
+        hold_end_at: Samples,
+        note_id: rustic_core::ids::NoteId,
+    ) {
         let sample_rate = play_sample_rate(&self.mixer);
         let Some(play_state) = self.play_state.as_mut() else {
             return;
         };
         let remaining_samples = hold_end_at.0.saturating_sub(cursor.0);
-        let Some(drop) = play_state.register_hold_drop(note_id, remaining_samples, sample_rate) else {
+        let Some(drop) = play_state.register_hold_drop(note_id, remaining_samples, sample_rate)
+        else {
             return;
         };
         let anim = &mut self.character_anim;
@@ -735,7 +699,12 @@ impl ApplicationHandler for App {
                             if let Some(release) = self.active_holds.release(lane, song_cursor) {
                                 self.register_hold_tick(release.elapsed_samples);
                                 if release.hold_end_at > song_cursor {
-                                    self.register_hold_drop(lane, song_cursor, release.hold_end_at, release.note_id);
+                                    self.register_hold_drop(
+                                        lane,
+                                        song_cursor,
+                                        release.hold_end_at,
+                                        release.note_id,
+                                    );
                                 }
                             }
                             self.hold_covers.end(lane, song_cursor);

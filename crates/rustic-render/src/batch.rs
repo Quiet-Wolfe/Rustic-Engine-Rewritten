@@ -7,9 +7,11 @@
 
 use crate::camera::{Camera, CameraRegistry};
 use crate::command::DrawCommand;
+use crate::error::RenderResult;
 use crate::filter::FilterMode;
 use crate::pipeline::{CameraUniform, SpritePipeline};
 use crate::state::{RenderState, REFERENCE_HEIGHT, REFERENCE_WIDTH};
+use crate::text::TextSystem;
 use crate::texture::Texture;
 use bytemuck::{Pod, Zeroable};
 use rustic_core::ids::{AssetId, CameraId};
@@ -252,7 +254,9 @@ impl SpriteBatcher {
 
     /// Encode draws for the given commands into the reference target.
     /// Texture lookup is provided by `atlases`, which the app populates
-    /// from `AssetResolver` reads.
+    /// from `AssetResolver` reads. If `text` is provided it is rendered
+    /// after all sprites in the same pass; the caller must have called
+    /// `text.prepare(rs, ...)` beforehand.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_to_reference(
         &mut self,
@@ -263,7 +267,8 @@ impl SpriteBatcher {
         atlases: &HashMap<AssetId, Texture>,
         cmds: &[DrawCommand],
         clear_color: wgpu::Color,
-    ) {
+        text: Option<&TextSystem>,
+    ) -> RenderResult<()> {
         let (order, runs) = Self::sort_runs(cameras, cmds);
         self.instances.clear();
         self.instances.reserve(order.len());
@@ -309,7 +314,8 @@ impl SpriteBatcher {
                             resource: buffer.as_entire_binding(),
                         }],
                     });
-                    self.camera_bindings.insert(id, CameraBinding { bind_group, buffer });
+                    self.camera_bindings
+                        .insert(id, CameraBinding { bind_group, buffer });
                 }
             }
         }
@@ -328,7 +334,9 @@ impl SpriteBatcher {
                             },
                             wgpu::BindGroupEntry {
                                 binding: 1,
-                                resource: wgpu::BindingResource::Sampler(rs.sampler_for(run.filter)),
+                                resource: wgpu::BindingResource::Sampler(
+                                    rs.sampler_for(run.filter),
+                                ),
                             },
                         ],
                     });
@@ -380,6 +388,11 @@ impl SpriteBatcher {
                 run.instance_offset..(run.instance_offset + run.instance_count),
             );
         }
+
+        if let Some(text) = text {
+            text.render(&mut pass)?;
+        }
+        Ok(())
     }
 
     fn upload_instances(&mut self, rs: &RenderState) {

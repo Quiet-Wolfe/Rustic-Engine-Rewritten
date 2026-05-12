@@ -17,6 +17,7 @@ pub mod error;
 pub mod filter;
 pub mod pipeline;
 pub mod state;
+pub mod text;
 pub mod texture;
 
 pub use batch::{SpriteBatcher, SpriteInstance};
@@ -27,4 +28,5 @@ pub use error::{RenderError, RenderResult};
 pub use filter::FilterMode;
 pub use pipeline::SpritePipeline;
 pub use state::{RenderState, SurfaceConfig, REFERENCE_HEIGHT, REFERENCE_WIDTH};
+pub use text::{FontFamily, TextCommand, TextCommandList, TextSystem};
 pub use texture::Texture;

@@ -2,7 +2,7 @@
 
 use crate::app_types::{AppOptions, Runtime};
 use anyhow::Result;
-use rustic_render::{Composite, RenderState, SpritePipeline};
+use rustic_render::{Composite, RenderState, SpritePipeline, TextSystem};
 use std::sync::Arc;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowAttributes;
@@ -28,6 +28,16 @@ pub(crate) fn create_runtime(
         rs.configure_surface(&surface, inner.width, inner.height, wgpu::PresentMode::Fifo)?;
     let pipeline = SpritePipeline::new(&rs.device, wgpu::TextureFormat::Rgba8UnormSrgb);
     let composite = Composite::new(&rs, surface_cfg.format);
+    let mut text = TextSystem::new(&rs, wgpu::TextureFormat::Rgba8UnormSrgb);
+    match crate::bitmap_text_assets::load_vcr_ttf_bytes() {
+        Ok(bytes) => {
+            text.add_font_bytes(bytes);
+            text.set_default_family("VCR OSD Mono");
+        }
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "VCR font unavailable: {e:#}");
+        }
+    }
     Ok(Runtime {
         window,
         surface,
@@ -35,6 +45,7 @@ pub(crate) fn create_runtime(
         rs,
         pipeline,
         composite,
+        text: Some(text),
     })
 }
 

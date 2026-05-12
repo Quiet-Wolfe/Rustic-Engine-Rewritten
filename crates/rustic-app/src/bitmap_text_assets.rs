@@ -2,9 +2,10 @@
 //!
 //! ref: bdedc0aa:source/funkin/play/PlayState.hx:815,2015-2024,2702-2713
 
+use crate::asset_roots::baked_assets_root;
 use anyhow::{Context, Result};
 use rustic_asset::{
-    load_bitmap_font, load_png, AssetPath, BitmapFont, BitmapGlyph, OverlayResolver,
+    load_bitmap_font, load_png, AssetPath, AssetResolver, BitmapFont, BitmapGlyph, OverlayResolver,
 };
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
@@ -195,6 +196,18 @@ impl BitmapTextSkin {
             .map(|glyph| glyph.xadvance as f32)
             .unwrap_or((self.font.size / 2).max(1) as f32)
     }
+}
+
+/// Resolve the VCR TTF font through the asset resolver and return its
+/// bytes for glyphon registration. Keeps font I/O out of `rustic-render`.
+pub fn load_vcr_ttf_bytes() -> Result<Vec<u8>> {
+    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let path = AssetPath::new("fonts/vcr.ttf")?;
+    let source = resolver
+        .resolve(&path)
+        .with_context(|| format!("resolve {path}"))?;
+    let bytes = source.read_all().with_context(|| format!("read {path}"))?;
+    Ok(bytes.to_vec())
 }
 
 pub fn load_bitmap_text_assets(
