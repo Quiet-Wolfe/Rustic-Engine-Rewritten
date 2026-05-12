@@ -1,7 +1,7 @@
 use super::App;
 use crate::app_text::song_select_text_commands;
 use crate::camera_fx::CameraFx;
-use crate::song_audio::play_sample_rate;
+use crate::song_audio::{play_sample_rate, set_vocals_gain};
 use crate::title_assets::load_title_screen_assets;
 use rustic_core::input::InputAction;
 use rustic_core::time::Samples;
@@ -136,11 +136,37 @@ impl App {
         true
     }
 
-    fn enter_song_select(&mut self) {
+    pub(super) fn enter_song_select(&mut self) {
         self.mode = AppMode::SongSelect;
         self.title_assets = None;
+        self.play_state = None;
+        self.game_over = None;
+        self.characters = None;
+        self.bitmap_text_skin = None;
+        self.note_skin = None;
+        self.note_splash_skin = None;
+        self.hold_cover_skin = None;
+        self.hud_skin = None;
+        self.popup_skin = None;
+        self.countdown_skin = None;
+        self.score_popups = Default::default();
+        self.note_splashes = Default::default();
+        self.hold_covers = Default::default();
+        self.active_holds = Default::default();
+        self.held_lanes = Default::default();
+        self.opponent_receptors = Default::default();
         self.title_start = Instant::now();
+        self.static_cmds = RenderCommandList::new();
         self.atlases.clear();
+        set_vocals_gain(&self.mixer, 1.0);
+        if let Err(e) = self.mixer.edit(|mixer| {
+            mixer.pause();
+            mixer.seek(Samples(0))?;
+            Ok(())
+        }) {
+            tracing::warn!(target: "rustic.audio", "pause song select audio: {e:#}");
+        }
+        self.update_window_title();
         self.rebuild_song_select_commands();
     }
 

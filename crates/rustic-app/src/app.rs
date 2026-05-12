@@ -731,6 +731,13 @@ impl ApplicationHandler for App {
                     {
                         self.restart_song_after_game_over();
                     }
+                    if event.state == ElementState::Pressed
+                        && action == InputAction::Back
+                        && self.game_over.is_some()
+                    {
+                        self.enter_song_select();
+                        return;
+                    }
                     self.held_lanes.apply(&evt);
                     if event.state == ElementState::Released {
                         if let Some(lane) = lane_for_action(action) {
