@@ -31,7 +31,10 @@ pub(crate) fn preview_text_commands(selection: PreviewSelection) -> TextCommandL
     commands
 }
 
-pub(crate) fn song_select_text_commands(selection: PreviewSelection) -> TextCommandList {
+pub fn song_select_text_commands(
+    selection: PreviewSelection,
+    include_difficulty_label: bool,
+) -> TextCommandList {
     let mut commands = TextCommandList::new();
 
     let mut title = TextCommand::new("Freeplay", glam::vec2(78.0, 62.0), 54.0);
@@ -39,14 +42,16 @@ pub(crate) fn song_select_text_commands(selection: PreviewSelection) -> TextComm
     title.z = 90;
     commands.push(title);
 
-    let mut difficulty = TextCommand::new(
-        format!("< {} >", selection.difficulty.as_str()),
-        glam::vec2(82.0, 130.0),
-        28.0,
-    );
-    difficulty.color = glam::vec4(0.92, 0.95, 1.0, 0.82);
-    difficulty.z = 90;
-    commands.push(difficulty);
+    if include_difficulty_label {
+        let mut difficulty = TextCommand::new(
+            format!("< {} >", selection.difficulty.as_str()),
+            glam::vec2(82.0, 130.0),
+            28.0,
+        );
+        difficulty.color = glam::vec4(0.92, 0.95, 1.0, 0.82);
+        difficulty.z = 90;
+        commands.push(difficulty);
+    }
 
     for (index, song) in PreviewSong::CYCLABLE_WEEK1.iter().enumerate() {
         let selected = *song == selection.song;
@@ -105,8 +110,10 @@ mod tests {
 
     #[test]
     fn song_select_highlights_current_preview_song() {
-        let commands =
-            song_select_text_commands(PreviewSelection::from_keys(Some("fresh"), Some("hard")));
+        let commands = song_select_text_commands(
+            PreviewSelection::from_keys(Some("fresh"), Some("hard")),
+            true,
+        );
         let selected = commands
             .iter()
             .find(|cmd| cmd.text.starts_with(">"))

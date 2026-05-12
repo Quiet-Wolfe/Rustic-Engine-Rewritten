@@ -1,6 +1,8 @@
 use super::App;
+// LINT-ALLOW: long-file app flow is being split screen by screen.
 use crate::app_text::song_select_text_commands;
 use crate::camera_fx::CameraFx;
+use crate::freeplay_assets::load_freeplay_assets as load_freeplay_screen_assets;
 use crate::main_menu_assets::{load_main_menu_assets, MainMenuAction};
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
 use crate::story_menu_assets::load_story_menu_assets;
@@ -27,6 +29,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.play_state = None;
         self.static_cmds = RenderCommandList::new();
@@ -65,10 +68,15 @@ impl App {
     }
 
     pub(super) fn rebuild_song_select_commands(&mut self) {
-        self.cmds = RenderCommandList::new();
-        self.text_cmds = song_select_text_commands(self.preview_selection);
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = self.title_cursor(sample_rate);
+        if let Some(assets) = self.freeplay_assets.as_ref() {
+            self.cmds = assets.commands(self.preview_selection, cursor, sample_rate);
+            self.text_cmds = assets.text_commands(self.preview_selection);
+        } else {
+            self.cmds = RenderCommandList::new();
+            self.text_cmds = song_select_text_commands(self.preview_selection, true);
+        }
         self.append_debug_overlay_commands(cursor, sample_rate);
     }
 
@@ -77,6 +85,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.clear_play_state_for_menu();
         self.update_window_title();
@@ -117,6 +126,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.clear_play_state_for_menu();
         self.update_window_title();
@@ -345,9 +355,24 @@ impl App {
         self.mode = AppMode::SongSelect;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.clear_play_state_for_menu();
+        self.load_freeplay_assets();
         self.rebuild_song_select_commands();
+    }
+
+    fn load_freeplay_assets(&mut self) {
+        let Some(runtime) = self.runtime.as_ref() else {
+            return;
+        };
+        match load_freeplay_screen_assets(&runtime.rs.device, &runtime.rs.queue) {
+            Ok(mut freeplay) => {
+                self.atlases = std::mem::take(&mut freeplay.textures);
+                self.freeplay_assets = Some(freeplay);
+            }
+            Err(e) => tracing::warn!(target: "rustic.asset", "freeplay assets unavailable: {e:#}"),
+        }
     }
 
     fn clear_play_state_for_menu(&mut self) {
@@ -385,6 +410,7 @@ impl App {
         self.mode = AppMode::Play;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.load_selected_song();
     }

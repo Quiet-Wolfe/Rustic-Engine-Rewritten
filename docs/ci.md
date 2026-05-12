@@ -52,11 +52,12 @@ Tracked in `tests/golden/`:
 1. `title_skipped_intro.png`.
 2. `main_menu_initial.png`.
 3. `story_menu_week1.png`.
-4. `stage_idle_bopeebo.png`.
-5. `stage_idle_tutorial.png`.
-6. `bf_idle_two_beat_bopeebo.png`.
-7. `stage_camera_bump_bopeebo.png`.
-8. `gameplay_notes_crossing_bopeebo.png`.
+4. `freeplay_week1.png`.
+5. `stage_idle_bopeebo.png`.
+6. `stage_idle_tutorial.png`.
+7. `bf_idle_two_beat_bopeebo.png`.
+8. `stage_camera_bump_bopeebo.png`.
+9. `gameplay_notes_crossing_bopeebo.png`.
 
 ### When lavapipe is too unstable
 

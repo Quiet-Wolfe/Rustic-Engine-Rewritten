@@ -11,6 +11,7 @@ use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::countdown_audio::CountdownAudio;
+use crate::freeplay_assets::FreeplayAssets;
 use crate::game_over::GameOverState;
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
@@ -89,6 +90,7 @@ struct App {
     title_assets: Option<TitleScreenAssets>,
     main_menu_assets: Option<MainMenuAssets>,
     main_menu_index: usize,
+    freeplay_assets: Option<FreeplayAssets>,
     story_menu_assets: Option<StoryMenuAssets>,
     story_menu_index: usize,
     story_menu_difficulty: PreviewDifficulty,
@@ -148,6 +150,7 @@ impl App {
             title_assets: None,
             main_menu_assets: None,
             main_menu_index: 0,
+            freeplay_assets: None,
             story_menu_assets: None,
             story_menu_index: 1,
             story_menu_difficulty: PreviewDifficulty::Normal,

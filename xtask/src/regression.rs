@@ -11,6 +11,7 @@ use glam::{vec2, vec4};
 use image::{ImageBuffer, RgbaImage};
 use rustic_app::bitmap_text_assets::load_vcr_ttf_bytes;
 use rustic_app::character_anim::CharacterAnimState;
+use rustic_app::freeplay_assets::load_freeplay_assets;
 use rustic_app::lane_state::ReceptorState;
 use rustic_app::main_menu_assets::load_main_menu_assets;
 use rustic_app::regression::{
@@ -147,6 +148,9 @@ fn build_scenario(
     if scenario.frame_kind == RegressionFrameKind::StoryMenu {
         return build_story_menu_scenario(harness, scenario);
     }
+    if scenario.frame_kind == RegressionFrameKind::Freeplay {
+        return build_freeplay_scenario(harness, scenario);
+    }
 
     let scene = load_scenario_scene(&harness.rs.device, &harness.rs.queue, *scenario)
         .context("load regression scene")?;
@@ -263,6 +267,28 @@ fn build_story_menu_scenario(
         sprite_cmds,
         text_cmds,
         menu.textures,
+        CameraRegistry::with_default_fnf(),
+    ))
+}
+
+fn build_freeplay_scenario(
+    harness: &Harness,
+    scenario: &RegressionScenario,
+) -> Result<(
+    RenderCommandList,
+    TextCommandList,
+    HashMap<rustic_core::ids::AssetId, rustic_render::Texture>,
+    CameraRegistry,
+)> {
+    let freeplay = load_freeplay_assets(&harness.rs.device, &harness.rs.queue)
+        .context("load freeplay assets")?;
+    let selection = scenario.selection();
+    let sprite_cmds = freeplay.commands(selection, rustic_core::time::Samples(0), 48_000);
+    let text_cmds = freeplay.text_commands(selection);
+    Ok((
+        sprite_cmds,
+        text_cmds,
+        freeplay.textures,
         CameraRegistry::with_default_fnf(),
     ))
 }
