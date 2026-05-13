@@ -705,22 +705,26 @@ impl ApplicationHandler for App {
                     if self.handle_mode_input(action, event.state, event_loop) {
                         return;
                     }
-                    if event.state == ElementState::Pressed
-                        && self.handle_preview_selection_input(action)
-                    {
+                    if self.game_over.is_some() {
+                        if event.state == ElementState::Pressed
+                            && self.game_over_restart.is_none()
+                            && self.game_over.is_some_and(|state| state.can_accept_input())
+                        {
+                            match action {
+                                InputAction::Confirm => {
+                                    self.restart_song_after_game_over(song_cursor);
+                                }
+                                InputAction::Back => {
+                                    self.return_to_play_menu();
+                                }
+                                _ => {}
+                            }
+                        }
                         return;
                     }
                     if event.state == ElementState::Pressed
-                        && action == InputAction::Confirm
-                        && self.game_over.is_some()
+                        && self.handle_preview_selection_input(action)
                     {
-                        self.restart_song_after_game_over(song_cursor);
-                    }
-                    if event.state == ElementState::Pressed
-                        && action == InputAction::Back
-                        && self.game_over.is_some()
-                    {
-                        self.return_to_play_menu();
                         return;
                     }
                     self.held_lanes.apply(&evt);

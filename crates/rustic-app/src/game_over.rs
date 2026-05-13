@@ -2,6 +2,7 @@ use rustic_core::time::Samples;
 use std::time::{Duration, Instant};
 
 const CONFIRM_RESTART_DELAY: Duration = Duration::from_millis(1_030);
+const INPUT_LOCKOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct GameOverState {
@@ -34,6 +35,11 @@ impl GameOverState {
             self.loop_started = true;
             Some(self.loop_at)
         }
+    }
+
+    pub(crate) fn can_accept_input(self) -> bool {
+        // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:192-196
+        self.animation_started.elapsed() >= INPUT_LOCKOUT
     }
 }
 
@@ -75,5 +81,10 @@ mod tests {
     #[test]
     fn confirm_restart_delay_uses_og_end_music_timer() {
         assert_eq!(CONFIRM_RESTART_DELAY, Duration::from_millis(1_030));
+    }
+
+    #[test]
+    fn game_over_input_unlocks_after_one_second() {
+        assert_eq!(INPUT_LOCKOUT, Duration::from_secs(1));
     }
 }

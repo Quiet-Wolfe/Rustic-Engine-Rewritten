@@ -69,7 +69,10 @@ pub struct CharacterAnimState {
 impl Default for CharacterAnimState {
     fn default() -> Self {
         Self {
-            girlfriend_pose: "danceRight",
+            // ref: bdedc0aa:source/funkin/play/stage/Bopper.hx:179-202
+            // `resetCharacter` forces one dance immediately; with `hasDanced`
+            // initially false, that first dance is `danceLeft`.
+            girlfriend_pose: "danceLeft",
             opponent_pose: "idle",
             player_pose: "idle",
             girlfriend_started: Samples(0),
@@ -80,7 +83,7 @@ impl Default for CharacterAnimState {
             girlfriend_count_duration_seconds: None,
             timings: CharacterAnimTimings::default(),
             last_beat: -1,
-            gf_danced: false,
+            gf_danced: true,
         }
     }
 }
@@ -285,12 +288,13 @@ impl CharacterAnimState {
     }
 
     fn dance_girlfriend(&mut self, cursor: Samples) {
-        self.gf_danced = !self.gf_danced;
+        // ref: bdedc0aa:source/funkin/play/stage/Bopper.hx:179-202
         self.girlfriend_pose = if self.gf_danced {
             "danceRight"
         } else {
             "danceLeft"
         };
+        self.gf_danced = !self.gf_danced;
         self.girlfriend_started = cursor;
         self.girlfriend_count_duration_seconds = None;
     }
@@ -468,6 +472,7 @@ mod tests {
     fn girlfriend_toggles_dance_on_new_beat() {
         let mut state = CharacterAnimState::default();
 
+        assert_eq!(state.poses().girlfriend.name, "danceLeft");
         state.update(Samples(0), 48_000, 100.0, false);
         assert_eq!(state.poses().girlfriend.name, "danceRight");
         assert_eq!(state.poses().girlfriend.started_at, Samples(0));
@@ -542,7 +547,7 @@ mod tests {
         });
 
         state.girlfriend_note_hit(Judgment::Sick, 49, Samples(100));
-        assert_eq!(state.poses().girlfriend.name, "danceRight");
+        assert_eq!(state.poses().girlfriend.name, "danceLeft");
 
         state.girlfriend_note_hit(Judgment::Good, 50, Samples(200));
         assert_eq!(state.poses().girlfriend.name, "combo50");
@@ -563,7 +568,7 @@ mod tests {
         });
 
         state.girlfriend_note_hit(Judgment::Bad, 69, Samples(100));
-        assert_eq!(state.poses().girlfriend.name, "danceRight");
+        assert_eq!(state.poses().girlfriend.name, "danceLeft");
 
         state.girlfriend_combo_drop(70, Samples(200));
         assert_eq!(state.poses().girlfriend.name, "drop70");
@@ -651,7 +656,7 @@ mod tests {
 
         state.reset_song();
 
-        assert_eq!(state.poses().girlfriend.name, "danceRight");
+        assert_eq!(state.poses().girlfriend.name, "danceLeft");
         assert_eq!(state.poses().opponent.name, "idle");
         assert_eq!(state.poses().player.name, "idle");
         assert_eq!(state.timings, timings);
