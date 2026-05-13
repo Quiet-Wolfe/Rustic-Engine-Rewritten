@@ -83,7 +83,7 @@ impl GameOverAudio {
         };
         let source = streaming_vorbis_source(bytes.clone()).context("decode game over music")?;
         let voice = mixer
-            .edit(|mixer| mixer.add_source(Stem::Sfx, source))
+            .edit(|mixer| mixer.add_looped_source(Stem::Sfx, source))
             .context("queue game over music")?;
         self.loop_voice = Some(voice);
         Ok(())

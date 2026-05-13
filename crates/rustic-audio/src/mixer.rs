@@ -104,10 +104,28 @@ impl Mixer {
     /// the mixer cursor is at zero, then moved with `seek` for restarts or
     /// dev rewind.
     pub fn add_source(&mut self, stem: Stem, source: SoundSource) -> AudioResult<VoiceId> {
+        self.add_source_with_loop(stem, source, false)
+    }
+
+    pub fn add_looped_source(&mut self, stem: Stem, source: SoundSource) -> AudioResult<VoiceId> {
+        self.add_source_with_loop(stem, source, true)
+    }
+
+    fn add_source_with_loop(
+        &mut self,
+        stem: Stem,
+        source: SoundSource,
+        looped: bool,
+    ) -> AudioResult<VoiceId> {
         let id = VoiceId::new(self.next_voice_id);
         self.next_voice_id += 1;
-        self.voices
-            .push(Voice::from_source(id, stem, source, self.sample_rate)?);
+        self.voices.push(Voice::from_source(
+            id,
+            stem,
+            source,
+            self.sample_rate,
+            looped,
+        )?);
         Ok(id)
     }
 
@@ -217,6 +235,7 @@ struct Voice {
     channels: u16,
     source_pos: f64,
     gain: f32,
+    looped: bool,
     ended: bool,
     stream_buffer: Vec<f32>,
     stream_buffer_start: i64,
@@ -229,6 +248,7 @@ impl Voice {
         stem: Stem,
         source: SoundSource,
         mixer_rate: u32,
+        looped: bool,
     ) -> AudioResult<Self> {
         let (source_rate, channels) = match &source {
             SoundSource::Pcm(samples) => {
@@ -264,6 +284,7 @@ impl Voice {
             channels,
             source_pos: 0.0,
             gain: 1.0,
+            looped,
             ended: false,
             stream_buffer: Vec::new(),
             stream_buffer_start: 0,
@@ -277,8 +298,17 @@ impl Voice {
         let gain = self.gain * stem_gain;
 
         for frame in 0..frames {
-            let base_frame = self.source_pos.floor() as i64;
-            let Some((l0, r0)) = self.frame_pair(base_frame)? else {
+            let mut base_frame = self.source_pos.floor() as i64;
+            let pair = match self.frame_pair(base_frame)? {
+                Some(pair) => Some(pair),
+                None if self.looped => {
+                    self.restart_loop()?;
+                    base_frame = 0;
+                    self.frame_pair(base_frame)?
+                }
+                None => None,
+            };
+            let Some((l0, r0)) = pair else {
                 self.ended = true;
                 break;
             };
@@ -293,6 +323,18 @@ impl Voice {
         }
 
         self.compact_stream_buffer();
+        Ok(())
+    }
+
+    fn restart_loop(&mut self) -> AudioResult<()> {
+        self.source_pos = 0.0;
+        self.ended = false;
+        self.stream_buffer.clear();
+        self.stream_buffer_start = 0;
+        self.stream_ended = false;
+        if let SoundSource::Streaming(decoder) = &mut self.source {
+            decoder.seek(Samples(0))?;
+        }
         Ok(())
     }
 
@@ -444,6 +486,21 @@ mod tests {
         mixer.mix_stereo(&mut out).unwrap();
 
         assert_eq!(out, [0.625, 0.375]);
+    }
+
+    #[test]
+    fn looped_sources_wrap_to_the_beginning() {
+        let mut mixer = Mixer::new(48_000);
+        let samples: Arc<[f32]> = Arc::from([1.0, 1.0, 0.25, 0.25]);
+        mixer
+            .add_looped_source(Stem::Sfx, SoundSource::Pcm(samples))
+            .unwrap();
+        let mut out = [0.0; 6];
+
+        mixer.mix_stereo(&mut out).unwrap();
+
+        assert_eq!(out, [1.0, 1.0, 0.25, 0.25, 1.0, 1.0]);
+        assert_eq!(mixer.voice_count(), 1);
     }
 
     #[test]

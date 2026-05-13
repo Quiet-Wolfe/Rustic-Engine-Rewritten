@@ -67,7 +67,7 @@ impl PauseMusic {
         let started_at = Instant::now();
         let voice = mixer
             .edit(|mixer| {
-                let voice = mixer.add_source(Stem::Sfx, source)?;
+                let voice = mixer.add_looped_source(Stem::Sfx, source)?;
                 mixer.set_voice_gain(voice, pause_music_gain(Duration::ZERO));
                 Ok(voice)
             })
