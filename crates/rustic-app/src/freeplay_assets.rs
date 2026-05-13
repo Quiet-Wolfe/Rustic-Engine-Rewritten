@@ -60,8 +60,6 @@ const PINKBACK_TARGET_HEIGHT: f32 = 720.0;
 // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:603 (xFrames)
 const CAPSULE_BEAT_XFRAMES: [f32; 7] = [1.7, 1.8, 0.85, 0.85, 0.97, 0.97, 1.0];
 const CAPSULE_BEAT_FPS: u16 = 24;
-// freeplayRandom-metadata.json BPM is 102.
-const MENU_BPM: f64 = 102.0;
 // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:596-602
 // fnfHighscoreSpr draws at native size; OG x = FlxG.width - 420, y = 70.
 const HIGHSCORE_X: f32 = 1280.0 - 420.0;
@@ -616,9 +614,12 @@ impl FreeplayAssets {
         sample_rate: u32,
         enter_offset_x: f32,
     ) {
-        // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:670-690 (only the
-        // selected capsule runs the xFrames bump each beat — unselected stays at 1.0).
-        let (selected_beat_x, selected_beat_y) = capsule_beat_scale(cursor, sample_rate);
+        // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:663-691 (doJumpIn)
+        // OG runs the xFrames sequence ONCE on initJumpIn and locks at (1,1).
+        // We anchor it at `enter_started_at` so every capsule plays the
+        // pop-in once on screen entry and then sits still — no per-beat loop.
+        let enter_anchor = self.enter_started_at.unwrap_or(Samples(0));
+        let (beat_scale_x, beat_scale_y) = capsule_beat_scale(cursor, enter_anchor, sample_rate);
         for index in 0..self.songs.len() {
             let offset = index as f32 - selected_index as f32;
             let pos = capsule_position(offset) + glam::vec2(enter_offset_x, 0.0);
@@ -645,11 +646,6 @@ impl FreeplayAssets {
                     }
                 }
                 CapsuleKind::Song(_) => 1.0,
-            };
-            let (beat_scale_x, beat_scale_y) = if is_selected {
-                (selected_beat_x, selected_beat_y)
-            } else {
-                (1.0, 1.0)
             };
             commands.push(sparrow_scaled_command(
                 self.capsule_atlas.texture_id,

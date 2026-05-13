@@ -1,6 +1,6 @@
 use super::{
     CAPSULE_BASE_X, CAPSULE_BASE_Y, CAPSULE_BEAT_FPS, CAPSULE_BEAT_XFRAMES, CAPSULE_FRAME_HEIGHT,
-    CAPSULE_FRAME_WIDTH, CAPSULE_REAL_SCALED, CAPSULE_SIN_AMPLITUDE, CAPSULE_SPACING_PAD, MENU_BPM,
+    CAPSULE_FRAME_WIDTH, CAPSULE_REAL_SCALED, CAPSULE_SIN_AMPLITUDE, CAPSULE_SPACING_PAD,
     PINKBACK_TARGET_HEIGHT, WHITE_TEXTURE_ID,
 };
 // LINT-ALLOW: long-file freeplay helper math, asset inventory, and regression guards stay together.
@@ -88,17 +88,21 @@ pub(super) fn capsule_text_offset() -> glam::Vec2 {
     )
 }
 
-/// Compute the once-per-beat capsule bump scale. The OG runs the
-/// xFrames sequence over the start of each beat at 24fps, then sits
-/// at 1.0 for the remainder.
+/// Compute the one-shot capsule jump-in scale. OG runs the xFrames
+/// sequence ONCE on `doJumpIn = true` at 24fps and then locks at
+/// `[1.0, 1.0]` for the rest of the screen's life; it is NOT a
+/// per-beat bop, so we anchor the playback at the enter cursor and
+/// hold the resting scale after the seven frames elapse.
 ///
-/// ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:603,670-690
-pub(super) fn capsule_beat_scale(cursor: Samples, sample_rate: u32) -> (f32, f32) {
-    let samples_per_beat = (f64::from(sample_rate.max(1)) * 60.0 / MENU_BPM).max(1.0);
-    let elapsed = cursor.0.max(0) as f64;
-    let phase = (elapsed % samples_per_beat).max(0.0);
+/// ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:603,663-691
+pub(super) fn capsule_beat_scale(
+    cursor: Samples,
+    enter_started_at: Samples,
+    sample_rate: u32,
+) -> (f32, f32) {
+    let elapsed = cursor.0.saturating_sub(enter_started_at.0).max(0) as f64;
     let frame =
-        (phase * f64::from(CAPSULE_BEAT_FPS) / f64::from(sample_rate.max(1))).floor() as usize;
+        (elapsed * f64::from(CAPSULE_BEAT_FPS) / f64::from(sample_rate.max(1))).floor() as usize;
     if frame >= CAPSULE_BEAT_XFRAMES.len() {
         return (1.0, 1.0);
     }
