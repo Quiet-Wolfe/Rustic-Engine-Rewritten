@@ -92,6 +92,40 @@ impl PreviewSong {
         }
     }
 
+    pub fn starting_bpm_for(self, difficulty: PreviewDifficulty) -> u16 {
+        // ref: bdedc0aa:assets/preload/data/songs/*/*-metadata*.json timeChanges[0].bpm
+        match (self.id, difficulty_for_song(self, difficulty)) {
+            (Self::FRESH_ID, PreviewDifficulty::Erect | PreviewDifficulty::Nightmare) => 125,
+            (Self::FRESH_ID, _) => 120,
+            (Self::DADBATTLE_ID, PreviewDifficulty::Erect | PreviewDifficulty::Nightmare) => 190,
+            (Self::DADBATTLE_ID, _) => 180,
+            (Self::BOPEEBO_ID, PreviewDifficulty::Erect | PreviewDifficulty::Nightmare) => 123,
+            _ => 100,
+        }
+    }
+
+    pub fn difficulty_rating_for(self, difficulty: PreviewDifficulty) -> u8 {
+        // ref: bdedc0aa:assets/preload/data/songs/*/*-metadata*.json playData.ratings
+        match (self.id, difficulty_for_song(self, difficulty)) {
+            (Self::TUTORIAL_ID, PreviewDifficulty::Hard) => 1,
+            (Self::TUTORIAL_ID, _) => 0,
+            (Self::BOPEEBO_ID, PreviewDifficulty::Easy | PreviewDifficulty::Normal) => 1,
+            (Self::BOPEEBO_ID, PreviewDifficulty::Hard) => 2,
+            (Self::BOPEEBO_ID, PreviewDifficulty::Erect) => 7,
+            (Self::BOPEEBO_ID, PreviewDifficulty::Nightmare) => 8,
+            (Self::FRESH_ID, PreviewDifficulty::Easy | PreviewDifficulty::Normal) => 1,
+            (Self::FRESH_ID, PreviewDifficulty::Hard) => 2,
+            (Self::FRESH_ID, PreviewDifficulty::Erect) => 6,
+            (Self::FRESH_ID, PreviewDifficulty::Nightmare) => 7,
+            (Self::DADBATTLE_ID, PreviewDifficulty::Easy) => 1,
+            (Self::DADBATTLE_ID, PreviewDifficulty::Normal) => 2,
+            (Self::DADBATTLE_ID, PreviewDifficulty::Hard) => 3,
+            (Self::DADBATTLE_ID, PreviewDifficulty::Erect) => 9,
+            (Self::DADBATTLE_ID, PreviewDifficulty::Nightmare) => 10,
+            _ => 0,
+        }
+    }
+
     pub fn next(self) -> Self {
         next_in(&Self::CYCLABLE_WEEK1, self)
     }
@@ -107,7 +141,9 @@ impl PreviewSong {
         }
     }
 
+    const TUTORIAL_ID: u32 = 0;
     const BOPEEBO_ID: u32 = 1;
+    const FRESH_ID: u32 = 2;
     const DADBATTLE_ID: u32 = 3;
 
     pub const TUTORIAL: Self = Self {
@@ -429,6 +465,30 @@ mod tests {
         assert_eq!(
             PreviewDifficulty::Nightmare.next_freeplay(),
             PreviewDifficulty::Easy
+        );
+    }
+
+    #[test]
+    fn freeplay_metadata_values_match_week_one_metadata() {
+        assert_eq!(
+            PreviewSong::TUTORIAL.difficulty_rating_for(PreviewDifficulty::Hard),
+            1
+        );
+        assert_eq!(
+            PreviewSong::BOPEEBO.starting_bpm_for(PreviewDifficulty::Nightmare),
+            123
+        );
+        assert_eq!(
+            PreviewSong::FRESH.difficulty_rating_for(PreviewDifficulty::Erect),
+            6
+        );
+        assert_eq!(
+            PreviewSong::DADBATTLE.starting_bpm_for(PreviewDifficulty::Erect),
+            190
+        );
+        assert_eq!(
+            PreviewSong::DADBATTLE.difficulty_rating_for(PreviewDifficulty::Nightmare),
+            10
         );
     }
 }

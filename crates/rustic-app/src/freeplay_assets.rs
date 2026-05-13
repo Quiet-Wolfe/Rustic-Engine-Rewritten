@@ -25,6 +25,10 @@ mod helpers;
 pub use helpers::REQUIRED_FREEPLAY_ASSETS;
 use helpers::*;
 
+#[path = "freeplay_capsule_metadata.rs"]
+mod capsule_metadata;
+use capsule_metadata::CapsuleMetadataAssets;
+
 #[path = "freeplay_loader.rs"]
 mod freeplay_loader;
 pub use freeplay_loader::load_freeplay_assets;
@@ -58,11 +62,6 @@ const CAPSULE_BEAT_XFRAMES: [f32; 7] = [1.7, 1.8, 0.85, 0.85, 0.97, 0.97, 1.0];
 const CAPSULE_BEAT_FPS: u16 = 24;
 // freeplayRandom-metadata.json BPM is 102.
 const MENU_BPM: f64 = 102.0;
-// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:335 (fpScoreDisplay anchor)
-const SCORE_X: f32 = 1280.0 - 353.0;
-const SCORE_Y: f32 = 60.0;
-const SCORE_DIGIT_COUNT: usize = 7;
-const SCORE_DIGIT_SPACING: f32 = 36.0;
 const HIGHSCORE_X: f32 = 1280.0 - 420.0;
 const HIGHSCORE_Y: f32 = 70.0;
 const HIGHSCORE_SCALE: f32 = 0.5;
@@ -110,8 +109,7 @@ pub struct FreeplayAssets {
     difficulty_nightmare: SparrowAtlasHandle,
     difficulty_nightmare_frames: Vec<SparrowFrame>,
     dj: Option<FreeplayDJ>,
-    bignumbers_atlas: Option<SparrowAtlasHandle>,
-    bignumbers_digits: [Option<SparrowFrame>; 10],
+    capsule_metadata: CapsuleMetadataAssets,
     highscore_atlas: Option<SparrowAtlasHandle>,
     highscore_frame: Option<SparrowFrame>,
     album_cover: Option<StaticTexture>,
@@ -184,7 +182,13 @@ impl FreeplayAssets {
         }
 
         let selected_index = self.clamped_index(selected_index);
-        self.push_capsules(&mut commands, selected_index, cursor, sample_rate);
+        self.push_capsules(
+            &mut commands,
+            selected_index,
+            selection.difficulty,
+            cursor,
+            sample_rate,
+        );
         self.push_difficulty(&mut commands, selection.difficulty, cursor, sample_rate);
         self.push_highscore(&mut commands);
         self.push_score(&mut commands);
@@ -514,6 +518,7 @@ impl FreeplayAssets {
         &self,
         commands: &mut RenderCommandList,
         selected_index: usize,
+        difficulty: PreviewDifficulty,
         cursor: Samples,
         sample_rate: u32,
     ) {
@@ -558,29 +563,21 @@ impl FreeplayAssets {
                 glam::Vec4::new(1.0, 1.0, 1.0, alpha),
                 200 + index as i32,
             ));
+            if let CapsuleKind::Song(song) = self.songs[index].kind {
+                self.capsule_metadata.push_capsule(
+                    commands,
+                    song,
+                    difficulty,
+                    pos,
+                    alpha,
+                    220 + index as i32,
+                );
+            }
         }
     }
 
     fn push_score(&self, commands: &mut RenderCommandList) {
-        let Some(atlas) = &self.bignumbers_atlas else {
-            return;
-        };
-        for digit_index in 0..SCORE_DIGIT_COUNT {
-            let Some(frame) = self.bignumbers_digits[0].as_ref() else {
-                return;
-            };
-            let x = SCORE_X + digit_index as f32 * SCORE_DIGIT_SPACING;
-            commands.push(sparrow_scaled_command(
-                atlas.texture_id,
-                atlas.width,
-                atlas.height,
-                frame,
-                glam::vec2(x, SCORE_Y),
-                glam::Vec2::ONE,
-                glam::Vec4::ONE,
-                310,
-            ));
-        }
+        self.capsule_metadata.push_score(commands);
     }
 
     fn push_album(&self, commands: &mut RenderCommandList) {

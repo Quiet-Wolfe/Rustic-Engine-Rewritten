@@ -1,4 +1,5 @@
-use super::helpers::{clone_frames, digit_frames, load_sparrow_atlas, load_static_texture};
+use super::capsule_metadata::load_capsule_metadata_assets;
+use super::helpers::{clone_frames, load_sparrow_atlas, load_static_texture};
 use super::{CapsuleKind, FreeplayAssets, FreeplayCapsule, WHITE_TEXTURE_ID};
 use crate::asset_roots::baked_assets_root;
 use crate::bitmap_text_assets::load_bitmap_text_assets;
@@ -131,25 +132,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         }
     };
 
-    let (bignumbers_atlas, bignumbers_digits) = match load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplayCapsule/bignumbers.xml",
-    ) {
-        Ok((handle, atlas)) => {
-            let digits = digit_frames(&atlas);
-            (Some(handle), digits)
-        }
-        Err(e) => {
-            tracing::warn!(target: "rustic.asset", "freeplay bignumbers unavailable: {e:#}");
-            (
-                None,
-                [None, None, None, None, None, None, None, None, None, None],
-            )
-        }
-    };
+    let capsule_metadata = load_capsule_metadata_assets(device, queue, &resolver, &mut textures);
 
     let (highscore_atlas, highscore_frame) = match load_sparrow_atlas(
         device,
@@ -270,8 +253,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         difficulty_nightmare,
         difficulty_nightmare_frames,
         dj,
-        bignumbers_atlas,
-        bignumbers_digits,
+        capsule_metadata,
         highscore_atlas,
         highscore_frame,
         album_cover,
