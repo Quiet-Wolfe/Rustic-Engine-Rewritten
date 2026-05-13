@@ -135,6 +135,10 @@ impl Mixer {
         self.voices.len() != before
     }
 
+    pub fn has_voice(&self, id: VoiceId) -> bool {
+        self.voices.iter().any(|v| v.id == id)
+    }
+
     pub fn set_voice_gain(&mut self, id: VoiceId, gain: f32) -> bool {
         let Some(voice) = self.voices.iter_mut().find(|v| v.id == id) else {
             return false;
@@ -515,6 +519,19 @@ mod tests {
 
         assert_eq!(out, [1.0, 1.0, 0.25, 0.25, 1.0, 1.0]);
         assert_eq!(mixer.voice_count(), 1);
+    }
+
+    #[test]
+    fn has_voice_tracks_voice_lifetime() {
+        let mut mixer = Mixer::new(48_000);
+        let samples: Arc<[f32]> = Arc::from([1.0, 1.0, 0.25, 0.25]);
+        let voice = mixer
+            .add_source(Stem::Sfx, SoundSource::Pcm(samples))
+            .unwrap();
+
+        assert!(mixer.has_voice(voice));
+        assert!(mixer.stop_voice(voice));
+        assert!(!mixer.has_voice(voice));
     }
 
     #[test]

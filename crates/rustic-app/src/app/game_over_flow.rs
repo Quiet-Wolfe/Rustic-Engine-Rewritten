@@ -77,6 +77,10 @@ impl App {
                 self.game_over_audio.start_loop_music_or_warn(&self.mixer);
             }
         }
+        if self.audio_output.is_some() {
+            self.game_over_audio
+                .advance_start_music_or_warn(&self.mixer);
+        }
         self.camera_fx
             .update(&mut self.cameras, cursor, sample_rate, 100.0);
 

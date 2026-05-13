@@ -1,6 +1,6 @@
 //! Game-over sound effect and death-loop music.
 //!
-//! ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:248-263,311-315,600-614
+//! ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:248-263,311-315,476-540,600-614
 
 use crate::asset_roots::baked_assets_root;
 use anyhow::{Context, Result};
@@ -9,16 +9,19 @@ use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem, VoiceId};
 use std::sync::{Arc, OnceLock};
 
 const LOSS_SOUND_PATH: &str = "sounds/gameplay/gameover/fnf_loss_sfx.ogg";
+const START_MUSIC_PATH: &str = "music/gameplay/gameover/gameOverStart.ogg";
 const LOOP_MUSIC_PATH: &str = "music/gameplay/gameover/gameOver.ogg";
 const CONFIRM_MUSIC_PATH: &str = "music/gameplay/gameover/gameOverEnd.ogg";
 
 static LOSS_SOUND_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static START_MUSIC_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LOOP_MUSIC_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static CONFIRM_MUSIC_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 
 #[derive(Debug, Default)]
 pub struct GameOverAudio {
     loss_voice: Option<VoiceId>,
+    start_voice: Option<VoiceId>,
     loop_voice: Option<VoiceId>,
     confirm_voice: Option<VoiceId>,
 }
@@ -36,6 +39,12 @@ impl GameOverAudio {
         }
     }
 
+    pub fn advance_start_music_or_warn(&mut self, mixer: &SharedMixer) {
+        if let Err(e) = self.advance_start_music(mixer) {
+            tracing::warn!(target: "rustic.audio", "advance game over music: {e:#}");
+        }
+    }
+
     pub fn play_confirm_music_or_warn(&mut self, mixer: &SharedMixer) {
         if let Err(e) = self.play_confirm_music(mixer) {
             tracing::warn!(target: "rustic.audio", "play game over confirm music: {e:#}");
@@ -45,6 +54,7 @@ impl GameOverAudio {
     pub fn stop(&mut self, mixer: &SharedMixer) {
         let voices = [
             self.loss_voice.take(),
+            self.start_voice.take(),
             self.loop_voice.take(),
             self.confirm_voice.take(),
         ];
@@ -75,6 +85,36 @@ impl GameOverAudio {
     }
 
     fn start_loop_music(&mut self, mixer: &SharedMixer) -> Result<()> {
+        if self.start_voice.is_some() || self.loop_voice.is_some() {
+            return Ok(());
+        }
+        if let Some(bytes) = optional_cached_bytes(&START_MUSIC_BYTES, START_MUSIC_PATH) {
+            let source =
+                streaming_vorbis_source(bytes.clone()).context("decode game over start music")?;
+            let voice = mixer
+                .edit(|mixer| mixer.add_source(Stem::Sfx, source))
+                .context("queue game over start music")?;
+            self.start_voice = Some(voice);
+            return Ok(());
+        }
+        self.start_middle_music(mixer)
+    }
+
+    fn advance_start_music(&mut self, mixer: &SharedMixer) -> Result<()> {
+        let Some(voice) = self.start_voice else {
+            return Ok(());
+        };
+        let active = mixer
+            .edit(|mixer| Ok(mixer.has_voice(voice)))
+            .context("query game over start music")?;
+        if active {
+            return Ok(());
+        }
+        self.start_voice = None;
+        self.start_middle_music(mixer)
+    }
+
+    fn start_middle_music(&mut self, mixer: &SharedMixer) -> Result<()> {
         if self.loop_voice.is_some() {
             return Ok(());
         }
@@ -120,6 +160,13 @@ fn cached_bytes(
         .as_ref()
 }
 
+fn optional_cached_bytes(
+    cache: &'static OnceLock<Option<Arc<[u8]>>>,
+    path: &'static str,
+) -> Option<&'static Arc<[u8]>> {
+    cache.get_or_init(|| load_audio_bytes(path).ok()).as_ref()
+}
+
 fn load_audio_bytes(path: &str) -> Result<Arc<[u8]>> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
     let path = AssetPath::new(path)?;
@@ -133,6 +180,10 @@ mod tests {
     #[test]
     fn game_over_audio_paths_match_og_assets() {
         assert_eq!(LOSS_SOUND_PATH, "sounds/gameplay/gameover/fnf_loss_sfx.ogg");
+        assert_eq!(
+            START_MUSIC_PATH,
+            "music/gameplay/gameover/gameOverStart.ogg"
+        );
         assert_eq!(LOOP_MUSIC_PATH, "music/gameplay/gameover/gameOver.ogg");
         assert_eq!(
             CONFIRM_MUSIC_PATH,

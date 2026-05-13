@@ -325,6 +325,12 @@ impl App {
         focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
         set_vocals_gain(&self.mixer, 1.0);
     }
+    fn refresh_camera_focus(&mut self) {
+        // ref: bdedc0aa:source/funkin/play/event/FocusCameraSongEvent.hx:97-145
+        if let Some(characters) = &self.characters {
+            self.camera_focus = characters.camera_focus_points();
+        }
+    }
     fn handle_preview_selection_input(&mut self, action: InputAction) -> bool {
         self.preview_selection = match action {
             InputAction::UiLeft => self.preview_selection.next_song(),
@@ -442,6 +448,7 @@ impl App {
                 self.camera_fx.enable_zooming();
                 set_vocals_gain(&self.mixer, 1.0);
             }
+            self.refresh_camera_focus();
             for event in song_events {
                 self.apply_song_event(&event.kind, cursor, sample_rate, bpm);
             }
