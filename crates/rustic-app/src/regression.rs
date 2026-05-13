@@ -141,6 +141,13 @@ pub const FIRST_GOLDEN_SCENARIOS: &[RegressionScenario] = &[
         RegressionFrameKind::Stage,
     ),
     RegressionScenario::new(
+        "stage_camera_focus_bopeebo",
+        PreviewSong::BOPEEBO,
+        PreviewDifficulty::Normal,
+        3000,
+        RegressionFrameKind::Stage,
+    ),
+    RegressionScenario::new(
         "gameplay_notes_crossing_bopeebo",
         PreviewSong::BOPEEBO,
         PreviewDifficulty::Normal,
