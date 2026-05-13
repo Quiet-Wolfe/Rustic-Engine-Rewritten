@@ -62,9 +62,11 @@ const CAPSULE_BEAT_XFRAMES: [f32; 7] = [1.7, 1.8, 0.85, 0.85, 0.97, 0.97, 1.0];
 const CAPSULE_BEAT_FPS: u16 = 24;
 // freeplayRandom-metadata.json BPM is 102.
 const MENU_BPM: f64 = 102.0;
+// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:596-602
+// fnfHighscoreSpr draws at native size; OG x = FlxG.width - 420, y = 70.
 const HIGHSCORE_X: f32 = 1280.0 - 420.0;
 const HIGHSCORE_Y: f32 = 70.0;
-const HIGHSCORE_SCALE: f32 = 0.5;
+const HIGHSCORE_SCALE: f32 = 1.0;
 // ref: bdedc0aa:source/funkin/ui/freeplay/AlbumRoll.hx:50-53
 const ALBUM_ART_X: f32 = 1280.0 - 360.0;
 const ALBUM_ART_Y: f32 = 220.0;
@@ -138,6 +140,16 @@ impl FreeplayAssets {
             glam::vec2(1280.0, 720.0),
             glam::Vec4::new(0.0, 0.0, 0.0, 1.0),
             -100,
+        ));
+
+        // overhangStuff: solid-black bar behind the FREEPLAY / OFFICIAL OST text
+        // along the top. OG positions it at y=-100 with height 164 (so the visible
+        // strip is ~64px). ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:529-541
+        commands.push(solid_command(
+            glam::vec2(0.0, -100.0),
+            glam::vec2(1280.0, 164.0),
+            glam::Vec4::new(0.0, 0.0, 0.0, 1.0),
+            295,
         ));
 
         let pink_back_size = self.pink_back_draw_size();
@@ -553,7 +565,9 @@ impl FreeplayAssets {
         cursor: Samples,
         sample_rate: u32,
     ) {
-        let (beat_scale_x, beat_scale_y) = capsule_beat_scale(cursor, sample_rate);
+        // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:670-690 (only the
+        // selected capsule runs the xFrames bump each beat — unselected stays at 1.0).
+        let (selected_beat_x, selected_beat_y) = capsule_beat_scale(cursor, sample_rate);
         for index in 0..self.songs.len() {
             let offset = index as f32 - selected_index as f32;
             let pos = capsule_position(offset);
@@ -580,6 +594,11 @@ impl FreeplayAssets {
                     }
                 }
                 CapsuleKind::Song(_) => 1.0,
+            };
+            let (beat_scale_x, beat_scale_y) = if is_selected {
+                (selected_beat_x, selected_beat_y)
+            } else {
+                (1.0, 1.0)
             };
             commands.push(sparrow_scaled_command(
                 self.capsule_atlas.texture_id,
