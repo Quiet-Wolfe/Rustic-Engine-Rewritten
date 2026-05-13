@@ -2,6 +2,7 @@ use super::App;
 use crate::game_over::{GameOverRestart, GameOverState};
 use crate::pause_menu::PAUSE_OVERLAY_TEXTURE_ID;
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
+use rustic_audio::Stem;
 use rustic_core::ids::CameraId;
 use rustic_core::render::RenderLayer;
 use rustic_core::time::Samples;
@@ -105,8 +106,36 @@ impl App {
         self.game_over_restart = None;
         self.game_over.take();
         self.game_over_audio.stop(&self.mixer);
-        self.load_selected_song();
+        self.restart_loaded_song_after_game_over();
         true
+    }
+
+    fn restart_loaded_song_after_game_over(&mut self) {
+        // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:386-415
+        // ref: bdedc0aa:source/funkin/play/PlayState.hx:1044-1069
+        let Some(play_state) = self.play_state.as_mut() else {
+            self.load_selected_song();
+            return;
+        };
+        let bpm = play_state.bpm;
+        play_state.restart();
+        self.reset_song_runtime(bpm);
+        self.reset_loaded_stems_for_restart();
+        self.rebuild_frame_commands();
+    }
+
+    fn reset_loaded_stems_for_restart(&mut self) {
+        if self.audio_output.is_none() {
+            return;
+        }
+        if let Err(e) = self.mixer.edit(|mixer| {
+            mixer.pause();
+            mixer.seek_stems(Samples(0), &[Stem::Instrumental, Stem::Vocals])?;
+            Ok(())
+        }) {
+            tracing::warn!(target: "rustic.audio", "reset game over retry stems: {e:#}");
+            self.load_selected_stems();
+        }
     }
 }
 
