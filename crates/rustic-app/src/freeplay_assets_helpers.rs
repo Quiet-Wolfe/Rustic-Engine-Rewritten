@@ -80,19 +80,17 @@ pub(super) fn bg_image_scale(bg: &StaticTexture) -> f32 {
     PINKBACK_TARGET_HEIGHT / bg.height.max(1) as f32
 }
 
-/// Where the solid yellow back behind BF ends (his right shoulder, roughly).
-/// To the right of this x the back tapers as a right triangle pointing at
-/// the album/OST text in the bottom-right.
-pub(super) const PINKBACK_SOLID_RIGHT_X: f32 = 360.0;
+/// Yellow back top-right x (narrowest point at the top, just past BF).
+/// pinkBack.png's alpha widens going downward; we match that orientation.
+pub(super) const PINKBACK_TOP_RIGHT_X: f32 = 320.0;
 
-/// Where the triangular taper points to. Past this x the yellow back
-/// is fully gone, exposing the BF/GF backdrop image.
-pub(super) const PINKBACK_TAPER_END_X: f32 = 780.0;
+/// Yellow back bottom-right x (widest point, just above the orange bar).
+pub(super) const PINKBACK_BOTTOM_RIGHT_X: f32 = 520.0;
 
-/// Vertical extent of the back; tapers between top and the orange bar.
-pub(super) const PINKBACK_BOTTOM_Y: f32 = 440.0;
+/// Vertical extent of the back; the orange bar starts here.
+pub(super) const PINKBACK_BOTTOM_Y: f32 = 645.0;
 
-/// Number of horizontal strips used to approximate the triangle taper.
+/// Number of horizontal strips used to approximate the trapezoidal right edge.
 pub(super) const PINKBACK_TAPER_STRIPS: usize = 48;
 
 pub(super) fn capsule_text_offset() -> glam::Vec2 {

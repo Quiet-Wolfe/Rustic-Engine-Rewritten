@@ -37,7 +37,9 @@ pub use freeplay_loader::load_freeplay_assets;
 const CAPSULE_REAL_SCALED: f32 = 0.8;
 // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:745-753
 const CAPSULE_BASE_X: f32 = 270.0;
-const CAPSULE_BASE_Y: f32 = 120.0;
+// Selected capsule sits near the vertical middle of the visible song area
+// (between the overhang at y=64 and the orange bar at y=645).
+const CAPSULE_BASE_Y: f32 = 320.0;
 const CAPSULE_SIN_AMPLITUDE: f32 = 60.0;
 const CAPSULE_SPACING_PAD: f32 = 10.0;
 const CAPSULE_FRAME_HEIGHT: f32 = 132.0;
@@ -52,7 +54,10 @@ const SELECTOR_ANIM_FPS: u16 = 24;
 const DIFFICULTY_GROUP_X: f32 = 90.0;
 const DIFFICULTY_GROUP_Y: f32 = 80.0;
 const ORANGE_BAR_X: f32 = 84.0;
-const ORANGE_BAR_Y: f32 = 440.0;
+// OG's orangeBackShit.y=440 reads visually much lower in the rendered scene
+// (around y=645 in our 1280x720 viewport); drop it so the yellow back fills
+// the bottom region behind BF instead of leaving a black void.
+const ORANGE_BAR_Y: f32 = 645.0;
 const ORANGE_BAR_HEIGHT: f32 = 75.0;
 const FREEPLAY_TITLE_X: f32 = 8.0;
 const FREEPLAY_TITLE_Y: f32 = 8.0;
@@ -172,30 +177,32 @@ impl FreeplayAssets {
             295,
         ));
 
-        // Yellow back: a solid rectangle covering everything behind BF, then a
-        // right-triangle taper past his right shoulder that points toward the
-        // album / FNF OST text in the bottom-right. Approximated with thin
-        // horizontal strips since we don't have a triangle primitive.
-        let solid_right = helpers::PINKBACK_SOLID_RIGHT_X;
-        let taper_end = helpers::PINKBACK_TAPER_END_X;
+        // Yellow back: a trapezoid that's narrower at the top (where the
+        // overhang is) and widens toward the bottom (just above the orange
+        // bar), matching pinkBack.png's alpha mask. A solid rectangle covers
+        // x=0..TOP_RIGHT_X, then a triangular extension widens to
+        // BOTTOM_RIGHT_X as y increases, approximated with thin horizontal
+        // strips since we don't have a triangle primitive.
+        let top_right = helpers::PINKBACK_TOP_RIGHT_X;
+        let bottom_right = helpers::PINKBACK_BOTTOM_RIGHT_X;
         let bottom_y = helpers::PINKBACK_BOTTOM_Y;
         commands.push(solid_command(
             glam::vec2(back_x, 0.0),
-            glam::vec2(solid_right, bottom_y),
+            glam::vec2(top_right, bottom_y),
             PINKBACK_COLOR,
             -90,
         ));
         let strips = helpers::PINKBACK_TAPER_STRIPS;
         let strip_height = bottom_y / strips as f32;
-        let taper_width = (taper_end - solid_right).max(0.0);
+        let extension_width = (bottom_right - top_right).max(0.0);
         for i in 0..strips {
-            let t = i as f32 / strips as f32; // 0 at top, 1 at bottom
-            let strip_w = taper_width * (1.0 - t);
+            let t = i as f32 / strips as f32; // 0 at top, ~1 at bottom
+            let strip_w = extension_width * t;
             if strip_w <= 0.0 {
                 continue;
             }
             commands.push(solid_command(
-                glam::vec2(back_x + solid_right, i as f32 * strip_height),
+                glam::vec2(back_x + top_right, i as f32 * strip_height),
                 // +1px overlap to avoid hairline gaps between strips.
                 glam::vec2(strip_w, strip_height + 1.0),
                 PINKBACK_COLOR,
@@ -630,7 +637,7 @@ impl FreeplayAssets {
     fn pink_back_draw_size(&self) -> glam::Vec2 {
         // Width matches the right edge of the triangular taper, so the orange
         // bar and BG image position track the back's actual footprint.
-        glam::vec2(helpers::PINKBACK_TAPER_END_X, PINKBACK_TARGET_HEIGHT)
+        glam::vec2(helpers::PINKBACK_BOTTOM_RIGHT_X, PINKBACK_TARGET_HEIGHT)
     }
 
     fn push_capsules(
