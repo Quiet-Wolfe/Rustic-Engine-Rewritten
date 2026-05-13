@@ -110,7 +110,7 @@ pub struct FreeplayAssets {
     bignumbers_atlas: Option<SparrowAtlasHandle>,
     bignumbers_digits: [Option<SparrowFrame>; 10],
     highscore_atlas: Option<SparrowAtlasHandle>,
-    highscore_frames: Vec<SparrowFrame>,
+    highscore_frame: Option<SparrowFrame>,
     album_cover: Option<StaticTexture>,
     album_title_atlas: Option<SparrowAtlasHandle>,
     album_title_frame: Option<SparrowFrame>,
@@ -139,7 +139,7 @@ impl FreeplayAssets {
         ));
 
         let pink_back_size = self.pink_back_draw_size();
-        commands.push(self.pink_back.command(
+        commands.push(self.pink_back.background_command(
             glam::vec2(0.0, 0.0),
             PINKBACK_COLOR,
             -90,
@@ -162,7 +162,7 @@ impl FreeplayAssets {
 
         let bg_scale = bg_image_scale(&self.bg_image);
         let bg_pos = glam::vec2(pink_back_size.x * 0.74, 0.0);
-        commands.push(self.bg_image.command(
+        commands.push(self.bg_image.background_command(
             bg_pos,
             glam::Vec4::ONE,
             -80,
@@ -541,7 +541,7 @@ impl FreeplayAssets {
 
     fn push_highscore(&self, commands: &mut RenderCommandList) {
         let (Some(atlas), Some(frame)) =
-            (self.highscore_atlas.as_ref(), self.highscore_frames.first())
+            (self.highscore_atlas.as_ref(), self.highscore_frame.as_ref())
         else {
             return;
         };

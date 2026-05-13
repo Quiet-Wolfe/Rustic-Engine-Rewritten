@@ -150,7 +150,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         }
     };
 
-    let (highscore_atlas, highscore_frames) = match load_sparrow_atlas(
+    let (highscore_atlas, highscore_frame) = match load_sparrow_atlas(
         device,
         queue,
         &resolver,
@@ -158,12 +158,16 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         "images/freeplay/highscore.xml",
     ) {
         Ok((handle, atlas)) => {
-            let frames = clone_frames(&atlas, "highscore small instance 1");
-            (Some(handle), frames)
+            let frame = atlas
+                .frames
+                .iter()
+                .find(|frame| frame.name == "highscore small instance 10000")
+                .cloned();
+            (Some(handle), frame)
         }
         Err(e) => {
             tracing::warn!(target: "rustic.asset", "freeplay highscore unavailable: {e:#}");
-            (None, Vec::new())
+            (None, None)
         }
     };
 
@@ -261,7 +265,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         bignumbers_atlas,
         bignumbers_digits,
         highscore_atlas,
-        highscore_frames,
+        highscore_frame,
         album_cover,
         album_title_atlas,
         album_title_frame,

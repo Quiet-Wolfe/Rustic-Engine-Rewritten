@@ -3,6 +3,7 @@ use super::{
     CAPSULE_FRAME_WIDTH, CAPSULE_REAL_SCALED, CAPSULE_SIN_AMPLITUDE, CAPSULE_SPACING_PAD, MENU_BPM,
     PINKBACK_TARGET_HEIGHT, WHITE_TEXTURE_ID,
 };
+// LINT-ALLOW: long-file freeplay helper math, asset inventory, and regression guards stay together.
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_png, load_sparrow, AssetPath, OverlayResolver, SparrowAtlas, SparrowFrame,
@@ -29,9 +30,30 @@ impl StaticTexture {
         z: i32,
         draw_size: glam::Vec2,
     ) -> DrawCommand {
+        self.command_on_layer(pos, color, z, draw_size, RenderLayer::Overlay)
+    }
+
+    pub(super) fn background_command(
+        &self,
+        pos: glam::Vec2,
+        color: glam::Vec4,
+        z: i32,
+        draw_size: glam::Vec2,
+    ) -> DrawCommand {
+        self.command_on_layer(pos, color, z, draw_size, RenderLayer::Background)
+    }
+
+    fn command_on_layer(
+        &self,
+        pos: glam::Vec2,
+        color: glam::Vec4,
+        z: i32,
+        draw_size: glam::Vec2,
+        layer: RenderLayer,
+    ) -> DrawCommand {
         let mut cmd = DrawCommand::sprite(self.texture_id, pos, draw_size);
         cmd.camera = CameraId(1);
-        cmd.layer = RenderLayer::Overlay;
+        cmd.layer = layer;
         cmd.z = z;
         cmd.pivot = glam::Vec2::ZERO;
         cmd.filter = self.filter;
@@ -203,7 +225,8 @@ pub(super) fn sparrow_scaled_command(
     color: glam::Vec4,
     z: i32,
 ) -> DrawCommand {
-    let mut cmd = DrawCommand::sprite(texture_id, position, frame_draw_size(frame) * scale);
+    let draw_pos = position - frame_trim_offset(frame) * scale;
+    let mut cmd = DrawCommand::sprite(texture_id, draw_pos, frame_draw_size(frame) * scale);
     cmd.camera = CameraId(1);
     cmd.layer = RenderLayer::Overlay;
     cmd.z = z;
@@ -237,6 +260,10 @@ fn frame_draw_size(frame: &SparrowFrame) -> glam::Vec2 {
     } else {
         glam::vec2(frame.width as f32, frame.height as f32)
     }
+}
+
+fn frame_trim_offset(frame: &SparrowFrame) -> glam::Vec2 {
+    glam::vec2(frame.frame_x as f32, frame.frame_y as f32)
 }
 
 fn frame_uv(
@@ -315,6 +342,53 @@ mod tests {
     #[test]
     fn frame_for_cursor_handles_empty() {
         assert!(frame_for_cursor(&[], Samples(0), 48_000, 24, true).is_none());
+    }
+
+    #[test]
+    fn static_background_command_sorts_under_character_layer() {
+        let texture = StaticTexture {
+            texture_id: AssetId::new(1),
+            width: 8,
+            height: 8,
+            filter: FilterMode::Linear,
+        };
+
+        let cmd = texture.background_command(
+            glam::Vec2::ZERO,
+            glam::Vec4::ONE,
+            -90,
+            glam::Vec2::splat(8.0),
+        );
+
+        assert_eq!(cmd.layer, RenderLayer::Background);
+    }
+
+    #[test]
+    fn sparrow_scaled_command_applies_trim_offset() {
+        let atlas = SparrowAtlas::parse(
+            br#"
+            <TextureAtlas imagePath="test.png">
+              <SubTexture name="trimmed0000" x="0" y="0" width="80" height="20"
+                frameX="-10" frameY="5" frameWidth="100" frameHeight="40"/>
+            </TextureAtlas>
+            "#,
+        )
+        .unwrap();
+        let frame = atlas.frames.first().unwrap();
+
+        let cmd = sparrow_scaled_command(
+            AssetId::new(2),
+            128,
+            128,
+            frame,
+            glam::vec2(50.0, 60.0),
+            glam::vec2(2.0, 3.0),
+            glam::Vec4::ONE,
+            10,
+        );
+
+        assert_eq!(cmd.world_pos, glam::vec2(70.0, 45.0));
+        assert_eq!(cmd.size, glam::vec2(160.0, 60.0));
     }
 
     #[test]
