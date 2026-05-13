@@ -8,6 +8,7 @@ use crate::menu_audio::MenuSound;
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
 use crate::story_menu_assets::load_story_menu_assets;
 use crate::title_assets::load_title_screen_assets;
+use rustic_audio::Stem;
 use rustic_core::input::InputAction;
 use rustic_core::time::Samples;
 use rustic_render::{CameraRegistry, RenderCommandList, TextCommandList};
@@ -435,7 +436,6 @@ impl App {
         self.pause_menu = None;
         self.pause_music.stop(&self.mixer);
         self.game_over_audio.stop(&self.mixer);
-        self.stop_menu_music();
         self.characters = None;
         self.bitmap_text_skin = None;
         self.note_skin = None;
@@ -456,7 +456,7 @@ impl App {
         set_vocals_gain(&self.mixer, 1.0);
         if let Err(e) = self.mixer.edit(|mixer| {
             mixer.pause();
-            mixer.seek(Samples(0))?;
+            mixer.seek_stems(Samples(0), &[Stem::Instrumental, Stem::Vocals])?;
             Ok(())
         }) {
             tracing::warn!(target: "rustic.audio", "pause song select audio: {e:#}");

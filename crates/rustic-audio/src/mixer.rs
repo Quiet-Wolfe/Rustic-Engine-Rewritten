@@ -207,6 +207,20 @@ impl Mixer {
         Ok(())
     }
 
+    /// Seek the song cursor and only sources on the requested stems. SFX voices
+    /// keep their source position, which lets menu/game-over music continue
+    /// while gameplay stems are reset under a paused mixer.
+    pub fn seek_stems(&mut self, position: Samples, stems: &[Stem]) -> AudioResult<()> {
+        let position = Samples(position.0.max(0));
+        self.sample_cursor = position;
+        for voice in &mut self.voices {
+            if stems.contains(&voice.stem) {
+                voice.seek_mixer_position(position, self.sample_rate)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Advance the authoritative sample cursor without touching active
     /// sources. This remains available for gameplay/input unit tests that
     /// need a cheap fake clock.
@@ -562,6 +576,30 @@ mod tests {
         assert_eq!(out, [2.0, 2.0]);
         assert_eq!(mixer.sample_cursor(), Samples(3));
         assert_eq!(*seeks.lock().unwrap(), vec![Samples(2)]);
+    }
+
+    #[test]
+    fn seek_stems_preserves_sfx_source_position() {
+        let mut mixer = Mixer::new(48_000);
+        let song: Arc<[f32]> = Arc::from([1.0, 1.0, 2.0, 2.0]);
+        let sfx: Arc<[f32]> = Arc::from([0.25, -0.25, 0.75, -0.75]);
+        mixer
+            .add_source(Stem::Instrumental, SoundSource::Pcm(song))
+            .unwrap();
+        mixer.add_source(Stem::Sfx, SoundSource::Pcm(sfx)).unwrap();
+
+        let mut out = [0.0; 2];
+        mixer.mix_stereo(&mut out).unwrap();
+        assert_eq!(out, [1.25, 0.75]);
+
+        mixer
+            .seek_stems(Samples(0), &[Stem::Instrumental, Stem::Vocals])
+            .unwrap();
+        mixer.pause();
+        mixer.mix_stereo(&mut out).unwrap();
+
+        assert_eq!(out, [0.75, -0.75]);
+        assert_eq!(mixer.sample_cursor(), Samples(0));
     }
 
     #[test]
