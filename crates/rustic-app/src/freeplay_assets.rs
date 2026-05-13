@@ -113,6 +113,7 @@ const CAPSULE_ENTER_OFFSET_X: f32 = 600.0;
 #[derive(Debug)]
 pub struct FreeplayAssets {
     songs: Vec<FreeplayCapsule>,
+    pink_back: StaticTexture,
     bg_image: StaticTexture,
     capsule_atlas: SparrowAtlasHandle,
     capsule_selected_frames: Vec<SparrowFrame>,
@@ -177,38 +178,17 @@ impl FreeplayAssets {
             295,
         ));
 
-        // Yellow back: a trapezoid that's narrower at the top (where the
-        // overhang is) and widens toward the bottom (just above the orange
-        // bar), matching pinkBack.png's alpha mask. A solid rectangle covers
-        // x=0..TOP_RIGHT_X, then a triangular extension widens to
-        // BOTTOM_RIGHT_X as y increases, approximated with thin horizontal
-        // strips since we don't have a triangle primitive.
-        let top_right = helpers::PINKBACK_TOP_RIGHT_X;
-        let bottom_right = helpers::PINKBACK_BOTTOM_RIGHT_X;
-        let bottom_y = helpers::PINKBACK_BOTTOM_Y;
-        commands.push(solid_command(
+        // Yellow back: render pinkBack.png so its baked-in alpha mask provides
+        // the smooth diagonal right edge (no stair-stepped strips). The texture
+        // is stretched wider than its native aspect so the trapezoid extends
+        // over the BG cartoon to the right, matching OG's
+        // BitmapUtil.scalePartByWidth(pinkBack, CUTOUT_WIDTH).
+        commands.push(self.pink_back.background_command(
             glam::vec2(back_x, 0.0),
-            glam::vec2(top_right, bottom_y),
             PINKBACK_COLOR,
             -90,
+            pink_back_size,
         ));
-        let strips = helpers::PINKBACK_TAPER_STRIPS;
-        let strip_height = bottom_y / strips as f32;
-        let extension_width = (bottom_right - top_right).max(0.0);
-        for i in 0..strips {
-            let t = i as f32 / strips as f32; // 0 at top, ~1 at bottom
-            let strip_w = extension_width * t;
-            if strip_w <= 0.0 {
-                continue;
-            }
-            commands.push(solid_command(
-                glam::vec2(back_x + top_right, i as f32 * strip_height),
-                // +1px overlap to avoid hairline gaps between strips.
-                glam::vec2(strip_w, strip_height + 1.0),
-                PINKBACK_COLOR,
-                -90,
-            ));
-        }
         commands.push(solid_command(
             glam::vec2(back_x + ORANGE_BAR_X, ORANGE_BAR_Y),
             glam::vec2(pink_back_size.x, ORANGE_BAR_HEIGHT),
@@ -635,9 +615,12 @@ impl FreeplayAssets {
     }
 
     fn pink_back_draw_size(&self) -> glam::Vec2 {
-        // Width matches the right edge of the triangular taper, so the orange
-        // bar and BG image position track the back's actual footprint.
-        glam::vec2(helpers::PINKBACK_BOTTOM_RIGHT_X, PINKBACK_TARGET_HEIGHT)
+        // Stretch pinkBack horizontally well past its native aspect so the
+        // alpha-masked diagonal extends OVER the BF/GF backdrop on the right.
+        // OG achieves the same via BitmapUtil.scalePartByWidth(pinkBack,
+        // CUTOUT_WIDTH); we just pick a fixed draw width that visually lands
+        // the diagonal where the OG screenshot puts it.
+        glam::vec2(helpers::PINKBACK_DRAW_WIDTH, PINKBACK_TARGET_HEIGHT)
     }
 
     fn push_capsules(

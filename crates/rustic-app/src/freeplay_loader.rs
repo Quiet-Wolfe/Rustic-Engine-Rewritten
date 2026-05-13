@@ -25,19 +25,14 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
             Some("rustic.freeplay.white"),
         ),
     );
-    // pinkBack.png is no longer rendered directly — we draw the yellow back
-    // from solid_command primitives now — but we keep loading it so future
-    // transition flows (cardGlow etc.) can repurpose the texture without
-    // re-baking. Touch the asset only to assert it exists.
-    let _pink_back = load_static_texture(
+    let pink_back = load_static_texture(
         device,
         queue,
         &resolver,
         &mut textures,
         "images/freeplay/pinkBack.png",
         FilterMode::Linear,
-    )
-    .ok();
+    )?;
     let bg_image = load_static_texture(
         device,
         queue,
@@ -115,14 +110,10 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         kind: CapsuleKind::Random,
         display_name: "RANDOM".to_string(),
     }];
-    songs.extend(
-        PreviewSong::CYCLABLE_WEEK1
-            .iter()
-            .map(|song| FreeplayCapsule {
-                kind: CapsuleKind::Song(*song),
-                display_name: song.display_name().to_ascii_uppercase(),
-            }),
-    );
+    songs.extend(PreviewSong::ALL.iter().map(|song| FreeplayCapsule {
+        kind: CapsuleKind::Song(*song),
+        display_name: song.display_name().to_ascii_uppercase(),
+    }));
 
     let dj = match load_freeplay_dj(device, queue) {
         Ok(mut dj) => {
@@ -244,6 +235,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
 
     Ok(FreeplayAssets {
         songs,
+        pink_back,
         bg_image,
         capsule_atlas,
         capsule_selected_frames,

@@ -80,18 +80,10 @@ pub(super) fn bg_image_scale(bg: &StaticTexture) -> f32 {
     PINKBACK_TARGET_HEIGHT / bg.height.max(1) as f32
 }
 
-/// Yellow back top-right x (narrowest point at the top, just past BF).
-/// pinkBack.png's alpha widens going downward; we match that orientation.
-pub(super) const PINKBACK_TOP_RIGHT_X: f32 = 320.0;
-
-/// Yellow back bottom-right x (widest point, just above the orange bar).
-pub(super) const PINKBACK_BOTTOM_RIGHT_X: f32 = 520.0;
-
-/// Vertical extent of the back; the orange bar starts here.
-pub(super) const PINKBACK_BOTTOM_Y: f32 = 645.0;
-
-/// Number of horizontal strips used to approximate the trapezoidal right edge.
-pub(super) const PINKBACK_TAPER_STRIPS: usize = 48;
+/// Rendered width of pinkBack. Larger than the native aspect (524x760 -> 496px
+/// wide at 720 height) so the alpha-masked diagonal extends past the BG cartoon
+/// image on the right, the way OG's BitmapUtil.scalePartByWidth does.
+pub(super) const PINKBACK_DRAW_WIDTH: f32 = 900.0;
 
 pub(super) fn capsule_text_offset() -> glam::Vec2 {
     // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:200
