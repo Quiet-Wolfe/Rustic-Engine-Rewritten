@@ -88,6 +88,13 @@ pub struct DrawPart {
     pub color_offset: [f32; 4],
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FlattenTransform {
+    matrix: [f32; 6],
+    color: [f32; 4],
+    color_offset: [f32; 4],
+}
+
 impl Animation {
     pub fn parse(bytes: &[u8]) -> AnimateResult<Self> {
         let raw: RawAnimationFile = match serde_json::from_slice(bytes) {
@@ -174,9 +181,11 @@ impl Animation {
         self.flatten_layers(
             &self.layers,
             label.index.saturating_add(frame_offset),
-            self.stage_matrix,
-            self.stage_color,
-            self.stage_color_offset,
+            FlattenTransform {
+                matrix: self.stage_matrix,
+                color: self.stage_color,
+                color_offset: self.stage_color_offset,
+            },
             &mut Vec::new(),
             &mut parts,
         )?;
@@ -195,9 +204,11 @@ impl Animation {
         self.flatten_symbol(
             symbol,
             frame_index,
-            identity_matrix(),
-            identity_color(),
-            zero_color_offset(),
+            FlattenTransform {
+                matrix: identity_matrix(),
+                color: identity_color(),
+                color_offset: zero_color_offset(),
+            },
             &mut Vec::new(),
             &mut parts,
         )?;
@@ -208,9 +219,7 @@ impl Animation {
         &self,
         symbol: &Symbol,
         frame_index: u32,
-        parent_matrix: [f32; 6],
-        parent_color: [f32; 4],
-        parent_color_offset: [f32; 4],
+        transform: FlattenTransform,
         stack: &mut Vec<String>,
         parts: &mut Vec<DrawPart>,
     ) -> AnimateResult<()> {
@@ -222,15 +231,7 @@ impl Animation {
         }
         stack.push(symbol.name.clone());
         let frame_index = frame_index.min(symbol.duration().saturating_sub(1));
-        let result = self.flatten_layers(
-            &symbol.layers,
-            frame_index,
-            parent_matrix,
-            parent_color,
-            parent_color_offset,
-            stack,
-            parts,
-        );
+        let result = self.flatten_layers(&symbol.layers, frame_index, transform, stack, parts);
         stack.pop();
         result
     }
@@ -239,9 +240,7 @@ impl Animation {
         &self,
         layers: &[TimelineLayer],
         frame_index: u32,
-        parent_matrix: [f32; 6],
-        parent_color: [f32; 4],
-        parent_color_offset: [f32; 4],
+        transform: FlattenTransform,
         stack: &mut Vec<String>,
         parts: &mut Vec<DrawPart>,
     ) -> AnimateResult<()> {
@@ -251,15 +250,7 @@ impl Animation {
             };
             let frame_offset = frame_index.saturating_sub(frame.index);
             for element in &frame.elements {
-                self.flatten_element(
-                    element,
-                    frame_offset,
-                    parent_matrix,
-                    parent_color,
-                    parent_color_offset,
-                    stack,
-                    parts,
-                )?;
+                self.flatten_element(element, frame_offset, transform, stack, parts)?;
             }
         }
         Ok(())
@@ -269,16 +260,14 @@ impl Animation {
         &self,
         element: &Element,
         frame_offset: u32,
-        parent_matrix: [f32; 6],
-        parent_color: [f32; 4],
-        parent_color_offset: [f32; 4],
+        transform: FlattenTransform,
         stack: &mut Vec<String>,
         parts: &mut Vec<DrawPart>,
     ) -> AnimateResult<()> {
-        let matrix = compose_affine(parent_matrix, element.matrix);
+        let matrix = compose_affine(transform.matrix, element.matrix);
         let (color, color_offset) = concat_color(
-            parent_color,
-            parent_color_offset,
+            transform.color,
+            transform.color_offset,
             element.color,
             element.color_offset,
         );
@@ -303,9 +292,11 @@ impl Animation {
                 self.flatten_symbol(
                     symbol,
                     frame_index,
-                    matrix,
-                    color,
-                    color_offset,
+                    FlattenTransform {
+                        matrix,
+                        color,
+                        color_offset,
+                    },
                     stack,
                     parts,
                 )

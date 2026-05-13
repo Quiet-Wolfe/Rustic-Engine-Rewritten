@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 const COUNTDOWN_VOLUME: f32 = 0.6;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CountdownAudio {
     sounds: Option<CountdownSounds>,
     last_step: Option<CountdownStep>,
@@ -84,15 +84,6 @@ impl CountdownAudio {
         }
         self.last_step = step;
         step
-    }
-}
-
-impl Default for CountdownAudio {
-    fn default() -> Self {
-        Self {
-            sounds: None,
-            last_step: None,
-        }
     }
 }
 

@@ -131,7 +131,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_level_data_with_props_and_songs() {
+    fn parses_level_data_with_props_and_songs() -> AssetResult<()> {
         let level = LevelDefinition::parse(
             br##"{
               "version": "1.0.0",
@@ -145,13 +145,13 @@ mod tests {
               "background": "#F9CF51",
               "songs": ["bopeebo", "fresh", "dadbattle"]
             }"##,
-        )
-        .unwrap();
+        )?;
 
         assert_eq!(level.name, "DADDY DEAREST");
         assert_eq!(level.title_asset, "storymenu/titles/week1");
         assert_eq!(level.props[0].offset, AssetVec2::new(200.0, 80.0));
         assert_eq!(level.props[0].animations[0].name, "danceLeft");
         assert_eq!(level.songs, vec!["bopeebo", "fresh", "dadbattle"]);
+        Ok(())
     }
 }

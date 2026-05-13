@@ -171,13 +171,13 @@ pub(super) fn clone_frames(atlas: &SparrowAtlas, prefix: &str) -> Vec<SparrowFra
         .collect()
 }
 
-pub(super) fn frame_for_cursor<'a>(
-    frames: &'a [SparrowFrame],
+pub(super) fn frame_for_cursor(
+    frames: &[SparrowFrame],
     cursor: Samples,
     sample_rate: u32,
     fps: u16,
     looped: bool,
-) -> Option<&'a SparrowFrame> {
+) -> Option<&SparrowFrame> {
     if frames.is_empty() {
         return None;
     }
@@ -192,6 +192,7 @@ pub(super) fn frame_for_cursor<'a>(
     frames.get(index)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn sparrow_scaled_command(
     texture_id: AssetId,
     texture_width: u32,

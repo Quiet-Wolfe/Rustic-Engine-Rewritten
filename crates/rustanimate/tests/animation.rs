@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+// LINT-ALLOW: long-file Animate parser fixture coverage is intentionally table-heavy.
 
 use glam::Vec2;
 use rustanimate::{AnimateError, Animation, ElementKind};

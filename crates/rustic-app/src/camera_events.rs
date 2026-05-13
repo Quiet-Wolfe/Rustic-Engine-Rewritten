@@ -74,6 +74,7 @@ pub(crate) fn apply_camera_event(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_focus_camera(
     cameras: &mut CameraRegistry,
     camera_fx: &mut CameraFx,

@@ -1,4 +1,5 @@
 //! Score popup asset loading and transient draw commands.
+// LINT-ALLOW: long-file popup motion, atlas loading, and source-aligned tests stay together.
 
 use anyhow::{Context, Result};
 use rustic_asset::{load_png, AssetPath, OverlayResolver};

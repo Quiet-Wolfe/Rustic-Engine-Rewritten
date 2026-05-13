@@ -203,6 +203,7 @@ pub fn load_title_screen_assets(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_sparrow_clip(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -268,6 +269,7 @@ fn load_girlfriend_clip(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_animate_clip(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

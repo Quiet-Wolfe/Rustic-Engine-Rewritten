@@ -1,4 +1,5 @@
 //! Stage prop texture loading and render command wiring.
+// LINT-ALLOW: long-file stage prop loading, animation, and render tests stay together.
 
 use anyhow::{Context, Result};
 use rustic_asset::{

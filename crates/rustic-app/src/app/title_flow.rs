@@ -67,7 +67,7 @@ impl App {
             .title_assets
             .as_ref()
             .map(|assets| assets.commands(cursor, sample_rate))
-            .unwrap_or_else(RenderCommandList::new);
+            .unwrap_or_default();
         self.append_debug_overlay_commands(cursor, sample_rate);
     }
 
@@ -123,7 +123,7 @@ impl App {
             .main_menu_assets
             .as_ref()
             .map(|assets| assets.commands(self.main_menu_index, cursor, sample_rate))
-            .unwrap_or_else(RenderCommandList::new);
+            .unwrap_or_default();
         self.append_debug_overlay_commands(cursor, sample_rate);
     }
 

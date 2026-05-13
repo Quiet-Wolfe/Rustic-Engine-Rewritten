@@ -1,4 +1,5 @@
 //! Parser for verbose Adobe Animate JSFL `Animation.json` exports.
+// LINT-ALLOW: long-file alternate Animate schema parser mirrors exported JSON shape.
 
 use crate::animation::{
     normalize_symbol_first_frame, normalize_symbol_loop_mode, Animation, AnimationLabel,

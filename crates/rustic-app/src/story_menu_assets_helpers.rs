@@ -78,6 +78,7 @@ pub(super) fn solid_command(
     cmd
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn sparrow_command(
     texture_id: AssetId,
     texture_width: u32,

@@ -1,4 +1,5 @@
 //! Funkin' v0.8.5 note, receptor, and hold-trail rendering.
+// LINT-ALLOW: long-file note, receptor, hold-trail rendering, and tests stay together.
 use crate::lane_state::ReceptorState;
 use anyhow::{Context, Result};
 use rustic_asset::{

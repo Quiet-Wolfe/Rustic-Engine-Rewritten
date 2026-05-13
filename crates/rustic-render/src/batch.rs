@@ -16,7 +16,7 @@ use crate::texture::Texture;
 use bytemuck::{Pod, Zeroable};
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 /// GPU instance row matching `INSTANCE_LAYOUT` in `pipeline.rs`.
 /// Keep field order in sync with `ATTRIBUTES`.
@@ -190,25 +190,13 @@ struct Run {
     instance_count: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SpriteBatcher {
     instances: Vec<SpriteInstance>,
     instance_buf: Option<wgpu::Buffer>,
     instance_capacity: u32,
     camera_bindings: HashMap<CameraId, CameraBinding>,
     atlas_bindings: HashMap<(AssetId, FilterMode), wgpu::BindGroup>,
-}
-
-impl Default for SpriteBatcher {
-    fn default() -> Self {
-        Self {
-            instances: Vec::new(),
-            instance_buf: None,
-            instance_capacity: 0,
-            camera_bindings: HashMap::new(),
-            atlas_bindings: HashMap::new(),
-        }
-    }
 }
 
 impl SpriteBatcher {
@@ -322,7 +310,7 @@ impl SpriteBatcher {
 
         for run in &runs {
             let key = (run.atlas, run.filter);
-            if !self.atlas_bindings.contains_key(&key) {
+            if let Entry::Vacant(entry) = self.atlas_bindings.entry(key) {
                 if let Some(tex) = atlases.get(&run.atlas) {
                     let atlas_bg = rs.device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("rustic.sprite.atlas_bg"),
@@ -340,7 +328,7 @@ impl SpriteBatcher {
                             },
                         ],
                     });
-                    self.atlas_bindings.insert(key, atlas_bg);
+                    entry.insert(atlas_bg);
                 }
             }
         }

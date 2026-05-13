@@ -379,43 +379,43 @@ fn load_scene_for_ids(
     scene.bitmap_text_skin = Some(load_bitmap_text_assets(
         device,
         queue,
-        &resolver,
+        resolver,
         &mut scene.textures,
     )?);
     scene.note_skin = Some(load_note_skin(
         device,
         queue,
-        &resolver,
+        resolver,
         &mut scene.textures,
     )?);
     scene.note_splash_skin = Some(load_note_splash_assets(
         device,
         queue,
-        &resolver,
+        resolver,
         &mut scene.textures,
     )?);
     scene.hold_cover_skin = Some(load_hold_cover_assets(
         device,
         queue,
-        &resolver,
+        resolver,
         &mut scene.textures,
     )?);
     scene.hud_skin = Some(load_hud_assets(
         device,
         queue,
-        &resolver,
+        resolver,
         &mut scene.textures,
     )?);
     scene.popup_skin = Some(load_popup_assets(
         device,
         queue,
-        &resolver,
+        resolver,
         &mut scene.textures,
     )?);
     scene.countdown_skin = Some(load_countdown_assets(
         device,
         queue,
-        &resolver,
+        resolver,
         &mut scene.textures,
     )?);
     Ok(scene)
@@ -461,6 +461,7 @@ fn character_id(id: &str) -> Option<&str> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_stage_characters(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
