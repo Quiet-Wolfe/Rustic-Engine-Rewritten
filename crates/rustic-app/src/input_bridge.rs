@@ -23,6 +23,7 @@ pub fn map_key(key: PhysicalKey) -> Option<InputAction> {
         KeyCode::ArrowRight | KeyCode::KeyD => InputAction::LaneRight,
         KeyCode::Enter | KeyCode::Space => InputAction::Confirm,
         KeyCode::Escape => InputAction::Back,
+        KeyCode::KeyP => InputAction::Pause,
         KeyCode::F3 => InputAction::Debug,
         KeyCode::F5 => InputAction::Reset,
         KeyCode::F6 => InputAction::UiLeft,
@@ -59,6 +60,14 @@ mod tests {
         assert_eq!(
             map_key(PhysicalKey::Code(KeyCode::F7)),
             Some(InputAction::UiRight)
+        );
+    }
+
+    #[test]
+    fn p_key_drives_pause_action() {
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::KeyP)),
+            Some(InputAction::Pause)
         );
     }
 }

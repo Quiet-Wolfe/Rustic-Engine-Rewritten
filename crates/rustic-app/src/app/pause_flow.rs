@@ -24,7 +24,11 @@ impl App {
             if state == ElementState::Pressed
                 && self.mode == super::title_flow::AppMode::Play
                 && self.game_over.is_none()
-                && matches!(action, InputAction::Pause | InputAction::Back)
+                // ref: bdedc0aa:source/funkin/input/Controls.hx:792-793
+                && matches!(
+                    action,
+                    InputAction::Pause | InputAction::Back | InputAction::Confirm
+                )
             {
                 self.enter_pause_menu(cursor);
                 return true;
