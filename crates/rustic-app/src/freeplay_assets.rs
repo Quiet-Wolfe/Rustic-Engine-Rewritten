@@ -108,7 +108,6 @@ const CAPSULE_ENTER_OFFSET_X: f32 = 600.0;
 #[derive(Debug)]
 pub struct FreeplayAssets {
     songs: Vec<FreeplayCapsule>,
-    pink_back: StaticTexture,
     bg_image: StaticTexture,
     capsule_atlas: SparrowAtlasHandle,
     capsule_selected_frames: Vec<SparrowFrame>,
@@ -173,12 +172,36 @@ impl FreeplayAssets {
             295,
         ));
 
-        commands.push(self.pink_back.background_command(
+        // Yellow back: a solid rectangle covering everything behind BF, then a
+        // right-triangle taper past his right shoulder that points toward the
+        // album / FNF OST text in the bottom-right. Approximated with thin
+        // horizontal strips since we don't have a triangle primitive.
+        let solid_right = helpers::PINKBACK_SOLID_RIGHT_X;
+        let taper_end = helpers::PINKBACK_TAPER_END_X;
+        let bottom_y = helpers::PINKBACK_BOTTOM_Y;
+        commands.push(solid_command(
             glam::vec2(back_x, 0.0),
+            glam::vec2(solid_right, bottom_y),
             PINKBACK_COLOR,
             -90,
-            pink_back_size,
         ));
+        let strips = helpers::PINKBACK_TAPER_STRIPS;
+        let strip_height = bottom_y / strips as f32;
+        let taper_width = (taper_end - solid_right).max(0.0);
+        for i in 0..strips {
+            let t = i as f32 / strips as f32; // 0 at top, 1 at bottom
+            let strip_w = taper_width * (1.0 - t);
+            if strip_w <= 0.0 {
+                continue;
+            }
+            commands.push(solid_command(
+                glam::vec2(back_x + solid_right, i as f32 * strip_height),
+                // +1px overlap to avoid hairline gaps between strips.
+                glam::vec2(strip_w, strip_height + 1.0),
+                PINKBACK_COLOR,
+                -90,
+            ));
+        }
         commands.push(solid_command(
             glam::vec2(back_x + ORANGE_BAR_X, ORANGE_BAR_Y),
             glam::vec2(pink_back_size.x, ORANGE_BAR_HEIGHT),
@@ -605,10 +628,9 @@ impl FreeplayAssets {
     }
 
     fn pink_back_draw_size(&self) -> glam::Vec2 {
-        let aspect = self.pink_back.width.max(1) as f32 / self.pink_back.height.max(1) as f32;
-        let height = PINKBACK_TARGET_HEIGHT;
-        let width = height * aspect + helpers::PINKBACK_CUTOUT_WIDTH;
-        glam::vec2(width, height)
+        // Width matches the right edge of the triangular taper, so the orange
+        // bar and BG image position track the back's actual footprint.
+        glam::vec2(helpers::PINKBACK_TAPER_END_X, PINKBACK_TARGET_HEIGHT)
     }
 
     fn push_capsules(

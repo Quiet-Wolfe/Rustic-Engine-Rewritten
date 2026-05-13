@@ -80,13 +80,20 @@ pub(super) fn bg_image_scale(bg: &StaticTexture) -> f32 {
     PINKBACK_TARGET_HEIGHT / bg.height.max(1) as f32
 }
 
-/// Extra horizontal pixels added to the pinkBack render width to mimic
-/// `BitmapUtil.scalePartByWidth(pinkBack, CUTOUT_WIDTH)` from OG. Without
-/// this the back stops well short of where the OG's slanted right edge
-/// sits, since pinkBack.png is only ~524px wide at its native aspect.
-/// ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:47
-/// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:121 (CUTOUT_WIDTH)
-pub(super) const PINKBACK_CUTOUT_WIDTH: f32 = 200.0;
+/// Where the solid yellow back behind BF ends (his right shoulder, roughly).
+/// To the right of this x the back tapers as a right triangle pointing at
+/// the album/OST text in the bottom-right.
+pub(super) const PINKBACK_SOLID_RIGHT_X: f32 = 360.0;
+
+/// Where the triangular taper points to. Past this x the yellow back
+/// is fully gone, exposing the BF/GF backdrop image.
+pub(super) const PINKBACK_TAPER_END_X: f32 = 780.0;
+
+/// Vertical extent of the back; tapers between top and the orange bar.
+pub(super) const PINKBACK_BOTTOM_Y: f32 = 440.0;
+
+/// Number of horizontal strips used to approximate the triangle taper.
+pub(super) const PINKBACK_TAPER_STRIPS: usize = 48;
 
 pub(super) fn capsule_text_offset() -> glam::Vec2 {
     // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:200
