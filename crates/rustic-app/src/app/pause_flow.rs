@@ -53,6 +53,7 @@ impl App {
             }
             PauseMenuAction::ExitToMenu => {
                 self.pause_menu = None;
+                self.pause_music.stop(&self.mixer);
                 self.return_to_play_menu();
             }
             PauseMenuAction::None => self.rebuild_pause_commands(),
@@ -71,6 +72,9 @@ impl App {
             Ok(())
         }) {
             tracing::warn!(target: "rustic.audio", "pause gameplay audio: {e:#}");
+        }
+        if self.audio_output.is_some() {
+            self.pause_music.start_or_warn(&self.mixer);
         }
         self.rebuild_pause_commands();
     }
@@ -93,6 +97,7 @@ impl App {
             }
         }
 
+        self.pause_music.update_gain(&self.mixer);
         menu.append_commands(&mut sprites, &mut text, self.preview_selection);
         self.cmds = sprites;
         self.text_cmds = text;
@@ -102,6 +107,7 @@ impl App {
         let Some(menu) = self.pause_menu.take() else {
             return;
         };
+        self.pause_music.stop(&self.mixer);
         self.resume_song_clock_from(menu.cursor());
         if self.song_started {
             if let Err(e) = self.mixer.edit(|mixer| {
@@ -116,11 +122,13 @@ impl App {
 
     fn restart_song_from_pause(&mut self) {
         self.pause_menu = None;
+        self.pause_music.stop(&self.mixer);
         self.load_selected_song();
     }
 
     fn change_difficulty_from_pause(&mut self, difficulty: crate::preview_song::PreviewDifficulty) {
         self.pause_menu = None;
+        self.pause_music.stop(&self.mixer);
         self.preview_selection =
             crate::preview_song::PreviewSelection::new(self.preview_selection.song, difficulty);
         if !self.story_playlist.is_empty() {

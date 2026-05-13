@@ -400,6 +400,7 @@ impl App {
         self.play_state = None;
         self.game_over = None;
         self.pause_menu = None;
+        self.pause_music.stop(&self.mixer);
         self.characters = None;
         self.bitmap_text_skin = None;
         self.note_skin = None;

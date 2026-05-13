@@ -32,6 +32,7 @@ pub mod miss_note_audio;
 pub mod note_assets;
 pub mod note_splash_assets;
 pub mod options_menu_assets;
+pub mod pause_audio;
 pub mod pause_menu;
 pub mod popup_assets;
 pub mod preview_song;

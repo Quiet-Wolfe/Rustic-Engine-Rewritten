@@ -24,6 +24,7 @@ use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKi
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::options_menu_assets::{OptionsMenuAssets, OptionsMenuPage};
+use crate::pause_audio::PauseMusic;
 use crate::pause_menu::{ensure_pause_overlay_texture, PauseMenuState};
 use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
@@ -108,6 +109,7 @@ struct App {
     story_playlist_index: usize,
     story_playlist_difficulty: PreviewDifficulty,
     pause_menu: Option<PauseMenuState>,
+    pause_music: PauseMusic,
     title_start: Instant,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -173,6 +175,7 @@ impl App {
             story_playlist_index: 0,
             story_playlist_difficulty: PreviewDifficulty::Normal,
             pause_menu: None,
+            pause_music: PauseMusic::default(),
             title_start: now,
             play_state: None,
             song_start: now,
