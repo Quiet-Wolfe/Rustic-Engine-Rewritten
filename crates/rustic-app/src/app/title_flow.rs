@@ -79,6 +79,16 @@ impl App {
         self.update_freeplay_preview();
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = self.title_cursor(sample_rate);
+        if let Some(at) = self.freeplay_confirm_at {
+            if cursor.0 >= at.0 {
+                self.freeplay_confirm_at = None;
+                self.enter_play();
+                return;
+            }
+        }
+        if let Some(assets) = self.freeplay_assets.as_mut() {
+            assets.tick(cursor, sample_rate);
+        }
         if let Some(assets) = self.freeplay_assets.as_ref() {
             self.cmds = assets.commands(
                 self.preview_selection,
@@ -411,6 +421,12 @@ impl App {
         if state != ElementState::Pressed {
             return true;
         }
+        // While the freeplay Confirm animation is playing, ignore further input
+        // so the player can't double-confirm or back out mid-transition.
+        // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:2738-2745 (busy flag)
+        if self.freeplay_confirm_at.is_some() {
+            return true;
+        }
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:1815-1868
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:2578-2634 (random confirm)
         let old_index = self.freeplay_selected_index;
@@ -434,7 +450,7 @@ impl App {
                     self.play_menu_sound(MenuSound::Cancel);
                     return true;
                 }
-                self.enter_play();
+                self.start_freeplay_confirm();
             }
             InputAction::Back => {
                 self.play_menu_sound(MenuSound::Cancel);
@@ -456,6 +472,7 @@ impl App {
     pub(super) fn enter_song_select(&mut self) {
         self.mode = AppMode::SongSelect;
         self.freeplay_selected_index = 0;
+        self.freeplay_confirm_at = None;
         self.title_assets = None;
         self.main_menu_assets = None;
         self.credits_assets = None;
@@ -466,8 +483,33 @@ impl App {
         self.clear_play_state_for_menu();
         self.load_freeplay_assets();
         self.sync_freeplay_selection_to_preview();
+        // Drop the DJ into its Intro animation anchored at "now" so the eject-in
+        // plays once before settling into Idle.
+        // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:848-857
+        let sample_rate = play_sample_rate(&self.mixer);
+        let cursor = self.title_cursor(sample_rate);
+        if let Some(assets) = self.freeplay_assets.as_mut() {
+            assets.reset_dj_intro(cursor);
+        }
         self.start_freeplay_preview();
         self.rebuild_song_select_commands();
+    }
+
+    /// Start the confirm sequence: trigger the DJ Confirm animation and gate
+    /// `enter_play()` until the start-delay elapses. The Confirm sound was
+    /// already played by the caller.
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:2744-2846
+    fn start_freeplay_confirm(&mut self) {
+        let sample_rate = play_sample_rate(&self.mixer);
+        let cursor = self.title_cursor(sample_rate);
+        if let Some(assets) = self.freeplay_assets.as_mut() {
+            assets.dj_enter_confirm(cursor);
+        }
+        // ref: bdedc0aa:assets/preload/data/ui/freeplay/styles/bf.json:8 (getStartDelay ~0.5s)
+        let delay_samples = (f64::from(sample_rate) * 0.5) as i64;
+        self.freeplay_confirm_at = Some(Samples(cursor.0 + delay_samples));
+        // No further input until the delay elapses; the per-frame
+        // rebuild_song_select_commands hook calls enter_play() at that point.
     }
 
     fn sync_freeplay_selection_to_preview(&mut self) {
@@ -563,6 +605,7 @@ impl App {
         self.game_over = None;
         self.game_over_restart = None;
         self.pause_menu = None;
+        self.freeplay_confirm_at = None;
         self.pause_music.stop(&self.mixer);
         self.game_over_audio.stop(&self.mixer);
         self.stop_freeplay_preview();
@@ -596,6 +639,8 @@ impl App {
 
     pub(super) fn enter_play(&mut self) {
         self.mode = AppMode::Play;
+        self.death_counter = 0;
+        self.practice_mode = false;
         self.stop_menu_music();
         self.stop_freeplay_preview();
         self.title_assets = None;

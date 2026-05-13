@@ -1,9 +1,9 @@
 //! Freeplay DJ sprite from Funkin' v0.8.5.
 //!
-//! Phase 2 covers the BF DJ idle frame-label loop. Confirm/intro/fistPump,
-//! AFK easter egg, and the multi-style (Sparrow / Packer / MultiSparrow) DJ
-//! paths come later - for now we hard-code BF's Adobe Animate atlas at
-//! `images/freeplay/freeplay-boyfriend/`.
+//! Drives BF's `Intro → Idle` and `Confirm` frame labels. FistPump, FistPumpLoss,
+//! AFK easter egg, NewUnlock, and CharSelect states are deferred. Multi-style
+//! (Sparrow / Packer / MultiSparrow) DJ paths are also deferred - for now we
+//! hard-code BF's Adobe Animate atlas at `images/freeplay/freeplay-boyfriend/`.
 //!
 //! ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx
 //! ref: bdedc0aa:source/funkin/ui/freeplay/dj/AnimateAtlasFreeplayDJ.hx
@@ -22,7 +22,10 @@ use rustic_render::{DrawCommand, FilterMode, Texture};
 
 // ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx:221-233 (resetPosition non-widescreen branch)
 const DJ_FPS: u16 = 24;
+// ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx:10-59 FreeplayDJState enum
+const DJ_INTRO_LABEL: &str = "Intro";
 const DJ_IDLE_LABEL: &str = "Idle";
+const DJ_CONFIRM_LABEL: &str = "Confirm";
 
 /// Logical paths to assets the BF DJ depends on.
 pub const REQUIRED_DJ_ASSETS: &[&str] = &[
@@ -31,28 +34,84 @@ pub const REQUIRED_DJ_ASSETS: &[&str] = &[
     "images/freeplay/freeplay-boyfriend/spritemap1.png",
 ];
 
+/// Subset of FreeplayDJState we drive in Phase 1 (Intro → Idle, plus Confirm
+/// on song select). Easter-egg / fist-pump / char-select branches are deferred.
+/// ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx:10-59
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DjState {
+    Intro,
+    Idle,
+    Confirm,
+}
+
 #[derive(Debug)]
 pub struct FreeplayDJ {
     texture_id: AssetId,
     animation: AnimateAnimation,
     atlas: AnimateAtlas,
+    intro_frame_count: u32,
     idle_frame_count: u32,
+    confirm_frame_count: u32,
+    state: DjState,
+    state_started_at: Samples,
     pub texture: Option<Texture>,
 }
 
 impl FreeplayDJ {
     pub fn commands(&self, cursor: Samples, sample_rate: u32) -> Vec<DrawCommand> {
-        let frame_offset = label_frame_index(cursor, sample_rate, DJ_FPS, self.idle_frame_count);
-        let Ok(parts) = self
-            .animation
-            .flatten_label_frame(DJ_IDLE_LABEL, frame_offset)
-        else {
+        let (label, frame_count, looped) = match self.state {
+            DjState::Intro => (DJ_INTRO_LABEL, self.intro_frame_count, false),
+            DjState::Idle => (DJ_IDLE_LABEL, self.idle_frame_count, true),
+            DjState::Confirm => (DJ_CONFIRM_LABEL, self.confirm_frame_count, false),
+        };
+        let frame_offset = label_frame_offset(
+            cursor,
+            self.state_started_at,
+            sample_rate,
+            DJ_FPS,
+            frame_count,
+            looped,
+        );
+        let Ok(parts) = self.animation.flatten_label_frame(label, frame_offset) else {
             return Vec::new();
         };
         parts
             .iter()
             .filter_map(|part| self.command_for_part(part))
             .collect()
+    }
+
+    /// Re-enter the Intro animation anchored at `cursor`. Auto-transitions to
+    /// Idle once `tick()` sees the intro frame budget exhausted.
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx:14-19
+    pub fn reset_intro(&mut self, cursor: Samples) {
+        self.state = DjState::Intro;
+        self.state_started_at = cursor;
+    }
+
+    /// Trigger the Confirm animation (plays once and holds last frame).
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx:36-39
+    pub fn enter_confirm(&mut self, cursor: Samples) {
+        self.state = DjState::Confirm;
+        self.state_started_at = cursor;
+    }
+
+    /// Advance the DJ state machine. Currently only used to drop Intro → Idle
+    /// when the Intro label finishes; Confirm/Idle terminate themselves via
+    /// the frame-offset clamp/wrap in `commands()`.
+    pub fn tick(&mut self, cursor: Samples, sample_rate: u32) {
+        if self.state != DjState::Intro {
+            return;
+        }
+        let elapsed = cursor.0.saturating_sub(self.state_started_at.0).max(0) as u128;
+        let frame = (elapsed * u128::from(DJ_FPS) / u128::from(sample_rate.max(1))) as u32;
+        if frame >= self.intro_frame_count {
+            let intro_samples = (u128::from(self.intro_frame_count)
+                * u128::from(sample_rate.max(1))
+                / u128::from(DJ_FPS)) as i64;
+            self.state = DjState::Idle;
+            self.state_started_at = Samples(self.state_started_at.0 + intro_samples);
+        }
     }
 
     fn command_for_part(&self, part: &AnimateDrawPart) -> Option<DrawCommand> {
@@ -100,26 +159,52 @@ pub fn load_freeplay_dj(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<Fr
         FilterMode::Linear,
         Some(texture_path.as_str()),
     );
+    let intro_frame_count = animation
+        .label(DJ_INTRO_LABEL)
+        .map(|label| label.duration.max(1))
+        .unwrap_or(1);
     let idle_frame_count = animation
         .label(DJ_IDLE_LABEL)
+        .map(|label| label.duration.max(1))
+        .unwrap_or(1);
+    let confirm_frame_count = animation
+        .label(DJ_CONFIRM_LABEL)
         .map(|label| label.duration.max(1))
         .unwrap_or(1);
     Ok(FreeplayDJ {
         texture_id,
         animation,
         atlas,
+        intro_frame_count,
         idle_frame_count,
+        confirm_frame_count,
+        // Caller calls `reset_intro(cursor)` from `enter_song_select` so the
+        // intro plays from the moment the screen mounts. Default to Idle so a
+        // stale/uninitialized DJ never gets stuck on a frozen first intro frame.
+        state: DjState::Idle,
+        state_started_at: Samples(0),
         texture: Some(texture),
     })
 }
 
-fn label_frame_index(cursor: Samples, sample_rate: u32, fps: u16, frame_count: u32) -> u32 {
+fn label_frame_offset(
+    cursor: Samples,
+    state_started_at: Samples,
+    sample_rate: u32,
+    fps: u16,
+    frame_count: u32,
+    looped: bool,
+) -> u32 {
     if frame_count <= 1 {
         return 0;
     }
-    let elapsed = cursor.0.max(0) as u128;
+    let elapsed = cursor.0.saturating_sub(state_started_at.0).max(0) as u128;
     let frame = (elapsed * u128::from(fps) / u128::from(sample_rate.max(1))) as u32;
-    frame % frame_count.max(1)
+    if looped {
+        frame % frame_count.max(1)
+    } else {
+        frame.min(frame_count.saturating_sub(1))
+    }
 }
 
 fn asset_id_for_path(path: &AssetPath) -> AssetId {
@@ -136,11 +221,60 @@ mod tests {
     use super::*;
 
     #[test]
-    fn label_frame_index_loops() {
-        assert_eq!(label_frame_index(Samples(0), 48_000, 24, 10), 0);
-        // 12 frames * (48000/24) samples = 24000 samples per frame
-        assert_eq!(label_frame_index(Samples(2_000), 48_000, 24, 10), 1);
-        assert_eq!(label_frame_index(Samples(2_000 * 10), 48_000, 24, 10), 0);
+    fn label_frame_offset_loops_when_idle() {
+        // 48000 / 24 = 2000 samples per frame; anchor 0 with looped=true.
+        assert_eq!(
+            label_frame_offset(Samples(0), Samples(0), 48_000, 24, 10, true),
+            0
+        );
+        assert_eq!(
+            label_frame_offset(Samples(2_000), Samples(0), 48_000, 24, 10, true),
+            1
+        );
+        assert_eq!(
+            label_frame_offset(Samples(2_000 * 10), Samples(0), 48_000, 24, 10, true),
+            0
+        );
+    }
+
+    #[test]
+    fn label_frame_offset_clamps_when_one_shot() {
+        // Non-looped (Intro / Confirm) holds the last frame past the duration.
+        assert_eq!(
+            label_frame_offset(Samples(2_000 * 4), Samples(0), 48_000, 24, 10, false),
+            4
+        );
+        assert_eq!(
+            label_frame_offset(Samples(2_000 * 100), Samples(0), 48_000, 24, 10, false),
+            9
+        );
+    }
+
+    #[test]
+    fn label_frame_offset_is_relative_to_state_start() {
+        // Anchoring at a non-zero start cursor keeps the intro starting from frame 0.
+        assert_eq!(
+            label_frame_offset(
+                Samples(2_000 * 5),
+                Samples(2_000 * 5),
+                48_000,
+                24,
+                17,
+                false
+            ),
+            0
+        );
+        assert_eq!(
+            label_frame_offset(
+                Samples(2_000 * 7),
+                Samples(2_000 * 5),
+                48_000,
+                24,
+                17,
+                false
+            ),
+            2
+        );
     }
 
     /// Locks the DJ source asset inventory.

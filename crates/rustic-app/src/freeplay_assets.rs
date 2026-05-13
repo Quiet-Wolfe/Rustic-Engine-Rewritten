@@ -338,13 +338,16 @@ impl FreeplayAssets {
         commands.push(title);
 
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:349 (ostName)
-        let mut ost = TextCommand::new("MAIN OST V1", glam::vec2(950.0, 14.0), 36.0);
+        // ref: bdedc0aa:source/funkin/util/Constants.hx:292 (DEFAULT_OST_NAME)
+        let mut ost = TextCommand::new("OFFICIAL OST", glam::vec2(950.0, 14.0), 36.0);
         ost.color = glam::Vec4::new(1.0, 1.0, 1.0, 0.9);
         ost.z = 300;
         commands.push(ost);
 
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:347 (txtCompletion)
-        let mut completion = TextCommand::new("100%", glam::vec2(1280.0 - 95.0, 87.0), 32.0);
+        // We have no persisted score data yet, so render the empty state (0%)
+        // instead of the placeholder 100%.
+        let mut completion = TextCommand::new("0%", glam::vec2(1280.0 - 95.0, 87.0), 32.0);
         completion.color = glam::Vec4::new(1.0, 1.0, 1.0, 1.0);
         completion.z = 312;
         commands.push(completion);
@@ -375,8 +378,11 @@ impl FreeplayAssets {
             commands.push(text);
         }
 
-        // ref: bdedc0aa:source/funkin/ui/freeplay/LetterSort.hx:54-73 letters
-        const LETTERS: [&str; 5] = ["#", "@", "ALL", "A", "B"];
+        // ref: bdedc0aa:source/funkin/ui/freeplay/LetterSort.hx:275-279 regexLetters
+        // The slot at index 2 is the active category (center). Neighbors are
+        // the previous/next entries in the alphabet array; ALL is centered by
+        // default. "A-B" and "C-D" are letter ranges, rendered with a hyphen.
+        const LETTERS: [&str; 5] = ["#", "@", "ALL", "A-B", "C-D"];
         for (i, glyph) in LETTERS.iter().enumerate() {
             let is_center = i == 2;
             let scale = if is_center { 1.0 } else { 0.8 };
@@ -473,6 +479,31 @@ impl FreeplayAssets {
                     commands.push(cmd);
                 }
             }
+        }
+    }
+
+    /// Advance per-frame freeplay UI state (currently just the DJ state machine).
+    /// Call before `commands()` each frame so Intro→Idle transitions land.
+    pub fn tick(&mut self, cursor: Samples, sample_rate: u32) {
+        if let Some(dj) = self.dj.as_mut() {
+            dj.tick(cursor, sample_rate);
+        }
+    }
+
+    /// Reset the DJ into the Intro animation. Called on entering Freeplay so
+    /// BF "ejects in" before settling into Idle.
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:848-857
+    pub fn reset_dj_intro(&mut self, cursor: Samples) {
+        if let Some(dj) = self.dj.as_mut() {
+            dj.reset_intro(cursor);
+        }
+    }
+
+    /// Trigger the DJ Confirm animation when a song is selected.
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:2744-2846
+    pub fn dj_enter_confirm(&mut self, cursor: Samples) {
+        if let Some(dj) = self.dj.as_mut() {
+            dj.enter_confirm(cursor);
         }
     }
 

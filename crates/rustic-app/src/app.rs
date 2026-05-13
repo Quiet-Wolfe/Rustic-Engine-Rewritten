@@ -108,6 +108,10 @@ struct App {
     options_menu_index: usize,
     freeplay_assets: Option<FreeplayAssets>,
     freeplay_selected_index: usize,
+    /// When Some, the freeplay Confirm animation is playing and we'll enter
+    /// gameplay once the title cursor passes this sample anchor.
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:2744-2846 (start delay)
+    freeplay_confirm_at: Option<Samples>,
     story_menu_assets: Option<StoryMenuAssets>,
     story_menu_index: usize,
     story_menu_difficulty: PreviewDifficulty,
@@ -120,6 +124,8 @@ struct App {
     pause_music: PauseMusic,
     game_over_audio: GameOverAudio,
     game_over_restart: Option<GameOverRestart>,
+    death_counter: u32,
+    practice_mode: bool,
     title_start: Instant,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -180,6 +186,7 @@ impl App {
             options_menu_index: 0,
             freeplay_assets: None,
             freeplay_selected_index: 0,
+            freeplay_confirm_at: None,
             story_menu_assets: None,
             story_menu_index: 1,
             story_menu_difficulty: PreviewDifficulty::Normal,
@@ -192,6 +199,8 @@ impl App {
             pause_music: PauseMusic::default(),
             game_over_audio: GameOverAudio::default(),
             game_over_restart: None,
+            death_counter: 0,
+            practice_mode: false,
             title_start: now,
             play_state: None,
             song_start: now,
@@ -411,7 +420,7 @@ impl App {
             song_events = play_state.resolve_song_events(cursor);
             opponent_hits = play_state.resolve_opponent_notes(cursor);
             late_misses = play_state.expire_late_notes(cursor, sample_rate);
-            dead = play_state.is_dead();
+            dead = play_state.is_dead() && !self.practice_mode;
             bpm = Some(play_state.bpm);
         }
         if dead {
@@ -600,7 +609,7 @@ impl App {
             if event.action == InputAction::Reset {
                 // ref: bdedc0aa:source/funkin/play/PlayState.hx:1243-1258
                 play_state.health = 0.0;
-                should_enter_game_over = true;
+                should_enter_game_over = !self.practice_mode;
             } else {
                 let Some(lane) = lane_for_action(event.action) else {
                     return;
@@ -634,7 +643,7 @@ impl App {
                     anim.player_note_miss(lane, cursor, sample_rate, play_state.bpm);
                     play_miss_sfx(&self.mixer, cursor, MissNoteKind::Ghost);
                 }
-                should_enter_game_over = play_state.is_dead();
+                should_enter_game_over = play_state.is_dead() && !self.practice_mode;
             }
         }
         if restore_vocals {
