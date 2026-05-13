@@ -465,8 +465,22 @@ impl App {
         self.pause_menu = None;
         self.clear_play_state_for_menu();
         self.load_freeplay_assets();
+        self.sync_freeplay_selection_to_preview();
         self.start_freeplay_preview();
         self.rebuild_song_select_commands();
+    }
+
+    fn sync_freeplay_selection_to_preview(&mut self) {
+        let Some(assets) = self.freeplay_assets.as_ref() else {
+            return;
+        };
+        let Some(index) = assets.index_of(self.preview_selection.song) else {
+            return;
+        };
+        self.freeplay_selected_index = index;
+        if let Some(song) = assets.song_at(index) {
+            self.preview_selection = PreviewSelection::new(song, self.preview_selection.difficulty);
+        }
     }
 
     fn move_freeplay_selection(&mut self, delta: isize) {
