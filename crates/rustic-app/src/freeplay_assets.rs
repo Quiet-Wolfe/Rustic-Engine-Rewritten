@@ -99,6 +99,14 @@ const CAPSULE_TEXT_COLOR: glam::Vec4 =
 
 const WHITE_TEXTURE_ID: AssetId = AssetId::new(0x4672_6565_706c_6179);
 
+// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:725-744 (applyEnter tweens)
+// OG runs the slide-in over 0.6s with quartOut easing; we reuse the same
+// duration so the DJ Intro (~17 frames @ 24fps = 0.71s) lands a beat after.
+const ENTER_DURATION_SECS: f64 = 0.6;
+// How far capsules slide in from the right edge before settling.
+// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:737 (capsule x tween)
+const CAPSULE_ENTER_OFFSET_X: f32 = 600.0;
+
 #[derive(Debug)]
 pub struct FreeplayAssets {
     songs: Vec<FreeplayCapsule>,
@@ -129,6 +137,9 @@ pub struct FreeplayAssets {
     sparkle_frames: Vec<SparrowFrame>,
     clear_box: Option<StaticTexture>,
     backing_text_skin: Option<BitmapTextSkin>,
+    /// Cursor when the freeplay enter animation started, used to drive the
+    /// pinkBack/cardGlow/overhang/capsule slide-ins.
+    enter_started_at: Option<Samples>,
     pub textures: HashMap<AssetId, Texture>,
 }
 
@@ -148,19 +159,25 @@ impl FreeplayAssets {
             -100,
         ));
 
+        let enter_t = self.enter_progress(cursor, sample_rate);
+        let back_x = -(1.0 - enter_t) * 1280.0;
+        // Overhang sits at y=-100 when settled; before the tween completes it
+        // hides above the screen by another `height` pixels.
+        let overhang_y = -100.0 - (1.0 - enter_t) * 164.0;
+        let pink_back_size = self.pink_back_draw_size();
+
         // overhangStuff: solid-black bar behind the FREEPLAY / OFFICIAL OST text
         // along the top. OG positions it at y=-100 with height 164 (so the visible
         // strip is ~64px). ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:529-541
         commands.push(solid_command(
-            glam::vec2(0.0, -100.0),
+            glam::vec2(0.0, overhang_y),
             glam::vec2(1280.0, 164.0),
             glam::Vec4::new(0.0, 0.0, 0.0, 1.0),
             295,
         ));
 
-        let pink_back_size = self.pink_back_draw_size();
         commands.push(self.pink_back.background_command(
-            glam::vec2(0.0, 0.0),
+            glam::vec2(back_x, 0.0),
             PINKBACK_COLOR,
             -90,
             pink_back_size,
@@ -172,7 +189,7 @@ impl FreeplayAssets {
         if let Some(card_glow) = self.card_glow.as_ref() {
             let scale = pink_back_size.y / card_glow.height.max(1) as f32;
             commands.push(card_glow.command(
-                glam::vec2(-30.0, -30.0),
+                glam::vec2(back_x - 30.0, -30.0),
                 CARDGLOW_COLOR,
                 -89,
                 glam::vec2(
@@ -182,7 +199,7 @@ impl FreeplayAssets {
             ));
         }
         commands.push(solid_command(
-            glam::vec2(ORANGE_BAR_X, ORANGE_BAR_Y),
+            glam::vec2(back_x + ORANGE_BAR_X, ORANGE_BAR_Y),
             glam::vec2(pink_back_size.x, ORANGE_BAR_HEIGHT),
             ORANGE_BAR_COLOR,
             -85,
@@ -190,7 +207,7 @@ impl FreeplayAssets {
         // alsoOrangeLOL: small 100-wide hot-yellow strip at the orange bar's left edge.
         // ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:58
         commands.push(solid_command(
-            glam::vec2(0.0, ORANGE_BAR_Y),
+            glam::vec2(back_x, ORANGE_BAR_Y),
             glam::vec2(100.0, ORANGE_BAR_HEIGHT),
             glam::Vec4::new(1.0, 0xD4 as f32 / 255.0, 0.0, 1.0),
             -84,
@@ -216,12 +233,14 @@ impl FreeplayAssets {
         }
 
         let selected_index = self.clamped_index(selected_index);
+        let capsule_enter_offset = (1.0 - enter_t) * CAPSULE_ENTER_OFFSET_X;
         self.push_capsules(
             &mut commands,
             selected_index,
             selection.difficulty,
             cursor,
             sample_rate,
+            capsule_enter_offset,
         );
         self.push_difficulty(&mut commands, selection.difficulty, cursor, sample_rate);
         self.push_highscore(&mut commands);
@@ -358,13 +377,24 @@ impl FreeplayAssets {
         }
     }
 
-    pub fn text_commands(&self, selected_index: usize) -> TextCommandList {
+    pub fn text_commands(
+        &self,
+        selected_index: usize,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> TextCommandList {
         let mut commands = TextCommandList::new();
         let selected_index = self.clamped_index(selected_index);
 
+        // Reuse the enter tween so top-row text rides the overhang bar in and
+        // capsule labels slide alongside their sprites.
+        let enter_t = self.enter_progress(cursor, sample_rate);
+        let top_y_offset = -(1.0 - enter_t) * 164.0;
+        let capsule_enter_offset_x = (1.0 - enter_t) * CAPSULE_ENTER_OFFSET_X;
+
         let mut title = TextCommand::new(
             "FREEPLAY",
-            glam::vec2(FREEPLAY_TITLE_X, FREEPLAY_TITLE_Y),
+            glam::vec2(FREEPLAY_TITLE_X, FREEPLAY_TITLE_Y + top_y_offset),
             48.0,
         );
         title.color = glam::Vec4::new(1.0, 0.84, 0.26, 1.0);
@@ -373,7 +403,7 @@ impl FreeplayAssets {
 
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:349 (ostName)
         // ref: bdedc0aa:source/funkin/util/Constants.hx:292 (DEFAULT_OST_NAME)
-        let mut ost = TextCommand::new("OFFICIAL OST", glam::vec2(950.0, 14.0), 36.0);
+        let mut ost = TextCommand::new("OFFICIAL OST", glam::vec2(950.0, 14.0 + top_y_offset), 36.0);
         ost.color = glam::Vec4::new(1.0, 1.0, 1.0, 0.9);
         ost.z = 300;
         commands.push(ost);
@@ -389,7 +419,7 @@ impl FreeplayAssets {
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:350 (charSelectHint)
         let mut hint = TextCommand::new(
             "Press [ LOL ] to change characters",
-            glam::vec2(420.0, 26.0),
+            glam::vec2(420.0, 26.0 + top_y_offset),
             24.0,
         );
         hint.color = glam::Vec4::new(1.0, 1.0, 1.0, 0.7);
@@ -398,7 +428,7 @@ impl FreeplayAssets {
 
         for (index, capsule) in self.songs.iter().enumerate() {
             let offset = index as f32 - selected_index as f32;
-            let pos = capsule_position(offset);
+            let pos = capsule_position(offset) + glam::vec2(capsule_enter_offset_x, 0.0);
             let is_selected = index == selected_index;
             let mut text = TextCommand::new(
                 capsule.display_name.clone(),
@@ -524,13 +554,29 @@ impl FreeplayAssets {
         }
     }
 
-    /// Reset the DJ into the Intro animation. Called on entering Freeplay so
-    /// BF "ejects in" before settling into Idle.
+    /// Reset the DJ into the Intro animation AND restart the menu slide-in
+    /// tween. Called on entering Freeplay so BF "ejects in" while the
+    /// pinkBack/overhang/capsules slide to their resting positions.
     /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:848-857
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:725-744 (applyEnter)
     pub fn reset_dj_intro(&mut self, cursor: Samples) {
+        self.enter_started_at = Some(cursor);
         if let Some(dj) = self.dj.as_mut() {
             dj.reset_intro(cursor);
         }
+    }
+
+    /// Eased 0..1 progress of the freeplay enter tween. Returns 1.0 (settled)
+    /// when no enter has been started or the tween has elapsed.
+    /// quartOut: t' = 1 - (1 - t)^4 — matches FlxEase.quartOut on the OG.
+    fn enter_progress(&self, cursor: Samples, sample_rate: u32) -> f32 {
+        let Some(start) = self.enter_started_at else {
+            return 1.0;
+        };
+        let elapsed = cursor.0.saturating_sub(start.0).max(0) as f64;
+        let secs = elapsed / f64::from(sample_rate.max(1));
+        let t = (secs / ENTER_DURATION_SECS).clamp(0.0, 1.0) as f32;
+        1.0 - (1.0 - t).powi(4)
     }
 
     /// Trigger the DJ Confirm animation when a song is selected.
@@ -586,13 +632,14 @@ impl FreeplayAssets {
         difficulty: PreviewDifficulty,
         cursor: Samples,
         sample_rate: u32,
+        enter_offset_x: f32,
     ) {
         // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:670-690 (only the
         // selected capsule runs the xFrames bump each beat — unselected stays at 1.0).
         let (selected_beat_x, selected_beat_y) = capsule_beat_scale(cursor, sample_rate);
         for index in 0..self.songs.len() {
             let offset = index as f32 - selected_index as f32;
-            let pos = capsule_position(offset);
+            let pos = capsule_position(offset) + glam::vec2(enter_offset_x, 0.0);
             let is_selected = index == selected_index;
             let frames = if is_selected {
                 &self.capsule_selected_frames

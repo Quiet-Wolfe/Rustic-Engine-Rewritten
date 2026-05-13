@@ -279,6 +279,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         sparkle_frames,
         clear_box,
         backing_text_skin,
+        enter_started_at: None,
         textures,
     })
 }

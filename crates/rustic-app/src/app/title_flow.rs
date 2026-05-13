@@ -96,7 +96,8 @@ impl App {
                 cursor,
                 sample_rate,
             );
-            self.text_cmds = assets.text_commands(self.freeplay_selected_index);
+            self.text_cmds =
+                assets.text_commands(self.freeplay_selected_index, cursor, sample_rate);
         } else {
             self.cmds = RenderCommandList::new();
             self.text_cmds = song_select_text_commands(self.preview_selection, true);
