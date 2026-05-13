@@ -9,6 +9,7 @@ impl App {
         if self.game_over.take().is_none() {
             return;
         }
+        self.game_over_audio.stop(&self.mixer);
         self.load_selected_song();
     }
 
@@ -42,6 +43,9 @@ impl App {
         }) {
             tracing::warn!(target: "rustic.audio", "pause game over audio: {e:#}");
         }
+        if self.audio_output.is_some() {
+            self.game_over_audio.play_loss_sfx_or_warn(&self.mixer);
+        }
         self.game_over = Some(GameOverState::new(cursor, loop_after));
     }
 
@@ -51,6 +55,9 @@ impl App {
         };
         if let Some(loop_at) = game_over.start_loop_if_due(cursor) {
             self.character_anim.player_death_loop(loop_at);
+            if self.audio_output.is_some() {
+                self.game_over_audio.start_loop_music_or_warn(&self.mixer);
+            }
         }
         self.camera_fx
             .update(&mut self.cameras, cursor, sample_rate, 100.0);

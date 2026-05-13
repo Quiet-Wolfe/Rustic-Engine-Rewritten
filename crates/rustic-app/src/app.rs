@@ -14,6 +14,7 @@ use crate::countdown_audio::CountdownAudio;
 use crate::credits_assets::CreditsAssets;
 use crate::freeplay_assets::FreeplayAssets;
 use crate::game_over::GameOverState;
+use crate::game_over_audio::GameOverAudio;
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
 use crate::hud_bop::health_icon_scale;
@@ -110,6 +111,7 @@ struct App {
     story_playlist_difficulty: PreviewDifficulty,
     pause_menu: Option<PauseMenuState>,
     pause_music: PauseMusic,
+    game_over_audio: GameOverAudio,
     title_start: Instant,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -176,6 +178,7 @@ impl App {
             story_playlist_difficulty: PreviewDifficulty::Normal,
             pause_menu: None,
             pause_music: PauseMusic::default(),
+            game_over_audio: GameOverAudio::default(),
             title_start: now,
             play_state: None,
             song_start: now,

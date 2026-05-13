@@ -22,6 +22,7 @@ pub mod credits_assets;
 pub mod freeplay_assets;
 pub mod freeplay_dj;
 pub mod game_over;
+pub mod game_over_audio;
 pub mod hold_cover_assets;
 pub mod hud_assets;
 pub mod hud_bop;
