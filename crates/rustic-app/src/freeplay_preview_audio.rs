@@ -16,13 +16,19 @@ const PREVIEW_FADE_IN: Duration = Duration::from_secs(2);
 #[derive(Debug, Default)]
 pub struct FreeplayPreviewMusic {
     voice: Option<VoiceId>,
-    selection: Option<PreviewSelection>,
+    target: Option<PreviewTarget>,
     fade_started: Option<Instant>,
 }
 
 impl FreeplayPreviewMusic {
-    pub fn start_or_warn(&mut self, mixer: &SharedMixer, selection: PreviewSelection) {
-        if let Err(e) = self.start(mixer, selection) {
+    pub fn start_selection_or_warn(&mut self, mixer: &SharedMixer, selection: PreviewSelection) {
+        if let Err(e) = self.start(mixer, PreviewTarget::Song(selection)) {
+            tracing::warn!(target: "rustic.audio", "play freeplay preview: {e:#}");
+        }
+    }
+
+    pub fn start_random_or_warn(&mut self, mixer: &SharedMixer) {
+        if let Err(e) = self.start(mixer, PreviewTarget::Random) {
             tracing::warn!(target: "rustic.audio", "play freeplay preview: {e:#}");
         }
     }
@@ -44,7 +50,7 @@ impl FreeplayPreviewMusic {
     }
 
     pub fn stop(&mut self, mixer: &SharedMixer) {
-        self.selection = None;
+        self.target = None;
         self.fade_started = None;
         let Some(voice) = self.voice.take() else {
             return;
@@ -57,12 +63,12 @@ impl FreeplayPreviewMusic {
         }
     }
 
-    fn start(&mut self, mixer: &SharedMixer, selection: PreviewSelection) -> Result<()> {
-        if self.voice.is_some() && self.selection == Some(selection) {
+    fn start(&mut self, mixer: &SharedMixer, target: PreviewTarget) -> Result<()> {
+        if self.voice.is_some() && self.target == Some(target) {
             return Ok(());
         }
         self.stop(mixer);
-        let bytes = load_first_preview_bytes(selection)?;
+        let bytes = load_first_preview_bytes(target)?;
         let source = streaming_vorbis_source(bytes).context("decode freeplay preview")?;
         let voice = mixer
             .edit(|mixer| {
@@ -72,16 +78,22 @@ impl FreeplayPreviewMusic {
             })
             .context("queue freeplay preview")?;
         self.voice = Some(voice);
-        self.selection = Some(selection);
+        self.target = Some(target);
         self.fade_started = Some(Instant::now());
         Ok(())
     }
 }
 
-fn load_first_preview_bytes(selection: PreviewSelection) -> Result<Arc<[u8]>> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreviewTarget {
+    Random,
+    Song(PreviewSelection),
+}
+
+fn load_first_preview_bytes(target: PreviewTarget) -> Result<Arc<[u8]>> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
     let mut errors = Vec::new();
-    for path in preview_paths(selection) {
+    for path in preview_paths(target) {
         let asset = AssetPath::new(path.clone())?;
         match load_bytes(&resolver, &asset) {
             Ok(bytes) => return Ok(bytes),
@@ -94,7 +106,10 @@ fn load_first_preview_bytes(selection: PreviewSelection) -> Result<Arc<[u8]>> {
     ))
 }
 
-fn preview_paths(selection: PreviewSelection) -> Vec<String> {
+fn preview_paths(target: PreviewTarget) -> Vec<String> {
+    let PreviewTarget::Song(selection) = target else {
+        return vec!["music/freeplayRandom/freeplayRandom.ogg".to_string()];
+    };
     let mut paths = Vec::new();
     if let Some(suffix) = selection.difficulty.chart_variation_suffix() {
         paths.push(format!("songs/{}/Inst-{suffix}.ogg", selection.song.folder));
@@ -116,10 +131,10 @@ mod tests {
 
     #[test]
     fn erect_preview_prefers_variant_inst_then_base_then_legacy() {
-        let paths = preview_paths(PreviewSelection::new(
+        let paths = preview_paths(PreviewTarget::Song(PreviewSelection::new(
             PreviewSong::BOPEEBO,
             PreviewDifficulty::Erect,
-        ));
+        )));
 
         assert_eq!(
             paths,
@@ -128,6 +143,14 @@ mod tests {
                 "songs/bopeebo/Inst.ogg",
                 "music/Bopeebo_Inst.ogg"
             ]
+        );
+    }
+
+    #[test]
+    fn random_preview_uses_og_freeplay_random_track() {
+        assert_eq!(
+            preview_paths(PreviewTarget::Random),
+            vec!["music/freeplayRandom/freeplayRandom.ogg"]
         );
     }
 

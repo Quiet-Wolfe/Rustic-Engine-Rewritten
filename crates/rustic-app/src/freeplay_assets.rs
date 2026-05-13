@@ -126,6 +126,7 @@ impl FreeplayAssets {
     pub fn commands(
         &self,
         selection: PreviewSelection,
+        selected_index: usize,
         cursor: Samples,
         sample_rate: u32,
     ) -> RenderCommandList {
@@ -177,7 +178,7 @@ impl FreeplayAssets {
             }
         }
 
-        let selected_index = self.index_of(selection.song).unwrap_or(0);
+        let selected_index = self.clamped_index(selected_index);
         self.push_capsules(&mut commands, selected_index, cursor, sample_rate);
         self.push_difficulty(&mut commands, selection.difficulty, cursor, sample_rate);
         self.push_highscore(&mut commands);
@@ -314,9 +315,9 @@ impl FreeplayAssets {
         }
     }
 
-    pub fn text_commands(&self, selection: PreviewSelection) -> TextCommandList {
+    pub fn text_commands(&self, selected_index: usize) -> TextCommandList {
         let mut commands = TextCommandList::new();
-        let selected_index = self.index_of(selection.song).unwrap_or(0);
+        let selected_index = self.clamped_index(selected_index);
 
         let mut title = TextCommand::new(
             "FREEPLAY",
@@ -410,6 +411,10 @@ impl FreeplayAssets {
             CapsuleKind::Song(s) => s.id == song.id,
             CapsuleKind::Random => false,
         })
+    }
+
+    fn clamped_index(&self, index: usize) -> usize {
+        index.min(self.songs.len().saturating_sub(1))
     }
 
     fn pink_back_draw_size(&self) -> glam::Vec2 {

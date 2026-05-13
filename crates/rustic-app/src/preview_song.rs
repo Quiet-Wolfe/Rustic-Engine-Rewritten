@@ -142,6 +142,14 @@ pub enum PreviewDifficulty {
 }
 
 impl PreviewDifficulty {
+    const FREEPLAY_ORDER: [Self; 5] = [
+        Self::Easy,
+        Self::Normal,
+        Self::Hard,
+        Self::Erect,
+        Self::Nightmare,
+    ];
+
     pub fn from_env() -> Self {
         env::var(PREVIEW_DIFFICULTY_ENV)
             .ok()
@@ -175,6 +183,14 @@ impl PreviewDifficulty {
             Self::Erect | Self::Nightmare => Some("erect"),
             Self::Easy | Self::Normal | Self::Hard => None,
         }
+    }
+
+    pub fn next_freeplay(self) -> Self {
+        next_in_slice(&Self::FREEPLAY_ORDER, self)
+    }
+
+    pub fn previous_freeplay(self) -> Self {
+        previous_in_slice(&Self::FREEPLAY_ORDER, self)
     }
 }
 
@@ -397,6 +413,22 @@ mod tests {
                 .previous_difficulty()
                 .difficulty,
             PreviewDifficulty::Nightmare
+        );
+    }
+
+    #[test]
+    fn freeplay_difficulty_cycle_matches_og_global_order() {
+        assert_eq!(
+            PreviewDifficulty::Easy.previous_freeplay(),
+            PreviewDifficulty::Nightmare
+        );
+        assert_eq!(
+            PreviewDifficulty::Hard.next_freeplay(),
+            PreviewDifficulty::Erect
+        );
+        assert_eq!(
+            PreviewDifficulty::Nightmare.next_freeplay(),
+            PreviewDifficulty::Easy
         );
     }
 }

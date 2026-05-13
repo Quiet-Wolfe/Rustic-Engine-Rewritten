@@ -5,6 +5,7 @@ use crate::camera_fx::CameraFx;
 use crate::freeplay_assets::load_freeplay_assets as load_freeplay_screen_assets;
 use crate::main_menu_assets::{load_main_menu_assets, MainMenuAction};
 use crate::menu_audio::MenuSound;
+use crate::preview_song::PreviewSelection;
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
 use crate::story_menu_assets::load_story_menu_assets;
 use crate::title_assets::load_title_screen_assets;
@@ -79,8 +80,13 @@ impl App {
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = self.title_cursor(sample_rate);
         if let Some(assets) = self.freeplay_assets.as_ref() {
-            self.cmds = assets.commands(self.preview_selection, cursor, sample_rate);
-            self.text_cmds = assets.text_commands(self.preview_selection);
+            self.cmds = assets.commands(
+                self.preview_selection,
+                self.freeplay_selected_index,
+                cursor,
+                sample_rate,
+            );
+            self.text_cmds = assets.text_commands(self.freeplay_selected_index);
         } else {
             self.cmds = RenderCommandList::new();
             self.text_cmds = song_select_text_commands(self.preview_selection, true);
@@ -101,8 +107,16 @@ impl App {
     pub(super) fn start_freeplay_preview(&mut self) {
         if self.audio_output.is_some() {
             self.stop_menu_music();
-            self.freeplay_preview
-                .start_or_warn(&self.mixer, self.preview_selection);
+            if self
+                .freeplay_assets
+                .as_ref()
+                .is_some_and(|assets| assets.is_random_at(self.freeplay_selected_index))
+            {
+                self.freeplay_preview.start_random_or_warn(&self.mixer);
+            } else {
+                self.freeplay_preview
+                    .start_selection_or_warn(&self.mixer, self.preview_selection);
+            }
         }
     }
 
@@ -398,22 +412,28 @@ impl App {
             return true;
         }
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:1815-1868
+        // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:2578-2634 (random confirm)
+        let old_index = self.freeplay_selected_index;
         let old = self.preview_selection;
         match action {
             InputAction::LaneUp | InputAction::UiUp => {
-                self.preview_selection = self.preview_selection.previous_song();
+                self.move_freeplay_selection(-1);
             }
             InputAction::LaneDown | InputAction::UiDown => {
-                self.preview_selection = self.preview_selection.next_song();
+                self.move_freeplay_selection(1);
             }
             InputAction::LaneLeft | InputAction::UiLeft => {
-                self.preview_selection = self.preview_selection.previous_difficulty();
+                self.change_freeplay_difficulty(-1);
             }
             InputAction::LaneRight | InputAction::UiRight => {
-                self.preview_selection = self.preview_selection.next_difficulty();
+                self.change_freeplay_difficulty(1);
             }
             InputAction::Confirm => {
                 self.play_menu_sound(MenuSound::Confirm);
+                if self.current_freeplay_is_random() && !self.choose_random_freeplay_song() {
+                    self.play_menu_sound(MenuSound::Cancel);
+                    return true;
+                }
                 self.enter_play();
             }
             InputAction::Back => {
@@ -422,7 +442,9 @@ impl App {
             }
             _ => {}
         }
-        if self.mode == AppMode::SongSelect && self.preview_selection != old {
+        if self.mode == AppMode::SongSelect
+            && (self.preview_selection != old || self.freeplay_selected_index != old_index)
+        {
             self.play_menu_sound(MenuSound::Scroll);
             self.start_freeplay_preview();
             self.update_window_title();
@@ -433,6 +455,7 @@ impl App {
 
     pub(super) fn enter_song_select(&mut self) {
         self.mode = AppMode::SongSelect;
+        self.freeplay_selected_index = 0;
         self.title_assets = None;
         self.main_menu_assets = None;
         self.credits_assets = None;
@@ -441,9 +464,71 @@ impl App {
         self.story_menu_assets = None;
         self.pause_menu = None;
         self.clear_play_state_for_menu();
-        self.start_freeplay_preview();
         self.load_freeplay_assets();
+        self.start_freeplay_preview();
         self.rebuild_song_select_commands();
+    }
+
+    fn move_freeplay_selection(&mut self, delta: isize) {
+        let count = self
+            .freeplay_assets
+            .as_ref()
+            .map(|assets| assets.item_count())
+            .unwrap_or(0);
+        if count == 0 {
+            self.preview_selection = if delta < 0 {
+                self.preview_selection.previous_song()
+            } else {
+                self.preview_selection.next_song()
+            };
+            return;
+        }
+        let next = (self.freeplay_selected_index as isize + delta).rem_euclid(count as isize);
+        self.freeplay_selected_index = next as usize;
+        if let Some(song) = self
+            .freeplay_assets
+            .as_ref()
+            .and_then(|assets| assets.song_at(self.freeplay_selected_index))
+        {
+            self.preview_selection = PreviewSelection::new(song, self.preview_selection.difficulty);
+        }
+    }
+
+    fn change_freeplay_difficulty(&mut self, delta: isize) {
+        if self.current_freeplay_is_random() {
+            self.preview_selection.difficulty = if delta < 0 {
+                self.preview_selection.difficulty.previous_freeplay()
+            } else {
+                self.preview_selection.difficulty.next_freeplay()
+            };
+        } else if delta < 0 {
+            self.preview_selection = self.preview_selection.previous_difficulty();
+        } else {
+            self.preview_selection = self.preview_selection.next_difficulty();
+        }
+    }
+
+    fn current_freeplay_is_random(&self) -> bool {
+        self.freeplay_assets
+            .as_ref()
+            .is_some_and(|assets| assets.is_random_at(self.freeplay_selected_index))
+    }
+
+    fn choose_random_freeplay_song(&mut self) -> bool {
+        let Some(assets) = self.freeplay_assets.as_ref() else {
+            return false;
+        };
+        let song_count = assets.item_count().saturating_sub(1);
+        if song_count == 0 {
+            return false;
+        }
+        let random_offset = (self.boot_instant.elapsed().as_nanos() as usize % song_count) + 1;
+        let Some(song) = assets.song_at(random_offset) else {
+            return false;
+        };
+        self.freeplay_selected_index = random_offset;
+        self.preview_selection = PreviewSelection::new(song, self.preview_selection.difficulty);
+        true
     }
 
     fn load_freeplay_assets(&mut self) {

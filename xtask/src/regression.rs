@@ -345,8 +345,14 @@ fn build_freeplay_scenario(
     let freeplay = load_freeplay_assets(&harness.rs.device, &harness.rs.queue)
         .context("load freeplay assets")?;
     let selection = scenario.selection();
-    let sprite_cmds = freeplay.commands(selection, rustic_core::time::Samples(0), 48_000);
-    let text_cmds = freeplay.text_commands(selection);
+    let selected_index = freeplay.index_of(selection.song).unwrap_or(0);
+    let sprite_cmds = freeplay.commands(
+        selection,
+        selected_index,
+        rustic_core::time::Samples(0),
+        48_000,
+    );
+    let text_cmds = freeplay.text_commands(selected_index);
     Ok((
         sprite_cmds,
         text_cmds,
