@@ -10,14 +10,17 @@ use std::sync::{Arc, OnceLock};
 
 const LOSS_SOUND_PATH: &str = "sounds/gameplay/gameover/fnf_loss_sfx.ogg";
 const LOOP_MUSIC_PATH: &str = "music/gameplay/gameover/gameOver.ogg";
+const CONFIRM_MUSIC_PATH: &str = "music/gameplay/gameover/gameOverEnd.ogg";
 
 static LOSS_SOUND_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LOOP_MUSIC_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static CONFIRM_MUSIC_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 
 #[derive(Debug, Default)]
 pub struct GameOverAudio {
     loss_voice: Option<VoiceId>,
     loop_voice: Option<VoiceId>,
+    confirm_voice: Option<VoiceId>,
 }
 
 impl GameOverAudio {
@@ -33,8 +36,18 @@ impl GameOverAudio {
         }
     }
 
+    pub fn play_confirm_music_or_warn(&mut self, mixer: &SharedMixer) {
+        if let Err(e) = self.play_confirm_music(mixer) {
+            tracing::warn!(target: "rustic.audio", "play game over confirm music: {e:#}");
+        }
+    }
+
     pub fn stop(&mut self, mixer: &SharedMixer) {
-        let voices = [self.loss_voice.take(), self.loop_voice.take()];
+        let voices = [
+            self.loss_voice.take(),
+            self.loop_voice.take(),
+            self.confirm_voice.take(),
+        ];
         if voices.iter().all(Option::is_none) {
             return;
         }
@@ -75,6 +88,20 @@ impl GameOverAudio {
         self.loop_voice = Some(voice);
         Ok(())
     }
+
+    fn play_confirm_music(&mut self, mixer: &SharedMixer) -> Result<()> {
+        self.stop(mixer);
+        let Some(bytes) = cached_bytes(&CONFIRM_MUSIC_BYTES, CONFIRM_MUSIC_PATH, "confirm music")
+        else {
+            return Ok(());
+        };
+        let source = streaming_vorbis_source(bytes.clone()).context("decode game over confirm")?;
+        let voice = mixer
+            .edit(|mixer| mixer.add_source(Stem::Sfx, source))
+            .context("queue game over confirm")?;
+        self.confirm_voice = Some(voice);
+        Ok(())
+    }
 }
 
 fn cached_bytes(
@@ -107,5 +134,9 @@ mod tests {
     fn game_over_audio_paths_match_og_assets() {
         assert_eq!(LOSS_SOUND_PATH, "sounds/gameplay/gameover/fnf_loss_sfx.ogg");
         assert_eq!(LOOP_MUSIC_PATH, "music/gameplay/gameover/gameOver.ogg");
+        assert_eq!(
+            CONFIRM_MUSIC_PATH,
+            "music/gameplay/gameover/gameOverEnd.ogg"
+        );
     }
 }

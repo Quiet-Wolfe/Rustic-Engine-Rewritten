@@ -13,7 +13,7 @@ use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::countdown_audio::CountdownAudio;
 use crate::credits_assets::CreditsAssets;
 use crate::freeplay_assets::FreeplayAssets;
-use crate::game_over::GameOverState;
+use crate::game_over::{GameOverRestart, GameOverState};
 use crate::game_over_audio::GameOverAudio;
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
@@ -112,6 +112,7 @@ struct App {
     pause_menu: Option<PauseMenuState>,
     pause_music: PauseMusic,
     game_over_audio: GameOverAudio,
+    game_over_restart: Option<GameOverRestart>,
     title_start: Instant,
     play_state: Option<PlayState>,
     song_start: Instant,
@@ -179,6 +180,7 @@ impl App {
             pause_menu: None,
             pause_music: PauseMusic::default(),
             game_over_audio: GameOverAudio::default(),
+            game_over_restart: None,
             title_start: now,
             play_state: None,
             song_start: now,
@@ -723,7 +725,7 @@ impl ApplicationHandler for App {
                         && action == InputAction::Confirm
                         && self.game_over.is_some()
                     {
-                        self.restart_song_after_game_over();
+                        self.restart_song_after_game_over(song_cursor);
                     }
                     if event.state == ElementState::Pressed
                         && action == InputAction::Back

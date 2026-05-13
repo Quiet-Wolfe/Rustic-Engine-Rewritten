@@ -257,6 +257,12 @@ impl CharacterAnimState {
         self.player_started = cursor;
     }
 
+    pub fn player_death_confirm(&mut self, cursor: Samples) {
+        // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:379
+        self.player_pose = "deathConfirm";
+        self.player_started = cursor;
+    }
+
     fn update_beat_dances(&mut self, cursor: Samples, sample_rate: u32, bpm: f64) {
         let beat = beat_index(cursor, sample_rate, bpm);
         if beat <= self.last_beat {
@@ -624,6 +630,10 @@ mod tests {
         state.player_death_loop(Samples(9_600));
         assert_eq!(state.poses().player.name, "deathLoop");
         assert_eq!(state.poses().player.started_at, Samples(9_600));
+
+        state.player_death_confirm(Samples(14_400));
+        assert_eq!(state.poses().player.name, "deathConfirm");
+        assert_eq!(state.poses().player.started_at, Samples(14_400));
     }
 
     #[test]

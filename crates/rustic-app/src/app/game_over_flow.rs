@@ -1,16 +1,23 @@
 use super::App;
-use crate::game_over::GameOverState;
+use crate::game_over::{GameOverRestart, GameOverState};
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
 use rustic_core::time::Samples;
 
 impl App {
-    pub(super) fn restart_song_after_game_over(&mut self) {
+    pub(super) fn restart_song_after_game_over(&mut self, cursor: Samples) {
         // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:409-424
-        if self.game_over.take().is_none() {
+        if self.game_over.is_none() || self.game_over_restart.is_some() {
             return;
         }
-        self.game_over_audio.stop(&self.mixer);
-        self.load_selected_song();
+        let cursor = self
+            .game_over
+            .map(|state| state.cursor(play_sample_rate(&self.mixer)))
+            .unwrap_or(cursor);
+        self.character_anim.player_death_confirm(cursor);
+        self.game_over_restart = Some(GameOverRestart::new());
+        if self.audio_output.is_some() {
+            self.game_over_audio.play_confirm_music_or_warn(&self.mixer);
+        }
     }
 
     pub(super) fn enter_game_over(&mut self, cursor: Samples) {
@@ -18,6 +25,7 @@ impl App {
         if self.game_over.is_some() {
             return;
         }
+        self.game_over_restart = None;
         let sample_rate = play_sample_rate(&self.mixer);
         let loop_after = self
             .characters
@@ -50,6 +58,9 @@ impl App {
     }
 
     pub(super) fn rebuild_game_over_commands(&mut self, cursor: Samples, sample_rate: u32) {
+        if self.finish_game_over_restart_if_due() {
+            return;
+        }
         let Some(game_over) = self.game_over.as_mut() else {
             return;
         };
@@ -70,5 +81,19 @@ impl App {
                 self.cmds.push(cmd);
             }
         }
+    }
+
+    fn finish_game_over_restart_if_due(&mut self) -> bool {
+        let Some(restart) = self.game_over_restart else {
+            return false;
+        };
+        if !restart.is_due() {
+            return false;
+        }
+        self.game_over_restart = None;
+        self.game_over.take();
+        self.game_over_audio.stop(&self.mixer);
+        self.load_selected_song();
+        true
     }
 }

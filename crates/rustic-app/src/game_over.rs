@@ -1,5 +1,7 @@
 use rustic_core::time::Samples;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+const CONFIRM_RESTART_DELAY: Duration = Duration::from_millis(1_030);
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct GameOverState {
@@ -35,6 +37,26 @@ impl GameOverState {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct GameOverRestart {
+    started_at: Instant,
+    delay: Duration,
+}
+
+impl GameOverRestart {
+    pub(crate) fn new() -> Self {
+        // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:382-387
+        Self {
+            started_at: Instant::now(),
+            delay: CONFIRM_RESTART_DELAY,
+        }
+    }
+
+    pub(crate) fn is_due(self) -> bool {
+        self.started_at.elapsed() >= self.delay
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -48,5 +70,10 @@ mod tests {
             Some(Samples(1_500))
         );
         assert_eq!(state.start_loop_if_due(Samples(2_000)), None);
+    }
+
+    #[test]
+    fn confirm_restart_delay_uses_og_end_music_timer() {
+        assert_eq!(CONFIRM_RESTART_DELAY, Duration::from_millis(1_030));
     }
 }
