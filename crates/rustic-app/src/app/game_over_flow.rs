@@ -1,7 +1,14 @@
 use super::App;
 use crate::game_over::{GameOverRestart, GameOverState};
+use crate::pause_menu::PAUSE_OVERLAY_TEXTURE_ID;
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
+use rustic_core::ids::CameraId;
+use rustic_core::render::RenderLayer;
 use rustic_core::time::Samples;
+use rustic_render::{DrawCommand, FilterMode};
+
+const GAME_OVER_BG_SIZE: glam::Vec2 = glam::vec2(1280.0 * 2.0, 720.0 * 2.0);
+const GAME_OVER_BG_POS: glam::Vec2 = glam::vec2(-640.0, -360.0);
 
 impl App {
     pub(super) fn restart_song_after_game_over(&mut self, cursor: Samples) {
@@ -74,6 +81,7 @@ impl App {
             .update(&mut self.cameras, cursor, sample_rate, 100.0);
 
         self.cmds.clear();
+        self.cmds.push(game_over_background_command());
         if let Some(characters) = &self.characters {
             for cmd in
                 characters.player_commands(self.character_anim.poses().player, cursor, sample_rate)
@@ -95,5 +103,40 @@ impl App {
         self.game_over_audio.stop(&self.mixer);
         self.load_selected_song();
         true
+    }
+}
+
+fn game_over_background_command() -> DrawCommand {
+    // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:130-137
+    let mut cmd = DrawCommand::sprite(
+        PAUSE_OVERLAY_TEXTURE_ID,
+        GAME_OVER_BG_POS,
+        GAME_OVER_BG_SIZE,
+    );
+    cmd.camera = CameraId(0);
+    cmd.layer = RenderLayer::Background;
+    cmd.z = -10_000;
+    cmd.pivot = glam::Vec2::ZERO;
+    cmd.scroll_factor = glam::Vec2::ZERO;
+    cmd.filter = FilterMode::Nearest;
+    cmd.color = glam::Vec4::new(0.0, 0.0, 0.0, 1.0);
+    cmd
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn game_over_background_matches_og_opaque_double_screen() {
+        let command = game_over_background_command();
+
+        assert_eq!(command.texture, PAUSE_OVERLAY_TEXTURE_ID);
+        assert_eq!(command.camera, CameraId(0));
+        assert_eq!(command.layer, RenderLayer::Background);
+        assert_eq!(command.world_pos, GAME_OVER_BG_POS);
+        assert_eq!(command.size, GAME_OVER_BG_SIZE);
+        assert_eq!(command.scroll_factor, glam::Vec2::ZERO);
+        assert_eq!(command.color.w, 1.0);
     }
 }
