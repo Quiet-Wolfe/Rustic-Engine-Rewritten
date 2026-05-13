@@ -82,7 +82,7 @@ impl Default for CharacterAnimState {
             player_until: Samples(0),
             girlfriend_count_duration_seconds: None,
             timings: CharacterAnimTimings::default(),
-            last_beat: -1,
+            last_beat: i64::MIN,
             gf_danced: true,
         }
     }
@@ -335,8 +335,9 @@ fn hold_samples(sample_rate: u32, bpm: f64, steps: f64) -> i64 {
 }
 
 fn beat_index(cursor: Samples, sample_rate: u32, bpm: f64) -> i64 {
+    // ref: bdedc0aa:source/funkin/Conductor.hx:481-486
     let samples_per_beat = f64::from(sample_rate) * 60.0 / bpm.max(1.0);
-    (cursor.0.max(0) as f64 / samples_per_beat).floor() as i64
+    (cursor.0 as f64 / samples_per_beat).floor() as i64
 }
 
 fn is_chart_special_pose(pose: &str) -> bool {
@@ -479,6 +480,24 @@ mod tests {
         state.update(Samples(28_800), 48_000, 100.0, false);
         assert_eq!(state.poses().girlfriend.name, "danceLeft");
         assert_eq!(state.poses().girlfriend.started_at, Samples(28_800));
+    }
+
+    #[test]
+    fn girlfriend_dances_through_negative_countdown_beats() {
+        let mut state = CharacterAnimState::default();
+
+        state.update(Samples(-144_000), 48_000, 100.0, false);
+        assert_eq!(state.poses().girlfriend.name, "danceRight");
+        state.update(Samples(-115_200), 48_000, 100.0, false);
+        assert_eq!(state.poses().girlfriend.name, "danceLeft");
+        state.update(Samples(-86_400), 48_000, 100.0, false);
+        assert_eq!(state.poses().girlfriend.name, "danceRight");
+        state.update(Samples(-57_600), 48_000, 100.0, false);
+        assert_eq!(state.poses().girlfriend.name, "danceLeft");
+        state.update(Samples(-28_800), 48_000, 100.0, false);
+        assert_eq!(state.poses().girlfriend.name, "danceRight");
+        state.update(Samples(0), 48_000, 100.0, false);
+        assert_eq!(state.poses().girlfriend.name, "danceLeft");
     }
 
     #[test]
