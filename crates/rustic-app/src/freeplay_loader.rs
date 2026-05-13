@@ -1,6 +1,7 @@
 use super::helpers::{clone_frames, digit_frames, load_sparrow_atlas, load_static_texture};
 use super::{CapsuleKind, FreeplayAssets, FreeplayCapsule, WHITE_TEXTURE_ID};
 use crate::asset_roots::baked_assets_root;
+use crate::bitmap_text_assets::load_bitmap_text_assets;
 use crate::freeplay_dj::load_freeplay_dj;
 use crate::preview_song::PreviewSong;
 use anyhow::Result;
@@ -245,6 +246,13 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         FilterMode::Linear,
     )
     .ok();
+    let backing_text_skin = match load_bitmap_text_assets(device, queue, &resolver, &mut textures) {
+        Ok(skin) => Some(skin),
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "freeplay backing text unavailable: {e:#}");
+            None
+        }
+    };
 
     Ok(FreeplayAssets {
         songs,
@@ -274,6 +282,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         sparkle_atlas,
         sparkle_frames,
         clear_box,
+        backing_text_skin,
         textures,
     })
 }

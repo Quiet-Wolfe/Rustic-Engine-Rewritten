@@ -1,6 +1,7 @@
 //! Bitmap VCR text drawing backed by the OG AngelCode font assets.
 //!
 //! ref: bdedc0aa:source/funkin/play/PlayState.hx:815,2015-2024,2702-2713
+// LINT-ALLOW: long-file bitmap text rendering helpers and tests stay together.
 
 use crate::asset_roots::baked_assets_root;
 use anyhow::{Context, Result};
@@ -34,6 +35,16 @@ pub struct BitmapTextSkin {
     texture_width: u32,
     texture_height: u32,
     font: BitmapFont,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BitmapTextDraw {
+    pub origin: glam::Vec2,
+    pub scale: f32,
+    pub letter_spacing: i32,
+    pub color: glam::Vec4,
+    pub layer: RenderLayer,
+    pub z: i32,
 }
 
 impl BitmapTextSkin {
@@ -108,6 +119,20 @@ impl BitmapTextSkin {
         color: glam::Vec4,
         z: i32,
     ) -> Vec<DrawCommand> {
+        self.commands_with(
+            text,
+            BitmapTextDraw {
+                origin,
+                scale,
+                letter_spacing,
+                color,
+                layer: RenderLayer::Hud,
+                z,
+            },
+        )
+    }
+
+    pub fn commands_with(&self, text: &str, draw: BitmapTextDraw) -> Vec<DrawCommand> {
         let mut commands = Vec::new();
         let mut cursor = glam::Vec2::ZERO;
         let mut chars = text.chars().peekable();
@@ -115,25 +140,25 @@ impl BitmapTextSkin {
         while let Some(ch) = chars.next() {
             if ch == '\n' {
                 cursor.x = 0.0;
-                cursor.y += self.font.line_height as f32 + letter_spacing as f32;
+                cursor.y += self.font.line_height as f32 + draw.letter_spacing as f32;
                 continue;
             }
 
             let Some(glyph) = self.glyph(ch) else {
                 cursor.x += self.missing_advance();
                 if chars.peek().is_some() {
-                    cursor.x += letter_spacing as f32;
+                    cursor.x += draw.letter_spacing as f32;
                 }
                 continue;
             };
 
             if glyph.width > 0 && glyph.height > 0 && glyph.page == 0 {
-                commands.push(self.glyph_command(glyph, origin, cursor, scale, color, z));
+                commands.push(self.glyph_command(glyph, cursor, draw));
             }
 
             cursor.x += glyph.xadvance as f32;
             if chars.peek().is_some() {
-                cursor.x += letter_spacing as f32;
+                cursor.x += draw.letter_spacing as f32;
             }
         }
 
@@ -143,28 +168,25 @@ impl BitmapTextSkin {
     fn glyph_command(
         &self,
         glyph: &BitmapGlyph,
-        origin: glam::Vec2,
         cursor: glam::Vec2,
-        scale: f32,
-        color: glam::Vec4,
-        z: i32,
+        draw: BitmapTextDraw,
     ) -> DrawCommand {
-        let world_pos = origin
+        let world_pos = draw.origin
             + glam::vec2(
                 cursor.x + glyph.xoffset as f32,
                 cursor.y + glyph.yoffset as f32,
-            ) * scale;
+            ) * draw.scale;
         let mut cmd = DrawCommand::sprite(
             self.texture_id,
             world_pos,
-            glam::vec2(glyph.width as f32, glyph.height as f32) * scale,
+            glam::vec2(glyph.width as f32, glyph.height as f32) * draw.scale,
         );
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
-        cmd.layer = RenderLayer::Hud;
-        cmd.z = z;
+        cmd.layer = draw.layer;
+        cmd.z = draw.z;
         cmd.filter = FilterMode::Nearest;
-        cmd.color = color;
+        cmd.color = draw.color;
         (cmd.uv_min, cmd.uv_max) = glyph_uv(glyph, self.texture_width, self.texture_height);
         cmd
     }
@@ -376,5 +398,26 @@ mod tests {
         assert_eq!(commands[1].world_pos, glam::vec2(16.0, 22.0));
         assert_eq!(commands[1].uv_min, glam::vec2(0.3, 0.0));
         assert_eq!(commands[1].uv_max, glam::vec2(0.34, 0.16));
+    }
+
+    #[test]
+    fn arbitrary_bitmap_text_can_sort_on_background_layer() {
+        let commands = skin().commands_with(
+            "AB",
+            BitmapTextDraw {
+                origin: glam::vec2(10.0, 20.0),
+                scale: 1.0,
+                letter_spacing: 0,
+                color: glam::Vec4::ONE,
+                layer: RenderLayer::Background,
+                z: -82,
+            },
+        );
+
+        assert_eq!(commands.len(), 2);
+        assert!(commands
+            .iter()
+            .all(|cmd| cmd.layer == RenderLayer::Background));
+        assert!(commands.iter().all(|cmd| cmd.z == -82));
     }
 }
