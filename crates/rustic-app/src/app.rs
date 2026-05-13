@@ -13,6 +13,7 @@ use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::countdown_audio::CountdownAudio;
 use crate::credits_assets::CreditsAssets;
 use crate::freeplay_assets::FreeplayAssets;
+use crate::freeplay_preview_audio::FreeplayPreviewMusic;
 use crate::game_over::{GameOverRestart, GameOverState};
 use crate::game_over_audio::GameOverAudio;
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
@@ -112,6 +113,7 @@ struct App {
     story_playlist_index: usize,
     story_playlist_difficulty: PreviewDifficulty,
     menu_music: MenuMusic,
+    freeplay_preview: FreeplayPreviewMusic,
     pause_menu: Option<PauseMenuState>,
     pause_music: PauseMusic,
     game_over_audio: GameOverAudio,
@@ -181,6 +183,7 @@ impl App {
             story_playlist_index: 0,
             story_playlist_difficulty: PreviewDifficulty::Normal,
             menu_music: MenuMusic::default(),
+            freeplay_preview: FreeplayPreviewMusic::default(),
             pause_menu: None,
             pause_music: PauseMusic::default(),
             game_over_audio: GameOverAudio::default(),
@@ -281,14 +284,6 @@ impl App {
         if self.audio_output.is_some() {
             play_menu_sound_or_warn(&self.mixer, sound);
         }
-    }
-    fn start_menu_music(&mut self) {
-        if self.audio_output.is_some() {
-            self.menu_music.start_or_warn(&self.mixer);
-        }
-    }
-    fn stop_menu_music(&mut self) {
-        self.menu_music.stop(&self.mixer);
     }
     fn load_selected_stems(&mut self) {
         if self.audio_output.is_none() {

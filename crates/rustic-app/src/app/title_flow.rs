@@ -75,6 +75,7 @@ impl App {
     }
 
     pub(super) fn rebuild_song_select_commands(&mut self) {
+        self.update_freeplay_preview();
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = self.title_cursor(sample_rate);
         if let Some(assets) = self.freeplay_assets.as_ref() {
@@ -85,6 +86,34 @@ impl App {
             self.text_cmds = song_select_text_commands(self.preview_selection, true);
         }
         self.append_debug_overlay_commands(cursor, sample_rate);
+    }
+
+    pub(super) fn start_menu_music(&mut self) {
+        if self.audio_output.is_some() {
+            self.menu_music.start_or_warn(&self.mixer);
+        }
+    }
+
+    pub(super) fn stop_menu_music(&mut self) {
+        self.menu_music.stop(&self.mixer);
+    }
+
+    pub(super) fn start_freeplay_preview(&mut self) {
+        if self.audio_output.is_some() {
+            self.stop_menu_music();
+            self.freeplay_preview
+                .start_or_warn(&self.mixer, self.preview_selection);
+        }
+    }
+
+    pub(super) fn update_freeplay_preview(&mut self) {
+        if self.audio_output.is_some() {
+            self.freeplay_preview.update(&self.mixer);
+        }
+    }
+
+    pub(super) fn stop_freeplay_preview(&mut self) {
+        self.freeplay_preview.stop(&self.mixer);
     }
 
     pub(super) fn load_main_menu(&mut self) {
@@ -395,6 +424,7 @@ impl App {
         }
         if self.mode == AppMode::SongSelect && self.preview_selection != old {
             self.play_menu_sound(MenuSound::Scroll);
+            self.start_freeplay_preview();
             self.update_window_title();
             self.rebuild_song_select_commands();
         }
@@ -411,7 +441,7 @@ impl App {
         self.story_menu_assets = None;
         self.pause_menu = None;
         self.clear_play_state_for_menu();
-        self.start_menu_music();
+        self.start_freeplay_preview();
         self.load_freeplay_assets();
         self.rebuild_song_select_commands();
     }
@@ -436,6 +466,7 @@ impl App {
         self.pause_menu = None;
         self.pause_music.stop(&self.mixer);
         self.game_over_audio.stop(&self.mixer);
+        self.stop_freeplay_preview();
         self.characters = None;
         self.bitmap_text_skin = None;
         self.note_skin = None;
@@ -467,6 +498,7 @@ impl App {
     pub(super) fn enter_play(&mut self) {
         self.mode = AppMode::Play;
         self.stop_menu_music();
+        self.stop_freeplay_preview();
         self.title_assets = None;
         self.main_menu_assets = None;
         self.credits_assets = None;
