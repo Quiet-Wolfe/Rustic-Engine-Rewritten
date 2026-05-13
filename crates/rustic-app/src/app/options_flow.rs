@@ -1,4 +1,5 @@
 use super::App;
+use crate::menu_audio::MenuSound;
 use crate::options_menu_assets::{load_options_menu_assets, OptionsMenuAction, OptionsMenuPage};
 use rustic_core::input::InputAction;
 use rustic_core::time::Samples;
@@ -64,6 +65,7 @@ impl App {
         let count = self.options_item_count().max(1) as isize;
         self.options_menu_index =
             (self.options_menu_index as isize + delta).rem_euclid(count) as usize;
+        self.play_menu_sound(MenuSound::Scroll);
         self.rebuild_options_menu_commands();
     }
 
@@ -72,6 +74,7 @@ impl App {
             self.back_from_options_menu();
             return;
         }
+        self.play_menu_sound(MenuSound::Confirm);
         let action = self
             .options_menu_assets
             .as_ref()
@@ -87,6 +90,7 @@ impl App {
     }
 
     fn back_from_options_menu(&mut self) {
+        self.play_menu_sound(MenuSound::Cancel);
         if self.options_menu_page == OptionsMenuPage::Root {
             self.load_main_menu();
         } else {

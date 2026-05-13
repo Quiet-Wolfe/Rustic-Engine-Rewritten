@@ -1,4 +1,5 @@
 use super::App;
+use crate::menu_audio::MenuSound;
 use crate::pause_menu::{
     ensure_pause_overlay_texture, PauseMenuAction, PauseMenuState, PAUSE_OVERLAY_TEXTURE_ID,
 };
@@ -40,6 +41,7 @@ impl App {
             return true;
         }
 
+        self.play_pause_menu_sound(action);
         let pause_action = self
             .pause_menu
             .as_mut()
@@ -143,5 +145,17 @@ impl App {
             self.song_start = Instant::now();
         }
         set_vocals_gain(&self.mixer, 1.0);
+    }
+
+    fn play_pause_menu_sound(&self, action: InputAction) {
+        match action {
+            InputAction::LaneUp
+            | InputAction::UiUp
+            | InputAction::LaneDown
+            | InputAction::UiDown => self.play_menu_sound(MenuSound::Scroll),
+            InputAction::Confirm => self.play_menu_sound(MenuSound::Confirm),
+            InputAction::Back | InputAction::Pause => self.play_menu_sound(MenuSound::Cancel),
+            _ => {}
+        }
     }
 }

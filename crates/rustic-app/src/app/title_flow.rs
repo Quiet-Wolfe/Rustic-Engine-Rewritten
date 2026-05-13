@@ -4,6 +4,7 @@ use crate::app_text::song_select_text_commands;
 use crate::camera_fx::CameraFx;
 use crate::freeplay_assets::load_freeplay_assets as load_freeplay_screen_assets;
 use crate::main_menu_assets::{load_main_menu_assets, MainMenuAction};
+use crate::menu_audio::MenuSound;
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
 use crate::story_menu_assets::load_story_menu_assets;
 use crate::title_assets::load_title_screen_assets;
@@ -222,8 +223,14 @@ impl App {
         }
         // ref: bdedc0aa:source/funkin/ui/title/TitleState.hx:249-302
         match action {
-            InputAction::Confirm => self.load_main_menu(),
-            InputAction::Back => event_loop.exit(),
+            InputAction::Confirm => {
+                self.play_menu_sound(MenuSound::TitleConfirm);
+                self.load_main_menu();
+            }
+            InputAction::Back => {
+                self.play_menu_sound(MenuSound::Cancel);
+                event_loop.exit();
+            }
             _ => {}
         }
         true
@@ -243,14 +250,22 @@ impl App {
         match action {
             InputAction::LaneUp | InputAction::UiUp => {
                 self.main_menu_index = (self.main_menu_index + item_count - 1) % item_count;
+                self.play_menu_sound(MenuSound::Scroll);
                 self.rebuild_main_menu_commands();
             }
             InputAction::LaneDown | InputAction::UiDown => {
                 self.main_menu_index = (self.main_menu_index + 1) % item_count;
+                self.play_menu_sound(MenuSound::Scroll);
                 self.rebuild_main_menu_commands();
             }
-            InputAction::Confirm => self.confirm_main_menu_item(),
-            InputAction::Back => self.load_title_screen(),
+            InputAction::Confirm => {
+                self.play_menu_sound(MenuSound::Confirm);
+                self.confirm_main_menu_item();
+            }
+            InputAction::Back => {
+                self.play_menu_sound(MenuSound::Cancel);
+                self.load_title_screen();
+            }
             _ => {}
         }
         true
@@ -305,12 +320,16 @@ impl App {
                 }
             }
             InputAction::Confirm => self.confirm_story_menu_item(),
-            InputAction::Back => self.load_main_menu(),
+            InputAction::Back => {
+                self.play_menu_sound(MenuSound::Cancel);
+                self.load_main_menu();
+            }
             _ => {}
         }
         if self.mode == AppMode::StoryMenu
             && (self.story_menu_index != old_index || self.story_menu_difficulty != old_difficulty)
         {
+            self.play_menu_sound(MenuSound::Scroll);
             self.rebuild_story_menu_commands();
         }
         true
@@ -330,10 +349,12 @@ impl App {
         let difficulty =
             assets.difficulty_for_level(self.story_menu_index, self.story_menu_difficulty);
         if let Some(songs) = assets.preview_playlist(self.story_menu_index) {
+            self.play_menu_sound(MenuSound::Confirm);
             self.start_story_playlist(songs, difficulty);
         } else if let Some(selection) =
             assets.preview_selection(self.story_menu_index, self.story_menu_difficulty)
         {
+            self.play_menu_sound(MenuSound::Confirm);
             self.preview_selection = selection;
             self.enter_play();
         }
@@ -358,11 +379,18 @@ impl App {
             InputAction::LaneRight | InputAction::UiRight => {
                 self.preview_selection = self.preview_selection.next_difficulty();
             }
-            InputAction::Confirm => self.enter_play(),
-            InputAction::Back => self.load_main_menu(),
+            InputAction::Confirm => {
+                self.play_menu_sound(MenuSound::Confirm);
+                self.enter_play();
+            }
+            InputAction::Back => {
+                self.play_menu_sound(MenuSound::Cancel);
+                self.load_main_menu();
+            }
             _ => {}
         }
         if self.mode == AppMode::SongSelect && self.preview_selection != old {
+            self.play_menu_sound(MenuSound::Scroll);
             self.update_window_title();
             self.rebuild_song_select_commands();
         }

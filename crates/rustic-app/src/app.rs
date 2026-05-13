@@ -21,6 +21,7 @@ use crate::hud_bop::health_icon_scale;
 use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, AutoReceptors, HeldLanes};
 use crate::main_menu_assets::MainMenuAssets;
+use crate::menu_audio::{play_menu_sound_or_warn, MenuSound};
 use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKind};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
@@ -271,6 +272,11 @@ impl App {
                 self.preview_selection.song.display_name(),
                 self.preview_selection.difficulty.as_str()
             ));
+        }
+    }
+    fn play_menu_sound(&self, sound: MenuSound) {
+        if self.audio_output.is_some() {
+            play_menu_sound_or_warn(&self.mixer, sound);
         }
     }
     fn load_selected_stems(&mut self) {

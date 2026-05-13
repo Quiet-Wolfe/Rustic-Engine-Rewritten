@@ -1,5 +1,6 @@
 use super::App;
 use crate::credits_assets::load_credits_assets;
+use crate::menu_audio::MenuSound;
 use crate::song_audio::play_sample_rate;
 use rustic_core::input::InputAction;
 use rustic_render::{RenderCommandList, TextCommandList};
@@ -48,7 +49,10 @@ impl App {
             return true;
         }
         match action {
-            InputAction::Confirm | InputAction::Back => self.load_main_menu(),
+            InputAction::Confirm | InputAction::Back => {
+                self.play_menu_sound(MenuSound::Cancel);
+                self.load_main_menu();
+            }
             _ => {}
         }
         true
