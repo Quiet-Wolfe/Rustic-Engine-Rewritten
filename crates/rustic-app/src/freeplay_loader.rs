@@ -33,6 +33,19 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         "images/freeplay/pinkBack.png",
         FilterMode::Linear,
     )?;
+    // ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:47-49
+    // Trapezoidal yellow halo with a diagonal right edge that sits behind the
+    // pink back; the diagonal is what gives the freeplay backdrop its slanted
+    // look.
+    let card_glow = load_static_texture(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/cardGlow.png",
+        FilterMode::Linear,
+    )
+    .ok();
     let bg_image = load_static_texture(
         device,
         queue,
@@ -240,6 +253,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
     Ok(FreeplayAssets {
         songs,
         pink_back,
+        card_glow,
         bg_image,
         capsule_atlas,
         capsule_selected_frames,

@@ -294,6 +294,7 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
 /// Logical paths to assets the Freeplay screen depends on.
 pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
     "images/freeplay/pinkBack.png",
+    "images/freeplay/cardGlow.png",
     "images/freeplay/freeplayBGweek1-bf.png",
     "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png",
     "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.xml",

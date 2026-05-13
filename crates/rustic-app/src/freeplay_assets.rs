@@ -75,13 +75,18 @@ const ALBUM_TITLE_X: f32 = 1280.0 - 360.0;
 const ALBUM_TITLE_Y: f32 = 480.0;
 const BACKING_TEXT_GAP: f32 = 20.0;
 
-// ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:62,57-58,129
+// ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:62 (pinkBack.color)
+// OG ties pinkBack to FFD4E9 ("sets it to pink!") and overlays the yellow
+// trapezoidal cardGlow above; the prior FFD863 made our back read as flat
+// yellow with no diagonal.
 const PINKBACK_COLOR: glam::Vec4 = glam::Vec4::new(
     0xFF as f32 / 255.0,
-    0xD8 as f32 / 255.0,
-    0x63 as f32 / 255.0,
+    0xD4 as f32 / 255.0,
+    0xE9 as f32 / 255.0,
     1.0,
 );
+// ref: bdedc0aa:assets/preload/images/freeplay/cardGlow.png native tint is yellow.
+const CARDGLOW_COLOR: glam::Vec4 = glam::Vec4::new(1.0, 1.0, 1.0, 1.0);
 const ORANGE_BAR_COLOR: glam::Vec4 = glam::Vec4::new(
     0xFE as f32 / 255.0,
     0xDA as f32 / 255.0,
@@ -98,6 +103,7 @@ const WHITE_TEXTURE_ID: AssetId = AssetId::new(0x4672_6565_706c_6179);
 pub struct FreeplayAssets {
     songs: Vec<FreeplayCapsule>,
     pink_back: StaticTexture,
+    card_glow: Option<StaticTexture>,
     bg_image: StaticTexture,
     capsule_atlas: SparrowAtlasHandle,
     capsule_selected_frames: Vec<SparrowFrame>,
@@ -159,6 +165,22 @@ impl FreeplayAssets {
             -90,
             pink_back_size,
         ));
+        // cardGlow: yellow trapezoid with the diagonal right edge. OG positions
+        // it at (-30, -30) under everything else, sized via scalePartByWidth.
+        // We just scale to the pinkBack height and let the diagonal alpha do
+        // the rest. ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:47-49
+        if let Some(card_glow) = self.card_glow.as_ref() {
+            let scale = pink_back_size.y / card_glow.height.max(1) as f32;
+            commands.push(card_glow.command(
+                glam::vec2(-30.0, -30.0),
+                CARDGLOW_COLOR,
+                -89,
+                glam::vec2(
+                    card_glow.width as f32 * scale,
+                    card_glow.height as f32 * scale,
+                ),
+            ));
+        }
         commands.push(solid_command(
             glam::vec2(ORANGE_BAR_X, ORANGE_BAR_Y),
             glam::vec2(pink_back_size.x, ORANGE_BAR_HEIGHT),
