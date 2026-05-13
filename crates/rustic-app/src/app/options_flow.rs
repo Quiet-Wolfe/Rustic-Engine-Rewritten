@@ -16,6 +16,7 @@ impl App {
         self.story_menu_assets = None;
         self.options_menu_assets = None;
         self.clear_play_state_for_menu();
+        self.start_menu_music();
         self.options_menu_page = OptionsMenuPage::Root;
         self.options_menu_index = 0;
 

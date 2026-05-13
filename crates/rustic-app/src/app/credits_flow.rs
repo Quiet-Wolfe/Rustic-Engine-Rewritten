@@ -17,6 +17,7 @@ impl App {
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.clear_play_state_for_menu();
+        self.start_menu_music();
 
         let Some(runtime) = self.runtime.as_ref() else {
             return;

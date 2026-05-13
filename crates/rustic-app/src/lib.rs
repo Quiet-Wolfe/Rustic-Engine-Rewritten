@@ -30,6 +30,7 @@ pub mod input_bridge;
 pub mod lane_state;
 pub mod main_menu_assets;
 pub mod menu_audio;
+pub mod menu_music;
 pub mod miss_note_audio;
 pub mod note_assets;
 pub mod note_splash_assets;

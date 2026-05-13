@@ -22,6 +22,7 @@ use crate::input_bridge::{build_event, map_key};
 use crate::lane_state::{lane_for_action, AutoReceptors, HeldLanes};
 use crate::main_menu_assets::MainMenuAssets;
 use crate::menu_audio::{play_menu_sound_or_warn, MenuSound};
+use crate::menu_music::MenuMusic;
 use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKind};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
@@ -110,6 +111,7 @@ struct App {
     story_playlist: Vec<PreviewSong>,
     story_playlist_index: usize,
     story_playlist_difficulty: PreviewDifficulty,
+    menu_music: MenuMusic,
     pause_menu: Option<PauseMenuState>,
     pause_music: PauseMusic,
     game_over_audio: GameOverAudio,
@@ -178,6 +180,7 @@ impl App {
             story_playlist: Vec::new(),
             story_playlist_index: 0,
             story_playlist_difficulty: PreviewDifficulty::Normal,
+            menu_music: MenuMusic::default(),
             pause_menu: None,
             pause_music: PauseMusic::default(),
             game_over_audio: GameOverAudio::default(),
@@ -278,6 +281,14 @@ impl App {
         if self.audio_output.is_some() {
             play_menu_sound_or_warn(&self.mixer, sound);
         }
+    }
+    fn start_menu_music(&mut self) {
+        if self.audio_output.is_some() {
+            self.menu_music.start_or_warn(&self.mixer);
+        }
+    }
+    fn stop_menu_music(&mut self) {
+        self.menu_music.stop(&self.mixer);
     }
     fn load_selected_stems(&mut self) {
         if self.audio_output.is_none() {

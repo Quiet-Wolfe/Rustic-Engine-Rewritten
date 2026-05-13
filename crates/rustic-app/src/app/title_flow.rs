@@ -43,6 +43,7 @@ impl App {
         self.cameras = CameraRegistry::with_default_fnf();
         self.camera_fx = CameraFx::default();
         self.update_window_title();
+        self.start_menu_music();
 
         let Some(runtime) = self.runtime.as_ref() else {
             return;
@@ -95,6 +96,7 @@ impl App {
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.clear_play_state_for_menu();
+        self.start_menu_music();
         self.update_window_title();
 
         let Some(runtime) = self.runtime.as_ref() else {
@@ -138,6 +140,7 @@ impl App {
         self.freeplay_assets = None;
         self.story_menu_assets = None;
         self.clear_play_state_for_menu();
+        self.start_menu_music();
         self.update_window_title();
 
         let Some(runtime) = self.runtime.as_ref() else {
@@ -407,6 +410,7 @@ impl App {
         self.story_menu_assets = None;
         self.pause_menu = None;
         self.clear_play_state_for_menu();
+        self.start_menu_music();
         self.load_freeplay_assets();
         self.rebuild_song_select_commands();
     }
@@ -431,6 +435,7 @@ impl App {
         self.pause_menu = None;
         self.pause_music.stop(&self.mixer);
         self.game_over_audio.stop(&self.mixer);
+        self.stop_menu_music();
         self.characters = None;
         self.bitmap_text_skin = None;
         self.note_skin = None;
@@ -461,6 +466,7 @@ impl App {
 
     pub(super) fn enter_play(&mut self) {
         self.mode = AppMode::Play;
+        self.stop_menu_music();
         self.title_assets = None;
         self.main_menu_assets = None;
         self.credits_assets = None;
