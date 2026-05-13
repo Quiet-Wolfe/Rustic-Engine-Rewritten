@@ -99,13 +99,19 @@ pub struct TextSystem {
     viewport: Viewport,
     renderer: TextRenderer,
     buffers: Vec<Buffer>,
-    default_family: String,
+    default_family: DefaultTextFamily,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DefaultTextFamily {
+    Named(String),
+    SansSerif,
 }
 
 impl std::fmt::Debug for TextSystem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TextSystem")
-            .field("default_family", &self.default_family)
+            .field("default_family", &self.default_family())
             .field("buffers", &self.buffers.len())
             .finish_non_exhaustive()
     }
@@ -138,7 +144,7 @@ impl TextSystem {
             viewport,
             renderer,
             buffers: Vec::new(),
-            default_family: "sans-serif".into(),
+            default_family: DefaultTextFamily::SansSerif,
         }
     }
 
@@ -151,11 +157,14 @@ impl TextSystem {
     /// Set the family name used when a command does not pick one explicitly.
     /// Useful after registering the VCR font so menus pick it up by default.
     pub fn set_default_family(&mut self, family: impl Into<String>) {
-        self.default_family = family.into();
+        self.default_family = DefaultTextFamily::Named(family.into());
     }
 
     pub fn default_family(&self) -> &str {
-        &self.default_family
+        match &self.default_family {
+            DefaultTextFamily::Named(family) => family,
+            DefaultTextFamily::SansSerif => "sans-serif",
+        }
     }
 
     /// Resize the viewport (e.g. on surface resize). Text is rendered at
@@ -174,7 +183,12 @@ impl TextSystem {
         for cmd in commands {
             let metrics = Metrics::new(cmd.size_px, cmd.line_height_px.max(cmd.size_px));
             let mut buffer = Buffer::new(&mut self.font_system, metrics);
-            let attrs = Attrs::new().family(Family::Name(self.default_family.as_str()));
+            let attrs = match &self.default_family {
+                DefaultTextFamily::Named(family) => {
+                    Attrs::new().family(Family::Name(family.as_str()))
+                }
+                DefaultTextFamily::SansSerif => Attrs::new().family(Family::SansSerif),
+            };
             buffer.set_size(&mut self.font_system, cmd.max_width, cmd.max_height);
             buffer.set_text(&mut self.font_system, &cmd.text, attrs, Shaping::Advanced);
             buffer.shape_until_scroll(&mut self.font_system, false);
@@ -248,6 +262,19 @@ mod tests {
         assert_eq!(cmd.camera, CameraId(1));
         assert_eq!(cmd.layer, RenderLayer::Hud);
         assert_eq!(cmd.line_height_px, 24.0 * 1.2);
+    }
+
+    #[test]
+    fn text_system_uses_generic_sans_serif_until_vcr_is_registered() {
+        let family = DefaultTextFamily::SansSerif;
+
+        assert_eq!(
+            match family {
+                DefaultTextFamily::Named(ref name) => name.as_str(),
+                DefaultTextFamily::SansSerif => "sans-serif",
+            },
+            "sans-serif"
+        );
     }
 
     #[test]
