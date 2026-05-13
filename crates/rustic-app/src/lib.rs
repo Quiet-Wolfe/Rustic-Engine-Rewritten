@@ -10,6 +10,7 @@ pub mod app_runtime;
 pub mod app_text;
 pub mod app_types;
 pub mod asset_roots;
+pub mod audio_clock;
 pub mod audio_fallback;
 pub mod bitmap_text_assets;
 pub mod boot;

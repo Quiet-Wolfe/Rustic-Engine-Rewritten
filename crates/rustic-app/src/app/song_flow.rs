@@ -1,6 +1,9 @@
 use super::App;
+use crate::audio_clock::AudioClockDecision;
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
+use crate::song_audio::play_sample_rate;
 use rustic_core::time::Samples;
+use std::time::Instant;
 
 const SONG_END_TAIL_SECONDS: i64 = 2;
 
@@ -62,5 +65,51 @@ impl App {
         } else {
             self.load_story_menu();
         }
+    }
+
+    pub(super) fn advance_song_clock(&mut self) -> Samples {
+        if !self.song_started {
+            let elapsed = self.song_start.elapsed().as_secs_f64();
+            let elapsed_samples =
+                (elapsed * f64::from(play_sample_rate(&self.mixer))).round() as i64;
+            let cursor = Samples(self.song_start_cursor.0 + elapsed_samples);
+            if cursor.0 < 0 {
+                return cursor;
+            }
+            self.song_started = true;
+            self.song_start = Instant::now();
+            self.song_start_cursor = Samples(0);
+            self.audio_clock.reset(self.song_start);
+            if let Err(e) = self.mixer.edit(|mixer| {
+                mixer.seek(Samples(0))?;
+                mixer.resume();
+                Ok(())
+            }) {
+                tracing::warn!(target: "rustic.audio", "start countdown audio: {e:#}");
+            }
+            return Samples(0);
+        }
+
+        if self.audio_output.is_some() {
+            match self
+                .audio_clock
+                .observe(self.mixer.sample_cursor(), Instant::now())
+            {
+                AudioClockDecision::Audio(cursor) => return cursor,
+                AudioClockDecision::SwitchToWall(cursor) => {
+                    tracing::warn!(
+                        target: "rustic.audio",
+                        "audio stream cursor stalled, switching gameplay clock to wall time"
+                    );
+                    self.song_start = Instant::now();
+                    self.song_start_cursor = cursor;
+                    return cursor;
+                }
+                AudioClockDecision::Wall => {}
+            }
+        }
+        let elapsed = self.song_start.elapsed().as_secs_f64();
+        let elapsed_samples = (elapsed * f64::from(play_sample_rate(&self.mixer))).round() as i64;
+        Samples(self.song_start_cursor.0 + elapsed_samples)
     }
 }

@@ -3,6 +3,7 @@ use crate::active_holds::ActiveHolds;
 use crate::app_runtime::create_runtime as create_app_runtime;
 use crate::app_text::preview_text_commands;
 use crate::app_types::{AppOptions, Runtime};
+use crate::audio_clock::AudioClockFallback;
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::bitmap_text_assets::BitmapTextSkin;
 use crate::boot::{init_logging, install_panic_hook};
@@ -124,6 +125,7 @@ struct App {
     song_start: Instant,
     song_start_cursor: Samples,
     song_started: bool,
+    audio_clock: AudioClockFallback,
     game_over: Option<GameOverState>,
     debug_overlay: bool,
     last_frame_at: Instant,
@@ -195,6 +197,7 @@ impl App {
             song_start: now,
             song_start_cursor: Samples(0),
             song_started: false,
+            audio_clock: AudioClockFallback::new(now),
             game_over: None,
             debug_overlay: false,
             last_frame_at: now,
@@ -305,6 +308,7 @@ impl App {
         self.song_start_cursor = countdown_start_cursor(play_sample_rate(&self.mixer), bpm);
         self.song_start = Instant::now();
         self.song_started = false;
+        self.audio_clock.reset(self.song_start);
         self.game_over = None;
         self.countdown_audio.reset();
         self.character_anim.reset_song();
@@ -662,35 +666,6 @@ impl App {
         if let Some(play_state) = self.play_state.as_mut() {
             play_state.register_hold_tick(elapsed_samples, sample_rate);
         }
-    }
-    fn advance_song_clock(&mut self) -> Samples {
-        if !self.song_started {
-            let elapsed = self.song_start.elapsed().as_secs_f64();
-            let elapsed_samples =
-                (elapsed * f64::from(play_sample_rate(&self.mixer))).round() as i64;
-            let cursor = Samples(self.song_start_cursor.0 + elapsed_samples);
-            if cursor.0 < 0 {
-                return cursor;
-            }
-            self.song_started = true;
-            self.song_start = Instant::now();
-            self.song_start_cursor = Samples(0);
-            if let Err(e) = self.mixer.edit(|mixer| {
-                mixer.seek(Samples(0))?;
-                mixer.resume();
-                Ok(())
-            }) {
-                tracing::warn!(target: "rustic.audio", "start countdown audio: {e:#}");
-            }
-            return Samples(0);
-        }
-
-        if self.audio_output.is_some() {
-            return self.mixer.sample_cursor();
-        }
-        let elapsed = self.song_start.elapsed().as_secs_f64();
-        let elapsed_samples = (elapsed * f64::from(play_sample_rate(&self.mixer))).round() as i64;
-        Samples(self.song_start_cursor.0 + elapsed_samples)
     }
 }
 impl ApplicationHandler for App {
