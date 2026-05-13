@@ -189,9 +189,10 @@ impl FreeplayAssets {
             -90,
             pink_back_size,
         ));
+        let logical_width = self.pink_back_logical_width();
         commands.push(solid_command(
             glam::vec2(back_x + ORANGE_BAR_X, ORANGE_BAR_Y),
-            glam::vec2(pink_back_size.x, ORANGE_BAR_HEIGHT),
+            glam::vec2(logical_width, ORANGE_BAR_HEIGHT),
             ORANGE_BAR_COLOR,
             -85,
         ));
@@ -206,7 +207,7 @@ impl FreeplayAssets {
         self.push_backing_text(&mut commands, cursor, sample_rate);
 
         let bg_scale = bg_image_scale(&self.bg_image);
-        let bg_pos = glam::vec2(pink_back_size.x * 0.74, 0.0);
+        let bg_pos = glam::vec2(logical_width * 0.74, 0.0);
         commands.push(self.bg_image.background_command(
             bg_pos,
             glam::Vec4::ONE,
@@ -616,11 +617,16 @@ impl FreeplayAssets {
 
     fn pink_back_draw_size(&self) -> glam::Vec2 {
         // Stretch pinkBack horizontally well past its native aspect so the
-        // alpha-masked diagonal extends OVER the BF/GF backdrop on the right.
-        // OG achieves the same via BitmapUtil.scalePartByWidth(pinkBack,
-        // CUTOUT_WIDTH); we just pick a fixed draw width that visually lands
-        // the diagonal where the OG screenshot puts it.
+        // alpha-masked diagonal extends OVER the BF/GF backdrop on the right
+        // and reads as a clear trapezoid, not a rectangle.
         glam::vec2(helpers::PINKBACK_DRAW_WIDTH, PINKBACK_TARGET_HEIGHT)
+    }
+
+    /// Logical width of the back footprint, used by elements that should
+    /// settle with the back rather than extend with the diagonal (orange bar,
+    /// BG cartoon position).
+    fn pink_back_logical_width(&self) -> f32 {
+        helpers::PINKBACK_LOGICAL_WIDTH
     }
 
     fn push_capsules(
