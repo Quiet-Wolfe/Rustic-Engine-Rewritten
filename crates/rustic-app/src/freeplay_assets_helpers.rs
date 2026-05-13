@@ -80,6 +80,14 @@ pub(super) fn bg_image_scale(bg: &StaticTexture) -> f32 {
     PINKBACK_TARGET_HEIGHT / bg.height.max(1) as f32
 }
 
+/// Extra horizontal pixels added to the pinkBack render width to mimic
+/// `BitmapUtil.scalePartByWidth(pinkBack, CUTOUT_WIDTH)` from OG. Without
+/// this the back stops well short of where the OG's slanted right edge
+/// sits, since pinkBack.png is only ~524px wide at its native aspect.
+/// ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:47
+/// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:121 (CUTOUT_WIDTH)
+pub(super) const PINKBACK_CUTOUT_WIDTH: f32 = 200.0;
+
 pub(super) fn capsule_text_offset() -> glam::Vec2 {
     // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:200
     glam::vec2(

@@ -90,9 +90,10 @@ const ORANGE_BAR_COLOR: glam::Vec4 = glam::Vec4::new(
     0x00 as f32 / 255.0,
     1.0,
 );
-// ref: bdedc0aa:assets/preload/data/ui/freeplay/styles/bf.json:7 (capsuleTextColors)
-const CAPSULE_TEXT_COLOR: glam::Vec4 =
-    glam::Vec4::new(0x00 as f32 / 255.0, 0xCC as f32 / 255.0, 1.0, 1.0);
+// ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx (songText color)
+// Capsule labels in OG render white on the dark capsule sprite; the cyan
+// shade we had read against the yellow back when there was no capsule fill.
+const CAPSULE_TEXT_COLOR: glam::Vec4 = glam::Vec4::new(1.0, 1.0, 1.0, 1.0);
 
 const WHITE_TEXTURE_ID: AssetId = AssetId::new(0x4672_6565_706c_6179);
 
@@ -383,7 +384,9 @@ impl FreeplayAssets {
 
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:349 (ostName)
         // ref: bdedc0aa:source/funkin/util/Constants.hx:292 (DEFAULT_OST_NAME)
-        let mut ost = TextCommand::new("OFFICIAL OST", glam::vec2(950.0, 14.0 + top_y_offset), 36.0);
+        // OG renders ostName at size 48 right-aligned; we approximate with a
+        // 48px left-aligned x near the right edge.
+        let mut ost = TextCommand::new("OFFICIAL OST", glam::vec2(900.0, 8.0 + top_y_offset), 48.0);
         ost.color = glam::Vec4::new(1.0, 1.0, 1.0, 0.9);
         ost.z = 300;
         commands.push(ost);
@@ -426,7 +429,10 @@ impl FreeplayAssets {
         // The slot at index 2 is the active category (center). Neighbors are
         // the previous/next entries in the alphabet array; ALL is centered by
         // default. "A-B" and "C-D" are letter ranges, rendered with a hyphen.
-        const LETTERS: [&str; 5] = ["#", "@", "ALL", "A-B", "C-D"];
+        // The "fav" slot renders as a heart glyph in OG (sourced from
+        // favHeart.png); we use a Unicode heart as a placeholder until that
+        // sprite is wired in.
+        const LETTERS: [&str; 5] = ["#", "\u{2665}", "ALL", "A-B", "C-D"];
         for (i, glyph) in LETTERS.iter().enumerate() {
             let is_center = i == 2;
             let scale = if is_center { 1.0 } else { 0.8 };
@@ -601,7 +607,7 @@ impl FreeplayAssets {
     fn pink_back_draw_size(&self) -> glam::Vec2 {
         let aspect = self.pink_back.width.max(1) as f32 / self.pink_back.height.max(1) as f32;
         let height = PINKBACK_TARGET_HEIGHT;
-        let width = height * aspect;
+        let width = height * aspect + helpers::PINKBACK_CUTOUT_WIDTH;
         glam::vec2(width, height)
     }
 
