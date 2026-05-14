@@ -33,6 +33,19 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         "images/freeplay/pinkBack.png",
         FilterMode::Linear,
     )?;
+    // Custom right-triangle alpha mask used past BF's right shoulder. The
+    // pinkBack alpha is too subtle to read as a triangle when stretched, so
+    // we generate a proper triangle PNG (wide at top, single point at the
+    // bottom-left) and composite it over the solid rectangle.
+    let back_triangle = load_static_texture(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/freeplayBackTriangle.png",
+        FilterMode::Linear,
+    )
+    .ok();
     let bg_image = load_static_texture(
         device,
         queue,
@@ -236,6 +249,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
     Ok(FreeplayAssets {
         songs,
         pink_back,
+        back_triangle,
         bg_image,
         capsule_atlas,
         capsule_selected_frames,

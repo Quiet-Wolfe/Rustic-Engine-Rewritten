@@ -10,12 +10,11 @@
 //! ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:48-242
 // LINT-ALLOW: long-file freeplay asset loading and layout stay co-located for fidelity.
 
-use crate::bitmap_text_assets::{BitmapTextDraw, BitmapTextSkin};
+use crate::bitmap_text_assets::BitmapTextSkin;
 use crate::freeplay_dj::FreeplayDJ;
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
 use rustic_asset::SparrowFrame;
 use rustic_core::ids::AssetId;
-use rustic_core::render::RenderLayer;
 use rustic_core::time::Samples;
 use rustic_render::{RenderCommandList, TextCommand, TextCommandList, Texture};
 use std::collections::HashMap;
@@ -32,6 +31,9 @@ use capsule_metadata::CapsuleMetadataAssets;
 #[path = "freeplay_loader.rs"]
 mod freeplay_loader;
 pub use freeplay_loader::load_freeplay_assets;
+
+#[path = "freeplay_backing_text.rs"]
+mod backing_text;
 
 // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:607
 const CAPSULE_REAL_SCALED: f32 = 0.8;
@@ -114,6 +116,7 @@ const CAPSULE_ENTER_OFFSET_X: f32 = 600.0;
 pub struct FreeplayAssets {
     songs: Vec<FreeplayCapsule>,
     pink_back: StaticTexture,
+    back_triangle: Option<StaticTexture>,
     bg_image: StaticTexture,
     capsule_atlas: SparrowAtlasHandle,
     capsule_selected_frames: Vec<SparrowFrame>,
@@ -183,12 +186,28 @@ impl FreeplayAssets {
         // is stretched wider than its native aspect so the trapezoid extends
         // over the BG cartoon to the right, matching OG's
         // BitmapUtil.scalePartByWidth(pinkBack, CUTOUT_WIDTH).
-        commands.push(self.pink_back.background_command(
+        // Yellow back = solid rectangle behind BF + a right-triangle PNG
+        // extension past his right shoulder. The triangle is wide at the top
+        // and narrows to a single point at the bottom, so the combined shape
+        // is a trapezoid wider at the top, narrowing toward the orange bar.
+        let solid_rect_w = helpers::PINKBACK_RECT_WIDTH;
+        let triangle_w = helpers::PINKBACK_TRIANGLE_WIDTH;
+        let back_h = helpers::PINKBACK_RECT_HEIGHT;
+        commands.push(solid_command(
             glam::vec2(back_x, 0.0),
+            glam::vec2(solid_rect_w, back_h),
             PINKBACK_COLOR,
             -90,
-            pink_back_size,
         ));
+        if let Some(tri) = self.back_triangle.as_ref() {
+            commands.push(tri.command(
+                glam::vec2(back_x + solid_rect_w, 0.0),
+                PINKBACK_COLOR,
+                -90,
+                glam::vec2(triangle_w, back_h),
+            ));
+        }
+        let _ = pink_back_size;
         let logical_width = self.pink_back_logical_width();
         commands.push(solid_command(
             glam::vec2(back_x + ORANGE_BAR_X, ORANGE_BAR_Y),
@@ -460,87 +479,6 @@ impl FreeplayAssets {
         }
 
         commands
-    }
-
-    fn push_backing_text(
-        &self,
-        commands: &mut RenderCommandList,
-        cursor: Samples,
-        sample_rate: u32,
-    ) {
-        let Some(skin) = self.backing_text_skin.as_ref() else {
-            return;
-        };
-        // ref: bdedc0aa:assets/preload/data/players/bf.json:35-37
-        // ref: bdedc0aa:source/funkin/ui/freeplay/BGScrollingText.hx:10-87
-        // ref: bdedc0aa:assets/preload/scripts/players/backcards/backcard-bf.hxc:77-113
-        const ROWS: [(&str, f32, f32, glam::Vec4, f32); 6] = [
-            (
-                "HOT BLOODED IN MORE WAYS THAN ONE",
-                160.0,
-                43.0,
-                glam::Vec4::new(1.0, 0xF3 as f32 / 255.0, 0x83 as f32 / 255.0, 0.55),
-                6.8,
-            ),
-            (
-                "BOYFRIEND",
-                220.0,
-                60.0,
-                glam::Vec4::new(1.0, 0x99 as f32 / 255.0, 0x63 as f32 / 255.0, 0.52),
-                -3.8,
-            ),
-            (
-                "PROTECT YO NUTS",
-                285.0,
-                43.0,
-                glam::Vec4::new(1.0, 1.0, 1.0, 0.75),
-                3.5,
-            ),
-            (
-                "BOYFRIEND",
-                335.0,
-                60.0,
-                glam::Vec4::new(1.0, 0x99 as f32 / 255.0, 0x63 as f32 / 255.0, 0.52),
-                -3.8,
-            ),
-            (
-                "HOT BLOODED IN MORE WAYS THAN ONE",
-                397.0,
-                43.0,
-                glam::Vec4::new(1.0, 0xF3 as f32 / 255.0, 0x83 as f32 / 255.0, 0.55),
-                6.8,
-            ),
-            (
-                "BOYFRIEND",
-                450.0,
-                60.0,
-                glam::Vec4::new(1.0, 0xA4 as f32 / 255.0, 0.0, 0.52),
-                -3.8,
-            ),
-        ];
-        let seconds = cursor.0.max(0) as f64 / f64::from(sample_rate.max(1));
-        for (text, y, size, color, speed) in ROWS {
-            let width = estimated_text_width(text, size);
-            let span = width + BACKING_TEXT_GAP;
-            let scroll = (seconds * f64::from(speed) * 60.0) as f32;
-            let count = (PINKBACK_TARGET_HEIGHT / span).ceil() as i32 + 4;
-            for i in -1..count {
-                let origin = glam::vec2(i as f32 * span - scroll.rem_euclid(span), y);
-                for cmd in skin.commands_with(
-                    text,
-                    BitmapTextDraw {
-                        origin,
-                        scale: size / 16.0,
-                        letter_spacing: 0,
-                        color,
-                        layer: RenderLayer::Background,
-                        z: -82,
-                    },
-                ) {
-                    commands.push(cmd);
-                }
-            }
-        }
     }
 
     /// Advance per-frame freeplay UI state (currently just the DJ state machine).
@@ -836,10 +774,6 @@ impl FreeplayAssets {
             glam::vec2(texture.width as f32, texture.height as f32),
         ));
     }
-}
-
-fn estimated_text_width(text: &str, size_px: f32) -> f32 {
-    text.chars().count() as f32 * size_px * 0.62
 }
 
 #[derive(Debug)]

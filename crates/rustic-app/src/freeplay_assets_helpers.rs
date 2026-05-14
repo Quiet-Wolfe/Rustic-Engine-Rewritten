@@ -80,16 +80,21 @@ pub(super) fn bg_image_scale(bg: &StaticTexture) -> f32 {
     PINKBACK_TARGET_HEIGHT / bg.height.max(1) as f32
 }
 
-/// Rendered width of pinkBack texture. The alpha mask's visible region spans
-/// roughly x=0..0.70 at the top of the texture and x=0..0.92 at the bottom,
-/// so widening the draw makes the diagonal more visually pronounced. We
-/// stretch ~2.6x past native (524->1300) so the slanted right edge reads as
-/// a clear trapezoid rather than an "extended rectangle".
-pub(super) const PINKBACK_DRAW_WIDTH: f32 = 1300.0;
+/// Width of the solid yellow rectangle behind BF. The triangle extension
+/// starts at the right edge of this rectangle.
+pub(super) const PINKBACK_RECT_WIDTH: f32 = 360.0;
 
-/// Logical footprint of the back used for placing the orange bar and BG
-/// image. Smaller than PINKBACK_DRAW_WIDTH so those elements don't drift
-/// off-screen even though the back extends further right.
+/// Width of the right-triangle extension drawn past the rectangle.
+/// The triangle is wide at the top and narrows to a single point at the
+/// bottom — the combined back forms a trapezoid wider at top than bottom.
+pub(super) const PINKBACK_TRIANGLE_WIDTH: f32 = 580.0;
+
+/// Vertical extent of the yellow back (top of orange bar).
+pub(super) const PINKBACK_RECT_HEIGHT: f32 = 645.0;
+
+/// Kept for back-compat with the pinkBack texture path until the loader is
+/// trimmed; we no longer render pinkBack itself.
+pub(super) const PINKBACK_DRAW_WIDTH: f32 = 900.0;
 pub(super) const PINKBACK_LOGICAL_WIDTH: f32 = 900.0;
 
 pub(super) fn capsule_text_offset() -> glam::Vec2 {
@@ -310,6 +315,7 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
 /// Logical paths to assets the Freeplay screen depends on.
 pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
     "images/freeplay/pinkBack.png",
+    "images/freeplay/freeplayBackTriangle.png",
     "images/freeplay/freeplayBGweek1-bf.png",
     "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.png",
     "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.xml",
