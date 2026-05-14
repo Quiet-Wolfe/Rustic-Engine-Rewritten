@@ -115,7 +115,6 @@ const CAPSULE_ENTER_OFFSET_X: f32 = 600.0;
 #[derive(Debug)]
 pub struct FreeplayAssets {
     songs: Vec<FreeplayCapsule>,
-    pink_back: StaticTexture,
     back_triangle: Option<StaticTexture>,
     bg_image: StaticTexture,
     capsule_atlas: SparrowAtlasHandle,
@@ -169,7 +168,6 @@ impl FreeplayAssets {
         // Overhang sits at y=-100 when settled; before the tween completes it
         // hides above the screen by another `height` pixels.
         let overhang_y = -100.0 - (1.0 - enter_t) * 164.0;
-        let pink_back_size = self.pink_back_draw_size();
 
         // overhangStuff: solid-black bar behind the FREEPLAY / OFFICIAL OST text
         // along the top. OG positions it at y=-100 with height 164 (so the visible
@@ -200,14 +198,15 @@ impl FreeplayAssets {
             -90,
         ));
         if let Some(tri) = self.back_triangle.as_ref() {
-            commands.push(tri.command(
+            // Render on the Background layer so the triangle sits BEHIND
+            // the BG cartoon (Daddy Dearest art) rather than covering it.
+            commands.push(tri.background_command(
                 glam::vec2(back_x + solid_rect_w, 0.0),
                 PINKBACK_COLOR,
                 -90,
                 glam::vec2(triangle_w, back_h),
             ));
         }
-        let _ = pink_back_size;
         let logical_width = self.pink_back_logical_width();
         commands.push(solid_command(
             glam::vec2(back_x + ORANGE_BAR_X, ORANGE_BAR_Y),
@@ -551,13 +550,6 @@ impl FreeplayAssets {
 
     fn clamped_index(&self, index: usize) -> usize {
         index.min(self.songs.len().saturating_sub(1))
-    }
-
-    fn pink_back_draw_size(&self) -> glam::Vec2 {
-        // Stretch pinkBack horizontally well past its native aspect so the
-        // alpha-masked diagonal extends OVER the BF/GF backdrop on the right
-        // and reads as a clear trapezoid, not a rectangle.
-        glam::vec2(helpers::PINKBACK_DRAW_WIDTH, PINKBACK_TARGET_HEIGHT)
     }
 
     /// Logical width of the back footprint, used by elements that should
