@@ -85,16 +85,14 @@ pub(super) fn bg_image_scale(bg: &StaticTexture) -> f32 {
 pub(super) const PINKBACK_RECT_WIDTH: f32 = 360.0;
 
 /// Width of the right-triangle extension drawn past the rectangle.
-/// The triangle is wide at the top and narrows to a single point at the
-/// bottom — the combined back forms a trapezoid wider at top than bottom.
-pub(super) const PINKBACK_TRIANGLE_WIDTH: f32 = 580.0;
+/// The triangle is narrow at the top (single point) and widens to its full
+/// width at the bottom — the combined back forms a trapezoid that narrows
+/// upward (slope ~20° from vertical instead of the prior ~42°).
+pub(super) const PINKBACK_TRIANGLE_WIDTH: f32 = 240.0;
 
 /// Vertical extent of the yellow back (top of orange bar).
 pub(super) const PINKBACK_RECT_HEIGHT: f32 = 645.0;
 
-/// Kept for back-compat with the pinkBack texture path until the loader is
-/// trimmed; we no longer render pinkBack itself.
-pub(super) const PINKBACK_DRAW_WIDTH: f32 = 900.0;
 pub(super) const PINKBACK_LOGICAL_WIDTH: f32 = 900.0;
 
 pub(super) fn capsule_text_offset() -> glam::Vec2 {
