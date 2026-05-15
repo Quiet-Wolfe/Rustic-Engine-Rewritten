@@ -336,6 +336,8 @@ pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
     "images/freeplay/sparkle.png",
     "images/freeplay/sparkle.xml",
     "images/freeplay/miniArrow.png",
+    "images/freeplay/favHeart.png",
+    "images/freeplay/favHeart.xml",
     "images/freeplay/freeplayStars/Animation.json",
     "images/freeplay/freeplayStars/spritemap1.json",
     "images/freeplay/freeplayStars/spritemap1.png",

@@ -239,6 +239,22 @@ pub fn load_freeplay_assets_for_style(
         FilterMode::Linear,
     )
     .ok();
+    let (fav_heart_atlas, fav_heart_frames) = match load_sparrow_atlas(
+        device,
+        queue,
+        &resolver,
+        &mut textures,
+        "images/freeplay/favHeart.xml",
+    ) {
+        Ok((handle, atlas)) => {
+            let frames = clone_frames(&atlas, "favorite heart");
+            (Some(handle), frames)
+        }
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "freeplay favorite heart unavailable: {e:#}");
+            (None, Vec::new())
+        }
+    };
     let (sparkle_atlas, sparkle_frames) = match load_sparrow_atlas(
         device,
         queue,
@@ -296,6 +312,8 @@ pub fn load_freeplay_assets_for_style(
         difficulty_stars,
         mini_arrow,
         seperator,
+        fav_heart_atlas,
+        fav_heart_frames,
         sparkle_atlas,
         sparkle_frames,
         clear_box,

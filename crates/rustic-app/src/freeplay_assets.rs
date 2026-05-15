@@ -52,9 +52,6 @@ const SELECTOR_ANIM_FPS: u16 = 24;
 const DIFFICULTY_GROUP_X: f32 = 90.0;
 const DIFFICULTY_GROUP_Y: f32 = 80.0;
 const ORANGE_BAR_X: f32 = 84.0;
-// OG's orangeBackShit.y=440 reads visually much lower in the rendered scene
-// (around y=645 in our 1280x720 viewport); drop it so the yellow back fills
-// the bottom region behind BF instead of leaving a black void.
 const ORANGE_BAR_Y: f32 = 645.0;
 const ORANGE_BAR_HEIGHT: f32 = 75.0;
 const FREEPLAY_TITLE_X: f32 = 8.0;
@@ -76,11 +73,6 @@ const ALBUM_TITLE_X: f32 = 1280.0 - 360.0;
 const ALBUM_TITLE_Y: f32 = 480.0;
 const BACKING_TEXT_GAP: f32 = 20.0;
 
-// ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:62
-// pinkBack.png already carries the diagonal alpha mask, so the visible shape
-// (yellow trapezoid with the slanted right edge) comes from the asset itself
-// rather than a separate cardGlow overlay — cardGlow in OG is a transition
-// glow that only fires during enter/exit/confirm.
 const PINKBACK_COLOR: glam::Vec4 = glam::Vec4::new(
     0xFF as f32 / 255.0,
     0xD8 as f32 / 255.0,
@@ -96,12 +88,7 @@ const ORANGE_BAR_COLOR: glam::Vec4 = glam::Vec4::new(
 // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx (songText color)
 const WHITE_TEXTURE_ID: AssetId = AssetId::new(0x4672_6565_706c_6179);
 
-// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:725-744 (applyEnter tweens)
-// OG runs the slide-in over 0.6s with quartOut easing; we reuse the same
-// duration so the DJ Intro (~17 frames @ 24fps = 0.71s) lands a beat after.
 const ENTER_DURATION_SECS: f64 = 0.6;
-// How far capsules slide in from the right edge before settling.
-// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:737 (capsule x tween)
 const CAPSULE_ENTER_OFFSET_X: f32 = 600.0;
 
 #[derive(Debug)]
@@ -129,6 +116,8 @@ pub struct FreeplayAssets {
     difficulty_stars: Option<FreeplayDifficultyStars>,
     mini_arrow: Option<StaticTexture>,
     seperator: Option<StaticTexture>,
+    fav_heart_atlas: Option<SparrowAtlasHandle>,
+    fav_heart_frames: Vec<SparrowFrame>,
     sparkle_atlas: Option<SparrowAtlasHandle>,
     sparkle_frames: Vec<SparrowFrame>,
     clear_box: Option<StaticTexture>,
@@ -256,7 +245,6 @@ impl FreeplayAssets {
         let offset = 0.0f32; // selected capsule sits at offset 0
         let capsule_pos = capsule_position(offset);
         let _ = selected_index;
-        // ranking is at (420, 41) within capsule, scaled by realScaled.
         let ranking_pos =
             capsule_pos + glam::vec2(420.0 * CAPSULE_REAL_SCALED, 41.0 * CAPSULE_REAL_SCALED);
         commands.push(sparrow_scaled_command(
@@ -289,7 +277,6 @@ impl FreeplayAssets {
         ];
         let base_x = 260.0;
         let base_y = 170.0;
-        // seperator.png is 17×17 and the OG uses it at native size for the dots.
         let spacing = (sep.width as f32 + 8.0).max(18.0);
         let scale = 1.0;
         for (idx, kind) in dots.iter().enumerate() {
@@ -361,6 +348,20 @@ impl FreeplayAssets {
                 ));
             }
         }
+        if let (Some(atlas), Some(frame)) =
+            (self.fav_heart_atlas.as_ref(), self.fav_heart_frames.get(1))
+        {
+            commands.push(sparrow_scaled_command(
+                atlas.texture_id,
+                atlas.width,
+                atlas.height,
+                frame,
+                glam::vec2(group_x + 80.0 + 52.0, group_y + 44.0),
+                glam::Vec2::ONE,
+                glam::Vec4::ONE,
+                335,
+            ));
+        }
     }
 
     pub fn text_commands(
@@ -372,8 +373,6 @@ impl FreeplayAssets {
         let mut commands = TextCommandList::new();
         let selected_index = self.clamped_index(selected_index);
 
-        // Reuse the enter tween so top-row text rides the overhang bar in and
-        // capsule labels slide alongside their sprites.
         let enter_t = self.enter_progress(cursor, sample_rate);
         let top_y_offset = -(1.0 - enter_t) * 164.0;
         let capsule_enter_offset_x = (1.0 - enter_t) * CAPSULE_ENTER_OFFSET_X;
@@ -438,10 +437,7 @@ impl FreeplayAssets {
         // The slot at index 2 is the active category (center). Neighbors are
         // the previous/next entries in the alphabet array; ALL is centered by
         // default. "A-B" and "C-D" are letter ranges, rendered with a hyphen.
-        // The "fav" slot renders as a heart glyph in OG (sourced from
-        // favHeart.png); we use a Unicode heart as a placeholder until that
-        // sprite is wired in.
-        const LETTERS: [&str; 5] = ["#", "\u{2665}", "ALL", "A-B", "C-D"];
+        const LETTERS: [&str; 5] = ["#", "", "ALL", "A-B", "C-D"];
         for (i, glyph) in LETTERS.iter().enumerate() {
             let is_center = i == 2;
             let scale = if is_center { 1.0 } else { 0.8 };
