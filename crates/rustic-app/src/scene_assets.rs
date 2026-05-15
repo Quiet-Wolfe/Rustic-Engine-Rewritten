@@ -110,7 +110,12 @@ impl CharacterSet {
         let mut commands = Vec::new();
         for extra in &self.sserafim_extras {
             if let Some(request) = state.pose_for_member(extra.member, poses, cursor) {
-                commands.extend(extra.sprite.commands(request, cursor, sample_rate));
+                commands.extend(extra.sprite.commands_with_lip_sync(
+                    request,
+                    cursor,
+                    sample_rate,
+                    state.member_sings(extra.member),
+                ));
             }
         }
         if let Some(girlfriend) = &self.girlfriend {
@@ -120,10 +125,20 @@ impl CharacterSet {
             }
         }
         if let Some(request) = state.pose_for_member(SserafimMember::Kazuha, poses, cursor) {
-            commands.extend(self.opponent.commands(request, cursor, sample_rate));
+            commands.extend(self.opponent.commands_with_lip_sync(
+                request,
+                cursor,
+                sample_rate,
+                state.member_sings(SserafimMember::Kazuha),
+            ));
         }
         if let Some(request) = state.pose_for_member(SserafimMember::Sakura, poses, cursor) {
-            commands.extend(self.player.commands(request, cursor, sample_rate));
+            commands.extend(self.player.commands_with_lip_sync(
+                request,
+                cursor,
+                sample_rate,
+                state.member_sings(SserafimMember::Sakura),
+            ));
         }
         commands
     }
@@ -209,6 +224,21 @@ impl CharacterSprite {
         match self {
             Self::Sparrow(sprite) => vec![sprite.command(request, cursor, sample_rate)],
             Self::Animate(sprite) => sprite.commands(request, cursor, sample_rate),
+        }
+    }
+
+    fn commands_with_lip_sync(
+        &self,
+        request: CharacterPoseRequest,
+        cursor: Samples,
+        sample_rate: u32,
+        lip_sync_active: bool,
+    ) -> Vec<DrawCommand> {
+        match self {
+            Self::Sparrow(sprite) => vec![sprite.command(request, cursor, sample_rate)],
+            Self::Animate(sprite) => {
+                sprite.commands_with_lip_sync(request, cursor, sample_rate, lip_sync_active)
+            }
         }
     }
 

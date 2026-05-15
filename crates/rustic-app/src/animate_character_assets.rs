@@ -42,6 +42,16 @@ impl AnimateCharacterSprite {
         cursor: Samples,
         sample_rate: u32,
     ) -> Vec<DrawCommand> {
+        self.commands_with_lip_sync(request, cursor, sample_rate, request.name.starts_with("sing"))
+    }
+
+    pub(crate) fn commands_with_lip_sync(
+        &self,
+        request: CharacterPoseRequest,
+        cursor: Samples,
+        sample_rate: u32,
+        lip_sync_active: bool,
+    ) -> Vec<DrawCommand> {
         if let Some(sprite) = &self.mixed_sparrow {
             if sprite.has_pose(request.name) {
                 return vec![sprite.command(request, cursor, sample_rate)];
@@ -62,6 +72,7 @@ impl AnimateCharacterSprite {
                 pose,
                 &parts,
                 request.name,
+                lip_sync_active,
                 cursor,
                 sample_rate,
             ));
