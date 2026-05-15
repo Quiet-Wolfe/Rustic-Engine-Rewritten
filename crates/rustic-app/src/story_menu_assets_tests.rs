@@ -55,3 +55,62 @@ fn parses_week_background_hex() {
     assert!((color.y - 207.0 / 255.0).abs() < 0.001);
     assert!((color.z - 81.0 / 255.0).abs() < 0.001);
 }
+
+#[test]
+fn story_menu_registry_includes_all_vslice_levels() {
+    assert_eq!(
+        STORY_LEVEL_IDS,
+        [
+            "tutorial", "week1", "week2", "week3", "week4", "week5", "week6", "week7",
+            "weekend1", "sserafim"
+        ]
+    );
+}
+
+#[test]
+fn sserafim_level_resolves_spaghetti_playlist() {
+    let level = match LevelDefinition::parse(
+        br#"{
+            "name":"LE SSERAFIM",
+            "titleAsset":"storymenu/titles/sserafim",
+            "songs":["spaghetti"]
+        }"#,
+    ) {
+        Ok(level) => level,
+        Err(error) => panic!("test fixture should parse: {error}"),
+    };
+    let story = StoryMenuAssets {
+        levels: vec![StoryLevel {
+            data: level,
+            title: StaticTexture {
+                texture_id: WHITE_TEXTURE_ID,
+                width: 1,
+                height: 1,
+                filter: FilterMode::Nearest,
+            },
+            props: Vec::new(),
+            difficulties: vec![
+                PreviewDifficulty::Easy,
+                PreviewDifficulty::Normal,
+                PreviewDifficulty::Hard,
+            ],
+        }],
+        arrows: ArrowSkin {
+            left_idle: dummy_arrow(),
+            right_idle: dummy_arrow(),
+        },
+        difficulties: HashMap::new(),
+        textures: HashMap::new(),
+    };
+
+    assert_eq!(story.preview_playlist(0), Some(vec![PreviewSong::SPAGHETTI]));
+}
+
+fn dummy_arrow() -> SparrowStill {
+    SparrowStill {
+        texture_id: WHITE_TEXTURE_ID,
+        texture_width: 1,
+        texture_height: 1,
+        frame: SparrowFrame::untrimmed("dummy".to_string(), 0, 0, 1, 1),
+    }
+}
