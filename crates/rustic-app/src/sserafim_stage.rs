@@ -1,4 +1,5 @@
 //! Runtime hooks for the Spaghetti Sserafim stage script.
+// LINT-ALLOW: long-file Sserafim stage script state and tests stay together.
 
 use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
 use crate::preview_song::PreviewSong;
@@ -270,23 +271,12 @@ impl TimedFlash {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct PulseLights {
     enabled: bool,
     colors: Vec<glam::Vec4>,
     durations: Vec<f32>,
     intensities: Vec<f32>,
-}
-
-impl Default for PulseLights {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            colors: Vec::new(),
-            durations: Vec::new(),
-            intensities: Vec::new(),
-        }
-    }
 }
 
 impl PulseLights {

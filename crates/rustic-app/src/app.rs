@@ -6,7 +6,7 @@ use crate::app_types::{AppOptions, Runtime};
 use crate::audio_clock::AudioClockFallback;
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::bitmap_text_assets::BitmapTextSkin;
-use crate::boot::{init_logging, install_panic_hook, settings_dir};
+use crate::boot::{init_logging, install_panic_hook};
 use crate::camera_events::focus_initial_camera as focus_initial;
 use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
@@ -42,7 +42,7 @@ use crate::scene_assets::{
     LoadedScene,
 };
 use crate::screen::ScreenStack;
-use crate::settings::Settings;
+use crate::settings::{load_settings_or_default, Settings};
 use crate::song_audio::{load_preview_stems_for, play_sample_rate, set_vocals_gain};
 use crate::stage_object_assets::StagePropSet;
 use crate::stage_sfx::StageSfx;
@@ -677,19 +677,6 @@ impl App {
         }
         self.sserafim_stage
             .apply_commands(self.cmds.iter_mut(), cursor, sample_rate, stage_bpm);
-    }
-}
-
-fn load_settings_or_default() -> (Settings, Option<PathBuf>) {
-    let Some(path) = settings_dir().map(|dir| dir.join("settings.toml")) else {
-        return (Settings::default(), None);
-    };
-    match Settings::load_or_default(&path) {
-        Ok(settings) => (settings, Some(path)),
-        Err(e) => {
-            tracing::warn!(target: "rustic.settings", "settings unavailable: {e:#}");
-            (Settings::default(), Some(path))
-        }
     }
 }
 

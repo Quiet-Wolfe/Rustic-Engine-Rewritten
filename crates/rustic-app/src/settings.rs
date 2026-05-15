@@ -58,6 +58,19 @@ impl Settings {
     }
 }
 
+pub(crate) fn load_settings_or_default() -> (Settings, Option<PathBuf>) {
+    let Some(path) = crate::boot::settings_dir().map(|dir| dir.join("settings.toml")) else {
+        return (Settings::default(), None);
+    };
+    match Settings::load_or_default(&path) {
+        Ok(settings) => (settings, Some(path)),
+        Err(e) => {
+            tracing::warn!(target: "rustic.settings", "settings unavailable: {e:#}");
+            (Settings::default(), Some(path))
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 #[non_exhaustive]
