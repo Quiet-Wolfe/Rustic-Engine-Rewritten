@@ -16,6 +16,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[non_exhaustive]
 pub struct StageDefinition {
     pub id: String,
+    #[serde(default)]
+    pub directory: Option<String>,
     #[serde(default = "default_camera_zoom")]
     pub camera_zoom: f32,
     #[serde(default)]
@@ -34,6 +36,8 @@ pub struct StageDefinition {
 pub struct StageCharacterSlot {
     pub position: AssetVec2,
     pub camera_offset: AssetVec2,
+    #[serde(default, alias = "zIndex")]
+    pub z: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,9 +47,15 @@ pub struct StageObject {
     pub id: String,
     pub image: AssetPath,
     #[serde(default)]
+    pub render_type: StageObjectRenderType,
+    #[serde(default)]
     pub solid_color: Option<[u8; 4]>,
     #[serde(default)]
     pub animation: Option<StageObjectAnimation>,
+    #[serde(default)]
+    pub animations: Vec<StageObjectAnimation>,
+    #[serde(default)]
+    pub dance_every: f64,
     #[serde(default = "default_layer")]
     pub layer: RenderLayer,
     #[serde(default)]
@@ -56,10 +66,45 @@ pub struct StageObject {
     pub scale: AssetVec2,
     #[serde(default)]
     pub z: i32,
+    #[serde(default = "default_alpha")]
+    pub alpha: f32,
     #[serde(default = "default_antialiasing")]
     pub antialiasing: bool,
     #[serde(default = "default_active")]
     pub active: bool,
+}
+
+impl StageObject {
+    pub fn png(id: impl Into<String>, image: AssetPath) -> Self {
+        Self {
+            id: id.into(),
+            image,
+            render_type: StageObjectRenderType::Png,
+            solid_color: None,
+            animation: None,
+            animations: Vec::new(),
+            dance_every: 0.0,
+            layer: default_layer(),
+            position: AssetVec2::ZERO,
+            scroll_factor: AssetVec2::ONE,
+            scale: AssetVec2::ONE,
+            z: 0,
+            alpha: 1.0,
+            antialiasing: true,
+            active: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum StageObjectRenderType {
+    #[default]
+    Png,
+    Sparrow,
+    Packer,
+    AnimateAtlas,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -68,8 +113,12 @@ pub struct StageObject {
 pub struct StageObjectAnimation {
     pub name: String,
     pub prefix: String,
+    #[serde(default)]
+    pub anim_type: Option<String>,
     pub frame_rate: u16,
     pub looped: bool,
+    #[serde(default, alias = "frameIndices")]
+    pub indices: Vec<u16>,
 }
 
 impl Default for StageObjectAnimation {
@@ -77,8 +126,10 @@ impl Default for StageObjectAnimation {
         Self {
             name: String::new(),
             prefix: String::new(),
+            anim_type: None,
             frame_rate: 24,
             looped: false,
+            indices: Vec::new(),
         }
     }
 }
@@ -93,6 +144,10 @@ fn default_layer() -> RenderLayer {
 
 fn default_antialiasing() -> bool {
     true
+}
+
+fn default_alpha() -> f32 {
+    1.0
 }
 
 fn default_active() -> bool {
@@ -158,6 +213,7 @@ impl StageDefinition {
 struct RawStageDefinition {
     id: Option<String>,
     name: Option<String>,
+    directory: Option<String>,
     #[serde(default = "default_camera_zoom")]
     camera_zoom: f32,
     #[serde(default)]
@@ -187,6 +243,8 @@ struct RawStageCharacterSlot {
     position: AssetVec2,
     #[serde(rename = "cameraOffsets", deserialize_with = "deserialize_asset_vec2")]
     camera_offset: AssetVec2,
+    #[serde(default, rename = "zIndex")]
+    z_index: i32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,6 +252,8 @@ struct RawStageCharacterSlot {
 struct RawStageProp {
     name: String,
     asset_path: String,
+    #[serde(default, rename = "animType")]
+    anim_type: StageObjectRenderType,
     starting_animation: Option<String>,
     #[serde(default)]
     animations: Vec<StageObjectAnimation>,
@@ -204,7 +264,11 @@ struct RawStageProp {
     #[serde(deserialize_with = "deserialize_asset_vec2")]
     scroll: AssetVec2,
     z_index: i32,
+    #[serde(default = "default_alpha")]
+    alpha: f32,
     is_pixel: bool,
+    #[serde(default)]
+    dance_every: f64,
 }
 
 impl Default for RawStageProp {
@@ -212,13 +276,16 @@ impl Default for RawStageProp {
         Self {
             name: String::new(),
             asset_path: String::new(),
+            anim_type: StageObjectRenderType::Png,
             starting_animation: None,
             animations: Vec::new(),
             position: AssetVec2::ZERO,
             scale: AssetVec2::ONE,
             scroll: AssetVec2::ONE,
             z_index: 0,
+            alpha: 1.0,
             is_pixel: false,
+            dance_every: 0.0,
         }
     }
 }
@@ -241,6 +308,7 @@ impl RawStageDefinition {
         }
         Ok(StageDefinition {
             id: self.id.or(self.name).unwrap_or_default(),
+            directory: self.directory,
             camera_zoom: self.camera_zoom,
             boyfriend,
             girlfriend,
@@ -255,6 +323,7 @@ impl From<RawStageCharacterSlot> for StageCharacterSlot {
         Self {
             position: value.position,
             camera_offset: value.camera_offset,
+            z: value.z_index,
         }
     }
 }
@@ -265,20 +334,25 @@ impl RawStageProp {
             return self.into_solid_stage_object().map(Some);
         }
         let animation = prop_starting_animation(&self.starting_animation, &self.animations);
+        let render_type = prop_render_type(self.anim_type, animation.is_some());
         Ok(Some(StageObject {
             id: if self.name.trim().is_empty() {
                 self.asset_path.clone()
             } else {
                 self.name
             },
-            image: AssetPath::new(format!("images/{}.png", self.asset_path))?,
+            image: prop_image_path(&self.asset_path, render_type)?,
+            render_type,
             solid_color: None,
             animation,
+            animations: self.animations,
+            dance_every: self.dance_every,
             layer: default_layer(),
             position: self.position,
             scroll_factor: self.scroll,
             scale: self.scale,
             z: self.z_index,
+            alpha: self.alpha,
             antialiasing: !self.is_pixel,
             active: false,
         }))
@@ -297,16 +371,39 @@ impl RawStageProp {
                 "generated/stage/solid-{}.png",
                 self.asset_path.trim().trim_start_matches('#')
             ))?,
+            render_type: StageObjectRenderType::Png,
             solid_color: Some(color),
             animation: None,
+            animations: Vec::new(),
+            dance_every: self.dance_every,
             layer: default_layer(),
             position: self.position,
             scroll_factor: self.scroll,
             scale: self.scale,
             z: self.z_index,
+            alpha: self.alpha,
             antialiasing: !self.is_pixel,
             active: false,
         })
+    }
+}
+
+fn prop_render_type(
+    anim_type: StageObjectRenderType,
+    has_animation: bool,
+) -> StageObjectRenderType {
+    match (anim_type, has_animation) {
+        (StageObjectRenderType::Png, true) => StageObjectRenderType::Sparrow,
+        _ => anim_type,
+    }
+}
+
+fn prop_image_path(asset_path: &str, render_type: StageObjectRenderType) -> AssetResult<AssetPath> {
+    match render_type {
+        StageObjectRenderType::AnimateAtlas => AssetPath::new(format!("images/{asset_path}")),
+        StageObjectRenderType::Png
+        | StageObjectRenderType::Sparrow
+        | StageObjectRenderType::Packer => AssetPath::new(format!("images/{asset_path}.png")),
     }
 }
 
@@ -464,7 +561,7 @@ mod tests {
                 }]
               }],
               "characters": {
-                "bf": { "position": [989.5, 885], "cameraOffsets": [-100, -100] },
+                "bf": { "zIndex": 300, "position": [989.5, 885], "cameraOffsets": [-100, -100] },
                 "dad": { "position": [335, 885], "cameraOffsets": [150, -100] },
                 "gf": { "position": [751.5, 787], "cameraOffsets": [0, 0] }
               }
@@ -474,6 +571,7 @@ mod tests {
 
         assert_eq!(stage.id, "Main Stage");
         assert_eq!(stage.boyfriend.position, AssetVec2::new(989.5, 885.0));
+        assert_eq!(stage.boyfriend.z, 300);
         assert_eq!(stage.opponent.camera_offset, AssetVec2::new(150.0, -100.0));
         assert_eq!(stage.objects[0].id, "stageBack");
         assert_eq!(stage.objects[0].image.as_str(), "images/stageback.png");
@@ -483,8 +581,10 @@ mod tests {
             Some(StageObjectAnimation {
                 name: "idle".to_string(),
                 prefix: "idle0".to_string(),
+                anim_type: None,
                 frame_rate: 12,
                 looped: true,
+                indices: Vec::new(),
             })
         );
     }

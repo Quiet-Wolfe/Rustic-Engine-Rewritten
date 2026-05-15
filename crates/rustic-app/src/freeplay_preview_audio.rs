@@ -132,7 +132,7 @@ fn preview_paths(target: PreviewTarget) -> Vec<String> {
         return vec!["music/freeplayRandom/freeplayRandom.ogg".to_string()];
     };
     let mut paths = Vec::new();
-    if let Some(suffix) = selection.difficulty.chart_variation_suffix() {
+    if let Some(suffix) = selection.effective_variation_suffix() {
         paths.push(format!("songs/{}/Inst-{suffix}.ogg", selection.song.folder));
     }
     paths.push(format!("songs/{}/Inst.ogg", selection.song.folder));
@@ -165,6 +165,23 @@ mod tests {
             paths,
             vec![
                 "songs/bopeebo/Inst-erect.ogg",
+                "songs/bopeebo/Inst.ogg",
+                "music/Bopeebo_Inst.ogg"
+            ]
+        );
+    }
+
+    #[test]
+    fn pico_preview_prefers_character_variant_inst() {
+        let paths = preview_paths(PreviewTarget::Song(
+            PreviewSelection::new(PreviewSong::BOPEEBO, PreviewDifficulty::Hard)
+                .with_variation(Some(crate::preview_song::VARIATION_PICO)),
+        ));
+
+        assert_eq!(
+            paths,
+            vec![
+                "songs/bopeebo/Inst-pico.ogg",
                 "songs/bopeebo/Inst.ogg",
                 "music/Bopeebo_Inst.ogg"
             ]

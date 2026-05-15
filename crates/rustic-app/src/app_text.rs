@@ -53,7 +53,7 @@ pub fn song_select_text_commands(
         commands.push(difficulty);
     }
 
-    for (index, song) in PreviewSong::CYCLABLE_WEEK1.iter().enumerate() {
+    for (index, song) in PreviewSong::ALL.iter().enumerate() {
         let selected = *song == selection.song;
         let prefix = if selected { ">" } else { " " };
         let mut cmd = TextCommand::new(

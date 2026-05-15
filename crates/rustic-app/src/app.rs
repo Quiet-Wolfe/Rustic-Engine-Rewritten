@@ -6,17 +6,19 @@ use crate::app_types::{AppOptions, Runtime};
 use crate::audio_clock::AudioClockFallback;
 use crate::audio_fallback::open_audio_output_or_fallback;
 use crate::bitmap_text_assets::BitmapTextSkin;
-use crate::boot::{init_logging, install_panic_hook};
-use crate::camera_events::{apply_camera_event, focus_initial_camera as focus_initial};
+use crate::boot::{init_logging, install_panic_hook, settings_dir};
+use crate::camera_events::focus_initial_camera as focus_initial;
 use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::countdown_audio::CountdownAudio;
 use crate::credits_assets::CreditsAssets;
+use crate::dialogue_state::DialogueState;
 use crate::freeplay_assets::FreeplayAssets;
 use crate::freeplay_preview_audio::FreeplayPreviewMusic;
 use crate::game_over::{GameOverRestart, GameOverState};
 use crate::game_over_audio::GameOverAudio;
+use crate::gameplay_note_sfx::play_note_kind_miss_sfx_or_warn;
 use crate::hold_cover_assets::{HoldCoverSkin, HoldCovers};
 use crate::hud_assets::HudSkin;
 use crate::hud_bop::health_icon_scale;
@@ -27,8 +29,10 @@ use crate::menu_audio::{play_menu_sound_or_warn, MenuSound};
 use crate::menu_music::MenuMusic;
 use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKind};
 use crate::note_assets::{confirm_duration_or_default, NoteSkin};
+use crate::note_layout_preferences::{apply_downscroll, strumline_background_commands};
 use crate::note_splash_assets::{NoteSplashSkin, NoteSplashes};
 use crate::options_menu_assets::{OptionsMenuAssets, OptionsMenuPage};
+use crate::options_preferences::OptionsPreferences;
 use crate::pause_audio::PauseMusic;
 use crate::pause_menu::{ensure_pause_overlay_texture, PauseMenuState};
 use crate::popup_assets::{PopupSkin, ScorePopups};
@@ -38,27 +42,33 @@ use crate::scene_assets::{
     LoadedScene,
 };
 use crate::screen::ScreenStack;
+use crate::settings::Settings;
 use crate::song_audio::{load_preview_stems_for, play_sample_rate, set_vocals_gain};
 use crate::stage_object_assets::StagePropSet;
+use crate::stage_sfx::StageSfx;
 use crate::story_menu_assets::StoryMenuAssets;
 use crate::title_assets::TitleScreenAssets;
 use anyhow::Result;
-use rustic_asset::ChartEventKind;
 use rustic_audio::{AudioOutput, SharedMixer};
 use rustic_core::ids::AssetId;
-use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
+use rustic_core::input::InputAction;
 use rustic_core::time::Samples;
-use rustic_game::{Judgment, Lane, PlayState};
+use rustic_game::PlayState;
 use rustic_render::{CameraRegistry, RenderCommandList, SpriteBatcher, TextCommandList, Texture};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 
+const BLAZIN_MIDDLESCROLL_PLAYER_X_OFFSET: f32 = -272.0;
+
 mod credits_flow;
 mod debug_overlay;
+mod dialogue_flow;
 mod game_over_flow;
+mod gameplay_flow;
 mod options_flow;
 mod pause_flow;
 mod redraw;
@@ -69,6 +79,8 @@ use title_flow::AppMode;
 
 struct App {
     options: AppOptions,
+    settings: Settings,
+    settings_path: Option<PathBuf>,
     boot_instant: Instant,
     mixer: SharedMixer,
     audio_output: Option<AudioOutput>,
@@ -78,6 +90,8 @@ struct App {
     base_camera_zoom: f32,
     static_cmds: RenderCommandList,
     stage_props: StagePropSet,
+    stage_sfx: StageSfx,
+    sserafim_stage: crate::sserafim_stage::SserafimStageState,
     cmds: RenderCommandList,
     text_cmds: TextCommandList,
     atlases: HashMap<AssetId, Texture>,
@@ -91,6 +105,7 @@ struct App {
     popup_skin: Option<PopupSkin>,
     countdown_skin: Option<CountdownSkin>,
     countdown_audio: CountdownAudio,
+    dialogue: Option<DialogueState>,
     score_popups: ScorePopups,
     note_splashes: NoteSplashes,
     hold_covers: HoldCovers,
@@ -106,8 +121,10 @@ struct App {
     options_menu_assets: Option<OptionsMenuAssets>,
     options_menu_page: OptionsMenuPage,
     options_menu_index: usize,
+    options_preferences: OptionsPreferences,
     freeplay_assets: Option<FreeplayAssets>,
     freeplay_selected_index: usize,
+    freeplay_variation: &'static str,
     /// When Some, the freeplay Confirm animation is playing and we'll enter
     /// gameplay once the title cursor passes this sample anchor.
     /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:2744-2846 (start delay)
@@ -145,8 +162,12 @@ impl App {
     fn new(options: AppOptions) -> Self {
         let now = Instant::now();
         let (audio_output, mixer) = open_audio_output_or_fallback();
+        let (settings, settings_path) = load_settings_or_default();
+        let options_preferences = OptionsPreferences::from_settings(&settings.preferences);
         Self {
             options,
+            settings,
+            settings_path,
             boot_instant: now,
             mixer,
             audio_output,
@@ -156,6 +177,8 @@ impl App {
             base_camera_zoom: 1.0,
             static_cmds: RenderCommandList::new(),
             stage_props: StagePropSet::default(),
+            stage_sfx: StageSfx::default(),
+            sserafim_stage: crate::sserafim_stage::SserafimStageState::default(),
             cmds: RenderCommandList::new(),
             text_cmds: TextCommandList::new(),
             atlases: HashMap::new(),
@@ -169,6 +192,7 @@ impl App {
             popup_skin: None,
             countdown_skin: None,
             countdown_audio: CountdownAudio::default(),
+            dialogue: None,
             score_popups: ScorePopups::default(),
             note_splashes: NoteSplashes::default(),
             hold_covers: HoldCovers::default(),
@@ -184,8 +208,10 @@ impl App {
             options_menu_assets: None,
             options_menu_page: OptionsMenuPage::Root,
             options_menu_index: 0,
+            options_preferences,
             freeplay_assets: None,
             freeplay_selected_index: 0,
+            freeplay_variation: crate::preview_song::VARIATION_BF,
             freeplay_confirm_at: None,
             story_menu_assets: None,
             story_menu_index: 1,
@@ -217,7 +243,11 @@ impl App {
         }
     }
     fn create_runtime(&mut self, event_loop: &ActiveEventLoop) -> Result<()> {
-        self.runtime = Some(create_app_runtime(&self.options, event_loop)?);
+        self.runtime = Some(create_app_runtime(
+            &self.options,
+            event_loop,
+            self.options_preferences,
+        )?);
         self.load_title_screen();
         Ok(())
     }
@@ -230,6 +260,9 @@ impl App {
         self.cmds = scene.commands;
         self.static_cmds = self.cmds.clone();
         self.stage_props = scene.stage_props;
+        self.stage_sfx.reset();
+        self.sserafim_stage
+            .reset_for_song(self.preview_selection.song);
         self.atlases = scene.textures;
         if let Some(runtime) = self.runtime.as_ref() {
             ensure_pause_overlay_texture(&runtime.rs.device, &runtime.rs.queue, &mut self.atlases);
@@ -243,10 +276,13 @@ impl App {
         self.hud_skin = scene.hud_skin;
         self.popup_skin = scene.popup_skin;
         self.countdown_skin = scene.countdown_skin;
-        self.countdown_audio = CountdownAudio::load_default_or_warn(self.audio_output.is_some());
+        self.countdown_audio =
+            CountdownAudio::load_for_style_or_warn(&scene.note_style, self.audio_output.is_some());
         self.camera_focus = scene.camera_focus;
         self.base_camera_zoom = scene.camera_zoom;
         self.camera_fx.reset(&mut self.cameras, scene.camera_zoom);
+        self.camera_fx
+            .set_zooming_enabled(&mut self.cameras, self.options_preferences.camera_zooms);
         focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
     }
     fn load_selected_scene(&mut self) {
@@ -278,6 +314,13 @@ impl App {
                 let bpm = play_state.bpm;
                 self.play_state = Some(play_state);
                 self.reset_song_runtime(bpm);
+                self.dialogue = match DialogueState::load_for_selection(self.preview_selection) {
+                    Ok(dialogue) => dialogue,
+                    Err(e) => {
+                        tracing::warn!(target: "rustic.asset", "dialogue unavailable: {e:#}");
+                        None
+                    }
+                };
                 self.load_selected_stems();
                 self.rebuild_frame_commands();
             }
@@ -319,6 +362,7 @@ impl App {
         self.song_started = false;
         self.audio_clock.reset(self.song_start);
         self.game_over = None;
+        self.dialogue = None;
         self.countdown_audio.reset();
         self.character_anim.reset_song();
         (
@@ -382,6 +426,10 @@ impl App {
             self.rebuild_pause_commands();
             return;
         }
+        if self.dialogue.is_some() {
+            self.rebuild_dialogue_commands();
+            return;
+        }
         self.text_cmds = preview_text_commands(self.preview_selection);
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = if let Some(game_over) = self.game_over {
@@ -435,7 +483,10 @@ impl App {
             let anim = &mut self.character_anim;
             let had_late_misses = !late_misses.is_empty();
             for miss in late_misses {
-                anim.player_note_miss(miss.lane, cursor, sample_rate, bpm);
+                anim.player_note_miss_kind(miss.lane, miss.kind, cursor, sample_rate, bpm);
+                if let Some(kind) = miss.kind {
+                    play_note_kind_miss_sfx_or_warn(&self.mixer, kind);
+                }
                 anim.girlfriend_combo_drop(miss.combo_count, cursor);
                 play_miss_sfx(&self.mixer, cursor, MissNoteKind::Scoreable);
             }
@@ -446,7 +497,7 @@ impl App {
             let opponent_receptors = &mut self.opponent_receptors;
             for hit in opponent_hits {
                 opponent_receptors.confirm(hit.lane, cursor, confirm_duration);
-                anim.opponent_note_hit(hit.lane, cursor, sample_rate, bpm);
+                anim.opponent_note_hit_kind(hit.lane, hit.kind, cursor, sample_rate, bpm);
                 if let Some(hold_end_at) = hit.hold_end_at {
                     opponent_receptors.start_hold(hit.lane, hold_end_at, cursor, hit.note_id);
                     self.hold_covers
@@ -454,7 +505,9 @@ impl App {
                 }
             }
             if had_opponent_hits {
-                self.camera_fx.enable_zooming();
+                if self.options_preferences.camera_zooms {
+                    self.camera_fx.enable_zooming();
+                }
                 set_vocals_gain(&self.mixer, 1.0);
             }
             self.refresh_camera_focus();
@@ -475,17 +528,50 @@ impl App {
                 .update(&mut self.cameras, cursor, sample_rate, bpm);
         }
         self.cmds = self.static_cmds.clone();
-        for cmd in self.stage_props.commands(cursor, sample_rate) {
+        let stage_bpm = bpm.unwrap_or(100.0);
+        self.stage_sfx.tick_or_warn(
+            self.preview_selection.song,
+            &self.mixer,
+            cursor,
+            sample_rate,
+            stage_bpm,
+        );
+        for cmd in self.stage_props.commands(
+            cursor,
+            sample_rate,
+            stage_bpm,
+            Some(self.preview_selection.song),
+        ) {
             self.cmds.push(cmd);
         }
         if let Some(characters) = &self.characters {
-            for cmd in characters.commands(self.character_anim.poses(), cursor, sample_rate) {
+            for cmd in characters.commands_with_sserafim(
+                &self.sserafim_stage,
+                self.character_anim.poses(),
+                cursor,
+                sample_rate,
+            ) {
                 self.cmds.push(cmd);
             }
         }
         let (Some(play_state), Some(note_skin)) = (&self.play_state, &self.note_skin) else {
             return;
         };
+        let blazin_middlescroll = self.preview_selection.song == PreviewSong::BLAZIN;
+        let player_x_offset = if blazin_middlescroll {
+            BLAZIN_MIDDLESCROLL_PLAYER_X_OFFSET
+        } else {
+            0.0
+        };
+        let downscroll = self.options_preferences.downscroll;
+        for cmd in strumline_background_commands(
+            self.options_preferences.strumline_background,
+            downscroll,
+            !blazin_middlescroll,
+            player_x_offset,
+        ) {
+            self.cmds.push(cmd);
+        }
         for view in play_state.hold_trail_views(cursor, sample_rate, |lane, opp| {
             if opp {
                 true
@@ -493,26 +579,52 @@ impl App {
                 self.held_lanes.is_held(lane)
             }
         }) {
+            if blazin_middlescroll && view.opponent {
+                continue;
+            }
+            let mut view = view;
+            if blazin_middlescroll {
+                view.x += BLAZIN_MIDDLESCROLL_PLAYER_X_OFFSET;
+            }
             if view.head_resolved && !view.opponent && !self.held_lanes.is_held(view.lane) {
                 continue;
             }
             for cmd in note_skin.hold_trail_commands(&view) {
+                let mut cmd = cmd;
+                apply_downscroll(&mut cmd, downscroll);
                 if cmd.world_pos.y + cmd.size.y >= -200.0 {
                     self.cmds.push(cmd);
                 }
             }
         }
-        for cmd in note_skin.receptor_commands(cursor, sample_rate, |player, lane| match player {
-            1 => self.held_lanes.receptor_state(lane, cursor),
-            _ => self.opponent_receptors.receptor_state(lane, cursor),
-        }) {
+        let receptor_commands = note_skin.receptor_commands_with_layout(
+            cursor,
+            sample_rate,
+            !blazin_middlescroll,
+            player_x_offset,
+            |player, lane| match player {
+                1 => self.held_lanes.receptor_state(lane, cursor),
+                _ => self.opponent_receptors.receptor_state(lane, cursor),
+            },
+        );
+        for cmd in receptor_commands {
+            let mut cmd = cmd;
+            apply_downscroll(&mut cmd, downscroll);
             self.cmds.push(cmd);
         }
         for view in play_state.note_views(cursor, sample_rate) {
+            if blazin_middlescroll && view.opponent {
+                continue;
+            }
+            let mut view = view;
+            if blazin_middlescroll {
+                view.x += BLAZIN_MIDDLESCROLL_PLAYER_X_OFFSET;
+            }
             if view.is_sustain {
                 continue;
             }
-            let cmd = note_skin.command_for_view(&view);
+            let mut cmd = note_skin.command_for_view(&view);
+            apply_downscroll(&mut cmd, downscroll);
             if cmd.world_pos.y + cmd.size.y >= -200.0 {
                 self.cmds.push(cmd);
             }
@@ -522,6 +634,8 @@ impl App {
                 .note_splashes
                 .commands(note_splash_skin, cursor, sample_rate)
             {
+                let mut cmd = cmd;
+                apply_downscroll(&mut cmd, downscroll);
                 self.cmds.push(cmd);
             }
         }
@@ -530,6 +644,8 @@ impl App {
                 .hold_covers
                 .commands(hold_cover_skin, cursor, sample_rate)
             {
+                let mut cmd = cmd;
+                apply_downscroll(&mut cmd, downscroll);
                 self.cmds.push(cmd);
             }
         }
@@ -559,131 +675,24 @@ impl App {
                 self.cmds.push(cmd);
             }
         }
+        self.sserafim_stage
+            .apply_commands(self.cmds.iter_mut(), cursor, sample_rate, stage_bpm);
     }
-    fn apply_song_event(
-        &mut self,
-        kind: &ChartEventKind,
-        cursor: Samples,
-        sample_rate: u32,
-        bpm: f64,
-    ) {
-        if apply_camera_event(
-            &mut self.cameras,
-            &mut self.camera_fx,
-            self.camera_focus,
-            kind,
-            cursor,
-            sample_rate,
-            bpm,
-        ) {
-            return;
-        }
-        if let ChartEventKind::PlayAnimation {
-            target,
-            animation,
-            force,
-        } = kind
-        {
-            self.character_anim
-                .play_chart_animation(target, animation, cursor, *force);
-        }
-    }
-    fn handle_gameplay_input(&mut self, event: &NormalizedInputEvent, already_held: bool) {
-        if event.state != InputState::Pressed {
-            return;
-        }
-        let cursor = event.audio_sample_cursor_at_receive;
-        if self.game_over.is_some() {
-            return;
-        }
-        let sample_rate = play_sample_rate(&self.mixer);
-        let confirm_duration = confirm_duration_or_default(self.note_skin.as_ref(), sample_rate);
-        let gameplay_event =
-            NormalizedInputEvent::new(event.action, event.state, event.wall_clock_ns, cursor);
-        let mut restore_vocals = false;
-        let should_enter_game_over;
-        {
-            let Some(play_state) = self.play_state.as_mut() else {
-                return;
-            };
-            if event.action == InputAction::Reset {
-                // ref: bdedc0aa:source/funkin/play/PlayState.hx:1243-1258
-                play_state.health = 0.0;
-                should_enter_game_over = !self.practice_mode;
-            } else {
-                let Some(lane) = lane_for_action(event.action) else {
-                    return;
-                };
-                if already_held {
-                    return;
-                }
-                let anim = &mut self.character_anim;
-                if let Some(outcome) =
-                    play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate)
-                {
-                    self.held_lanes.confirm(lane, cursor, confirm_duration);
-                    anim.player_note_hit(lane, cursor, sample_rate, play_state.bpm);
-                    let combo_count = outcome.combo_count;
-                    anim.girlfriend_note_hit(outcome.judgment, combo_count, cursor);
-                    restore_vocals = true;
-                    if !outcome.is_sustain {
-                        self.score_popups
-                            .push(outcome.judgment, outcome.combo_popup, cursor);
-                        if outcome.judgment == Judgment::Sick {
-                            self.note_splashes.push(lane, cursor);
-                        }
-                        if let Some(hold_end_at) = outcome.hold_end_at {
-                            self.active_holds
-                                .start(lane, hold_end_at, cursor, outcome.note_id);
-                            self.hold_covers.start(lane, cursor, hold_end_at);
-                        }
-                    }
-                } else {
-                    play_state.register_ghost_miss();
-                    anim.player_note_miss(lane, cursor, sample_rate, play_state.bpm);
-                    play_miss_sfx(&self.mixer, cursor, MissNoteKind::Ghost);
-                }
-                should_enter_game_over = play_state.is_dead() && !self.practice_mode;
-            }
-        }
-        if restore_vocals {
-            set_vocals_gain(&self.mixer, 1.0);
-        }
-        if should_enter_game_over {
-            self.enter_game_over(cursor);
-        }
-    }
-    fn register_hold_drop(
-        &mut self,
-        lane: Lane,
-        cursor: Samples,
-        hold_end_at: Samples,
-        note_id: rustic_core::ids::NoteId,
-    ) {
-        let sample_rate = play_sample_rate(&self.mixer);
-        let Some(play_state) = self.play_state.as_mut() else {
-            return;
-        };
-        let remaining_samples = hold_end_at.0.saturating_sub(cursor.0);
-        let Some(drop) = play_state.register_hold_drop(note_id, remaining_samples, sample_rate)
-        else {
-            return;
-        };
-        let anim = &mut self.character_anim;
-        anim.player_note_miss(lane, cursor, sample_rate, play_state.bpm);
-        anim.girlfriend_combo_drop(drop.combo_count, cursor);
-        self.score_popups
-            .push(Judgment::Miss, drop.combo_popup, cursor);
-        set_vocals_gain(&self.mixer, 0.0);
-        play_miss_sfx(&self.mixer, cursor, MissNoteKind::Scoreable);
-    }
-    fn register_hold_tick(&mut self, elapsed_samples: i64) {
-        let sample_rate = play_sample_rate(&self.mixer);
-        if let Some(play_state) = self.play_state.as_mut() {
-            play_state.register_hold_tick(elapsed_samples, sample_rate);
+}
+
+fn load_settings_or_default() -> (Settings, Option<PathBuf>) {
+    let Some(path) = settings_dir().map(|dir| dir.join("settings.toml")) else {
+        return (Settings::default(), None);
+    };
+    match Settings::load_or_default(&path) {
+        Ok(settings) => (settings, Some(path)),
+        Err(e) => {
+            tracing::warn!(target: "rustic.settings", "settings unavailable: {e:#}");
+            (Settings::default(), Some(path))
         }
     }
 }
+
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.runtime.is_some() {
@@ -703,6 +712,10 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => self.handle_resize(size.width, size.height),
+            WindowEvent::Focused(false) => {
+                let cursor = self.input_cursor();
+                self.pause_on_unfocus(cursor);
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let Some(action) = map_key(event.physical_key) {
                     let song_cursor = self.input_cursor();
@@ -713,6 +726,9 @@ impl ApplicationHandler for App {
                             .unwrap_or(false);
                     if event.state == ElementState::Pressed && action == InputAction::Debug {
                         self.toggle_debug_overlay();
+                        return;
+                    }
+                    if self.handle_dialogue_input(action, event.state) {
                         return;
                     }
                     if self.handle_pause_input(action, event.state, song_cursor) {

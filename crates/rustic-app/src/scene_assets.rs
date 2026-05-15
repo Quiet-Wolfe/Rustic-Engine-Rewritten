@@ -10,28 +10,34 @@ use crate::bitmap_text_assets::{load_bitmap_text_assets, BitmapTextSkin};
 use crate::character_anim::CountAnimationTiming;
 use crate::character_anim::COUNT_ANIM_SLOTS;
 use crate::character_anim::{CharacterAnimTimings, CharacterPoseNames, CharacterPoseRequest};
-use crate::countdown_assets::{load_countdown_assets, CountdownSkin};
-use crate::hold_cover_assets::{load_hold_cover_assets, HoldCoverSkin};
-use crate::hud_assets::{load_hud_assets, HudSkin};
-use crate::note_assets::{load_note_skin, NoteSkin};
-use crate::note_splash_assets::{load_note_splash_assets, NoteSplashSkin};
-use crate::popup_assets::{load_popup_assets, PopupSkin};
+use crate::countdown_assets::{load_countdown_assets_for_style, CountdownSkin};
+use crate::hold_cover_assets::{load_hold_cover_assets_for_style, HoldCoverSkin};
+use crate::hud_assets::{load_hud_assets_for_icons, HudSkin};
+use crate::note_assets::{load_note_skin_for_style, NoteSkin};
+use crate::note_splash_assets::{load_note_splash_assets_for_style, NoteSplashSkin};
+use crate::popup_assets::{load_popup_assets_for_style, PopupSkin};
 use crate::preview_song::PreviewSelection;
+use crate::scripted_stage_objects::scripted_stage_objects;
+use crate::sparrow_character_assets::{
+    load_packer_character_sprite, load_sparrow_character_sprite, SparrowCharacterSprite,
+};
+use crate::sserafim_stage::{SserafimMember, SserafimStageState};
 use crate::stage_object_assets::{load_stage_object, StagePropSet};
 use anyhow::{Context, Result};
 use rustic_asset::{
-    load_character, load_png, load_sparrow, load_stage, load_vslice_chart, AssetPath,
-    CharacterAnimation, CharacterDefinition, CharacterRenderType, OverlayResolver, ParsedSong,
-    SparrowAtlas, SparrowFrame, StageCharacterSlot, StageDefinition,
+    load_character, load_stage, load_vslice_chart, AssetPath, AssetResolver, AssetVec2,
+    CharacterDefinition, CharacterRenderType, OverlayResolver, ParsedSong, StageCharacterSlot,
+    StageDefinition,
 };
 use rustic_core::ids::{AssetId, SongId};
-use rustic_core::render::RenderLayer;
 use rustic_core::time::Samples;
 use rustic_game::PlayState;
-use rustic_render::{DrawCommand, FilterMode, RenderCommandList, Texture};
+use rustic_render::{DrawCommand, RenderCommandList, Texture};
 use std::collections::HashMap;
 pub const SAMPLE_RATE: u32 = 48_000;
 pub struct LoadedScene {
+    pub note_style: String,
+    pub bpm: f64,
     pub camera_zoom: f32,
     pub camera_focus: CameraFocusPoints,
     pub commands: RenderCommandList,
@@ -70,6 +76,9 @@ pub struct CharacterSet {
     girlfriend: Option<CharacterSprite>,
     opponent: CharacterSprite,
     player: CharacterSprite,
+    sserafim_extras: Vec<SserafimExtraCharacter>,
+    opponent_icon_id: String,
+    player_icon_id: String,
 }
 
 impl CharacterSet {
@@ -85,6 +94,37 @@ impl CharacterSet {
         }
         commands.extend(self.opponent.commands(poses.opponent, cursor, sample_rate));
         commands.extend(self.player.commands(poses.player, cursor, sample_rate));
+        commands
+    }
+
+    pub(crate) fn commands_with_sserafim(
+        &self,
+        state: &SserafimStageState,
+        poses: CharacterPoseNames,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> Vec<DrawCommand> {
+        if !state.active() {
+            return self.commands(poses, cursor, sample_rate);
+        }
+        let mut commands = Vec::new();
+        for extra in &self.sserafim_extras {
+            if let Some(request) = state.pose_for_member(extra.member, poses, cursor) {
+                commands.extend(extra.sprite.commands(request, cursor, sample_rate));
+            }
+        }
+        if let Some(girlfriend) = &self.girlfriend {
+            if let Some(request) = state.pose_for_member(SserafimMember::Girlfriend, poses, cursor)
+            {
+                commands.extend(girlfriend.commands(request, cursor, sample_rate));
+            }
+        }
+        if let Some(request) = state.pose_for_member(SserafimMember::Kazuha, poses, cursor) {
+            commands.extend(self.opponent.commands(request, cursor, sample_rate));
+        }
+        if let Some(request) = state.pose_for_member(SserafimMember::Sakura, poses, cursor) {
+            commands.extend(self.player.commands(request, cursor, sample_rate));
+        }
         commands
     }
 
@@ -136,12 +176,27 @@ impl CharacterSet {
                 .unwrap_or_default(),
         }
     }
+
+    pub fn hud_icon_ids(&self) -> (&str, &str) {
+        (&self.player_icon_id, &self.opponent_icon_id)
+    }
+
+    pub fn player_icon_id(&self) -> &str {
+        &self.player_icon_id
+    }
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 enum CharacterSprite {
     Sparrow(SparrowCharacterSprite),
     Animate(AnimateCharacterSprite),
+}
+
+#[derive(Debug, Clone)]
+struct SserafimExtraCharacter {
+    member: SserafimMember,
+    sprite: CharacterSprite,
 }
 
 impl CharacterSprite {
@@ -173,14 +228,18 @@ impl CharacterSprite {
 
     fn definition(&self) -> &CharacterDefinition {
         match self {
-            Self::Sparrow(sprite) => &sprite.character,
+            Self::Sparrow(sprite) => sprite.definition(),
             Self::Animate(sprite) => sprite.definition(),
         }
     }
 
     fn game_over_camera(&self, stage_zoom: f32) -> (glam::Vec2, f32) {
         let (focus, character, slot) = match self {
-            Self::Sparrow(sprite) => (sprite.camera_focus_point(), &sprite.character, sprite.slot),
+            Self::Sparrow(sprite) => (
+                sprite.camera_focus_point(),
+                sprite.definition(),
+                sprite.slot(),
+            ),
             Self::Animate(sprite) => (
                 sprite.camera_focus_point(),
                 sprite.definition(),
@@ -197,102 +256,6 @@ impl CharacterSprite {
             focus - char_offset - stage_offset + death_offset,
             stage_zoom * character.death.camera_zoom,
         )
-    }
-}
-
-#[derive(Debug, Clone)]
-struct SparrowCharacterSprite {
-    texture_id: AssetId,
-    texture_width: u32,
-    texture_height: u32,
-    character: CharacterDefinition,
-    slot: StageCharacterSlot,
-    is_player: bool,
-    z: i32,
-    filter: FilterMode,
-    poses: Vec<CharacterPose>,
-    initial_pose: usize,
-}
-
-impl SparrowCharacterSprite {
-    fn command(
-        &self,
-        request: CharacterPoseRequest,
-        cursor: Samples,
-        sample_rate: u32,
-    ) -> DrawCommand {
-        let pose = self.pose(request.name);
-        let frame = pose.frame(cursor, sample_rate, request.started_at);
-        let mut cmd = DrawCommand::sprite(
-            self.texture_id,
-            character_frame_pos(&self.character, &pose.animation, frame, self.slot),
-            glam::vec2(
-                frame.width as f32 * self.character.scale,
-                frame.height as f32 * self.character.scale,
-            ),
-        );
-        cmd.pivot = glam::Vec2::ZERO;
-        cmd.layer = RenderLayer::Characters;
-        cmd.z = self.z;
-        cmd.filter = self.filter;
-        (cmd.uv_min, cmd.uv_max) = frame_uv(frame, self.texture_width, self.texture_height);
-        cmd.uv_rotated = frame.rotated;
-        if effective_flip_x(&self.character, self.is_player) {
-            std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
-        }
-        cmd
-    }
-
-    fn pose(&self, animation_name: &str) -> &CharacterPose {
-        self.poses
-            .iter()
-            .find(|pose| pose.animation.name == animation_name)
-            .unwrap_or(&self.poses[self.initial_pose])
-    }
-
-    fn animation_duration(&self, animation_name: &str, sample_rate: u32) -> Option<Samples> {
-        let pose = self
-            .poses
-            .iter()
-            .find(|pose| pose.animation.name == animation_name)?;
-        Some(animation_duration_samples(
-            sample_rate,
-            pose.animation.fps,
-            pose.frames.len(),
-        ))
-    }
-
-    fn camera_focus_point(&self) -> glam::Vec2 {
-        let frame = &self.poses[self.initial_pose].frames[0];
-        glam::vec2(
-            self.slot.position.x + self.character.position.x,
-            self.slot.position.y + self.character.position.y
-                - frame.frame_height as f32 * self.character.scale * 0.5,
-        ) + glam::vec2(self.slot.camera_offset.x, self.slot.camera_offset.y)
-            + glam::vec2(
-                self.character.camera_offset.x,
-                self.character.camera_offset.y,
-            )
-    }
-}
-
-#[derive(Debug, Clone)]
-struct CharacterPose {
-    animation: CharacterAnimation,
-    frames: Vec<SparrowFrame>,
-}
-
-impl CharacterPose {
-    fn frame(&self, cursor: Samples, sample_rate: u32, started_at: Samples) -> &SparrowFrame {
-        let index = animation_frame_index(
-            cursor,
-            sample_rate,
-            started_at,
-            self.animation.fps,
-            self.frames.len(),
-            self.animation.looped,
-        );
-        &self.frames[index]
     }
 }
 
@@ -321,9 +284,12 @@ fn load_scene_for_chart(
         character_id(&chart.girlfriend),
         &chart.player2,
         &chart.player1,
+        &chart.note_style,
+        chart.bpm,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_scene_for_ids(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -332,11 +298,15 @@ fn load_scene_for_ids(
     girlfriend_id: Option<&str>,
     opponent_id: &str,
     player_id: &str,
+    note_style: &str,
+    bpm: f64,
 ) -> Result<LoadedScene> {
     let stage_path = AssetPath::new(format!("data/stages/{stage_id}.json"))?;
     let stage = load_stage(resolver, &stage_path).context("load default stage definition")?;
 
     let mut scene = LoadedScene {
+        note_style: note_style.to_owned(),
+        bpm,
         camera_zoom: stage.camera_zoom,
         camera_focus: CameraFocusPoints::default(),
         commands: RenderCommandList::new(),
@@ -352,12 +322,36 @@ fn load_scene_for_ids(
         countdown_skin: None,
     };
 
-    for object in &stage.objects {
+    for object in scripted_stage_objects(stage_id)? {
         if let Some(prop) = load_stage_object(
             device,
             queue,
             resolver,
-            object,
+            &object,
+            &mut scene.textures,
+            &mut scene.commands,
+        )? {
+            scene.stage_props.push(prop);
+        }
+    }
+
+    for mut object in stage.objects.clone() {
+        if let Some(dir) = &stage.directory {
+            if let Some(stripped) = object.image.as_str().strip_prefix("images/") {
+                if let Ok(candidate) =
+                    rustic_asset::AssetPath::new(format!("images/{}/{}", dir, stripped))
+                {
+                    if resolver.resolve(&candidate).is_ok() {
+                        object.image = candidate;
+                    }
+                }
+            }
+        }
+        if let Some(prop) = load_stage_object(
+            device,
+            queue,
+            resolver,
+            &object,
             &mut scene.textures,
             &mut scene.commands,
         )? {
@@ -368,12 +362,17 @@ fn load_scene_for_ids(
         device,
         queue,
         resolver,
+        stage_id,
         &stage,
         girlfriend_id,
         opponent_id,
         player_id,
         &mut scene,
     )?;
+    let (player_icon_id, opponent_icon_id) = {
+        let (player, opponent) = characters.hud_icon_ids();
+        (player.to_string(), opponent.to_string())
+    };
     scene.camera_focus = characters.camera_focus_points();
     scene.characters = Some(characters);
     scene.bitmap_text_skin = Some(load_bitmap_text_assets(
@@ -382,41 +381,48 @@ fn load_scene_for_ids(
         resolver,
         &mut scene.textures,
     )?);
-    scene.note_skin = Some(load_note_skin(
+    scene.note_skin = Some(load_note_skin_for_style(
         device,
         queue,
         resolver,
         &mut scene.textures,
+        note_style,
     )?);
-    scene.note_splash_skin = Some(load_note_splash_assets(
+    scene.note_splash_skin = Some(load_note_splash_assets_for_style(
         device,
         queue,
         resolver,
         &mut scene.textures,
+        note_style,
     )?);
-    scene.hold_cover_skin = Some(load_hold_cover_assets(
+    scene.hold_cover_skin = Some(load_hold_cover_assets_for_style(
         device,
         queue,
         resolver,
         &mut scene.textures,
+        note_style,
     )?);
-    scene.hud_skin = Some(load_hud_assets(
+    scene.hud_skin = Some(load_hud_assets_for_icons(
         device,
         queue,
         resolver,
         &mut scene.textures,
+        &player_icon_id,
+        &opponent_icon_id,
     )?);
-    scene.popup_skin = Some(load_popup_assets(
+    scene.popup_skin = Some(load_popup_assets_for_style(
         device,
         queue,
         resolver,
         &mut scene.textures,
+        note_style,
     )?);
-    scene.countdown_skin = Some(load_countdown_assets(
+    scene.countdown_skin = Some(load_countdown_assets_for_style(
         device,
         queue,
         resolver,
         &mut scene.textures,
+        note_style,
     )?);
     Ok(scene)
 }
@@ -427,10 +433,9 @@ pub fn load_preview_play_state(sample_rate: u32) -> Result<PlayState> {
 
 pub(crate) fn load_preview_song_for(selection: PreviewSelection) -> Result<ParsedSong> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
-    let song = selection.song;
     let difficulty = selection.difficulty.as_str();
-    let chart_path = AssetPath::new(song.chart_path_for(selection.difficulty))?;
-    let metadata_path = AssetPath::new(song.metadata_path_for(selection.difficulty))?;
+    let chart_path = AssetPath::new(selection.chart_path())?;
+    let metadata_path = AssetPath::new(selection.metadata_path())?;
     load_vslice_chart(&resolver, &chart_path, &metadata_path, difficulty)
         .with_context(|| format!("load {} + {} [{}]", chart_path, metadata_path, difficulty))
 }
@@ -466,6 +471,7 @@ fn load_stage_characters(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     resolver: &OverlayResolver,
+    stage_id: &str,
     stage: &StageDefinition,
     girlfriend_id: Option<&str>,
     opponent_id: &str,
@@ -481,7 +487,7 @@ fn load_stage_characters(
                 id,
                 stage.girlfriend,
                 false,
-                0,
+                character_z(stage.girlfriend, 0),
                 scene,
             )
         })
@@ -493,7 +499,7 @@ fn load_stage_characters(
         opponent_id,
         stage.opponent,
         false,
-        1,
+        character_z(stage.opponent, 1),
         scene,
     )?;
     let player = load_character_slot(
@@ -503,14 +509,94 @@ fn load_stage_characters(
         player_id,
         stage.boyfriend,
         true,
-        2,
+        character_z(stage.boyfriend, 2),
         scene,
     )?;
+    let opponent_icon_id = character_health_icon_id(&opponent, opponent_id);
+    let player_icon_id = character_health_icon_id(&player, player_id);
+    let sserafim_extras = if stage_id == "sserafim" {
+        load_sserafim_extras(device, queue, resolver, scene)?
+    } else {
+        Vec::new()
+    };
     Ok(CharacterSet {
         girlfriend,
         opponent,
         player,
+        sserafim_extras,
+        opponent_icon_id,
+        player_icon_id,
     })
+}
+
+fn load_sserafim_extras(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    scene: &mut LoadedScene,
+) -> Result<Vec<SserafimExtraCharacter>> {
+    let specs = [
+        (
+            SserafimMember::Yunjin,
+            "sserafim-yunjin",
+            glam::vec2(-621.0, 154.0),
+        ),
+        (
+            SserafimMember::Chaewon,
+            "sserafim-chaewon",
+            glam::vec2(687.0, 98.0),
+        ),
+        (
+            SserafimMember::Eunchae,
+            "sserafim-eunchae",
+            glam::vec2(770.0, 675.0),
+        ),
+    ];
+    specs
+        .into_iter()
+        .map(|(member, id, position)| {
+            let slot = sserafim_extra_slot(position);
+            Ok(SserafimExtraCharacter {
+                member,
+                sprite: load_character_slot(
+                    device,
+                    queue,
+                    resolver,
+                    id,
+                    slot,
+                    false,
+                    character_z(slot, 1000),
+                    scene,
+                )?,
+            })
+        })
+        .collect()
+}
+
+fn sserafim_extra_slot(position: glam::Vec2) -> StageCharacterSlot {
+    let mut slot = StageCharacterSlot::default();
+    slot.position = AssetVec2::new(position.x, position.y);
+    slot.camera_offset = AssetVec2::ZERO;
+    slot.z = 1000;
+    slot
+}
+
+fn character_health_icon_id(sprite: &CharacterSprite, fallback_id: &str) -> String {
+    sprite
+        .definition()
+        .health_icon
+        .id
+        .as_deref()
+        .unwrap_or(fallback_id)
+        .to_string()
+}
+
+fn character_z(slot: StageCharacterSlot, fallback: i32) -> i32 {
+    if slot.z == 0 {
+        fallback
+    } else {
+        slot.z
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -529,10 +615,27 @@ fn load_character_slot(
         .with_context(|| format!("load {}", character_path.as_str()))?;
     match character.render_type {
         CharacterRenderType::Sparrow | CharacterRenderType::MultiSparrow => {
-            load_sparrow_character_slot(
-                device, queue, resolver, character, slot, is_player, z, scene,
-            )
+            Ok(CharacterSprite::Sparrow(load_sparrow_character_sprite(
+                device,
+                queue,
+                resolver,
+                character,
+                slot,
+                is_player,
+                z,
+                &mut scene.textures,
+            )?))
         }
+        CharacterRenderType::Packer => Ok(CharacterSprite::Sparrow(load_packer_character_sprite(
+            device,
+            queue,
+            resolver,
+            character,
+            slot,
+            is_player,
+            z,
+            &mut scene.textures,
+        )?)),
         CharacterRenderType::AnimateAtlas | CharacterRenderType::MultiAnimateAtlas => {
             Ok(CharacterSprite::Animate(load_animate_character_sprite(
                 device,
@@ -551,105 +654,6 @@ fn load_character_slot(
             character.render_type
         ),
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn load_sparrow_character_slot(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    resolver: &OverlayResolver,
-    character: CharacterDefinition,
-    slot: StageCharacterSlot,
-    is_player: bool,
-    z: i32,
-    scene: &mut LoadedScene,
-) -> Result<CharacterSprite> {
-    let atlas_path = character.atlas.as_ref().with_context(|| {
-        format!(
-            "character {} uses {:?}; Sparrow renderer needs atlas",
-            character.id, character.render_type
-        )
-    })?;
-    let atlas = load_sparrow(resolver, atlas_path)
-        .with_context(|| format!("load {}", atlas_path.as_str()))?;
-    let texture_path = atlas_texture_path(atlas_path, &atlas)?;
-    let image = load_png(resolver, &texture_path)
-        .with_context(|| format!("load {}", texture_path.as_str()))?;
-    let texture_id = asset_id_for_path(&texture_path);
-    let filter = filter_for_antialiasing(character.antialiasing);
-    let poses = character_poses(&character, &atlas)?;
-    let initial_animation = initial_animation(&character)?;
-    let initial_pose = poses
-        .iter()
-        .position(|pose| pose.animation.name == initial_animation.name)
-        .with_context(|| format!("resolve initial pose {}", character.id))?;
-
-    let texture =
-        Texture::from_png_image(device, queue, &image, filter, Some(texture_path.as_str()));
-    scene.textures.insert(texture_id, texture);
-
-    Ok(CharacterSprite::Sparrow(SparrowCharacterSprite {
-        texture_id,
-        texture_width: image.width,
-        texture_height: image.height,
-        character,
-        slot,
-        is_player,
-        z,
-        filter,
-        poses,
-        initial_pose,
-    }))
-}
-
-fn character_poses(
-    character: &CharacterDefinition,
-    atlas: &SparrowAtlas,
-) -> Result<Vec<CharacterPose>> {
-    character
-        .animations
-        .iter()
-        .map(|animation| {
-            let frames: Vec<_> = atlas
-                .animation_frames(&animation.prefix, &animation.indices)
-                .into_iter()
-                .cloned()
-                .collect();
-            if frames.is_empty() {
-                anyhow::bail!("resolve frame {}:{}", character.id, animation.name);
-            }
-            Ok(CharacterPose {
-                animation: animation.clone(),
-                frames,
-            })
-        })
-        .collect()
-}
-
-fn animation_frame_index(
-    cursor: Samples,
-    sample_rate: u32,
-    started_at: Samples,
-    fps: u16,
-    frame_count: usize,
-    looped: bool,
-) -> usize {
-    if frame_count <= 1 {
-        return 0;
-    }
-    let elapsed = cursor.0.saturating_sub(started_at.0).max(0) as f64;
-    let samples_per_frame = f64::from(sample_rate.max(1)) / f64::from(fps.max(1));
-    let frame = (elapsed / samples_per_frame).floor() as usize;
-    if looped {
-        frame % frame_count
-    } else {
-        frame.min(frame_count - 1)
-    }
-}
-
-fn animation_duration_samples(sample_rate: u32, fps: u16, frame_count: usize) -> Samples {
-    let samples_per_frame = f64::from(sample_rate.max(1)) / f64::from(fps.max(1));
-    Samples((samples_per_frame * frame_count.max(1) as f64).ceil() as i64)
 }
 
 fn count_animation_timings(
@@ -675,95 +679,6 @@ fn count_animation_timings(
         *slot = Some(timing);
     }
     out
-}
-
-fn initial_animation(character: &CharacterDefinition) -> Result<&CharacterAnimation> {
-    match character.initial_animation.as_deref() {
-        Some(name) => character
-            .animations
-            .iter()
-            .find(|animation| animation.name == name)
-            .with_context(|| format!("character {} missing {name}", character.id)),
-        None => character
-            .animations
-            .first()
-            .with_context(|| format!("character {} has no animations", character.id)),
-    }
-}
-
-fn atlas_texture_path(atlas_path: &AssetPath, atlas: &SparrowAtlas) -> Result<AssetPath> {
-    if atlas.image_path.contains('/') {
-        Ok(AssetPath::new(atlas.image_path.clone())?)
-    } else {
-        Ok(atlas_path.sibling(&atlas.image_path)?)
-    }
-}
-
-fn character_frame_pos(
-    character: &CharacterDefinition,
-    animation: &CharacterAnimation,
-    frame: &SparrowFrame,
-    slot: StageCharacterSlot,
-) -> glam::Vec2 {
-    let origin = sparrow_character_origin(frame, character.scale);
-    glam::vec2(
-        slot.position.x + character.position.x
-            - origin.x
-            - animation.offset.x
-            - frame.frame_x as f32 * character.scale,
-        slot.position.y + character.position.y
-            - origin.y
-            - animation.offset.y
-            - frame.frame_y as f32 * character.scale,
-    )
-}
-
-fn sparrow_character_origin(frame: &SparrowFrame, scale: f32) -> glam::Vec2 {
-    glam::vec2(
-        frame.frame_width as f32 * scale * 0.5,
-        frame.frame_height as f32 * scale,
-    )
-}
-
-fn frame_uv(
-    frame: &SparrowFrame,
-    texture_width: u32,
-    texture_height: u32,
-) -> (glam::Vec2, glam::Vec2) {
-    let width = texture_width.max(1) as f32;
-    let height = texture_height.max(1) as f32;
-    (
-        glam::vec2(frame.x as f32 / width, frame.y as f32 / height),
-        glam::vec2(
-            (frame.x as f32 + frame.width as f32) / width,
-            (frame.y as f32 + frame.height as f32) / height,
-        ),
-    )
-}
-
-fn effective_flip_x(character: &CharacterDefinition, is_player: bool) -> bool {
-    if is_player {
-        !character.flip_x
-    } else {
-        character.flip_x
-    }
-}
-
-fn filter_for_antialiasing(antialiasing: bool) -> FilterMode {
-    if antialiasing {
-        FilterMode::Linear
-    } else {
-        FilterMode::Nearest
-    }
-}
-
-fn asset_id_for_path(path: &AssetPath) -> AssetId {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in path.as_str().as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    AssetId::new(hash)
 }
 
 #[cfg(test)]

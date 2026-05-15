@@ -17,10 +17,14 @@ pub struct CountdownAudio {
 
 impl CountdownAudio {
     pub fn load_default_or_warn(audio_enabled: bool) -> Self {
+        Self::load_for_style_or_warn("funkin", audio_enabled)
+    }
+
+    pub fn load_for_style_or_warn(style: &str, audio_enabled: bool) -> Self {
         if !audio_enabled {
             return Self::default();
         }
-        match Self::load_default() {
+        match Self::load_for_style(style) {
             Ok(audio) => audio,
             Err(e) => {
                 tracing::warn!(target: "rustic.audio", "countdown sounds unavailable: {e:#}");
@@ -45,10 +49,10 @@ impl CountdownAudio {
         }
     }
 
-    fn load_default() -> Result<Self> {
+    fn load_for_style(style: &str) -> Result<Self> {
         let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
         Ok(Self {
-            sounds: Some(CountdownSounds::load(&resolver)?),
+            sounds: Some(CountdownSounds::load(&resolver, style)?),
             last_step: None,
         })
     }
@@ -96,12 +100,12 @@ struct CountdownSounds {
 }
 
 impl CountdownSounds {
-    fn load(resolver: &OverlayResolver) -> Result<Self> {
+    fn load(resolver: &OverlayResolver, style: &str) -> Result<Self> {
         Ok(Self {
-            three: load_sound(resolver, "introTHREE")?,
-            two: load_sound(resolver, "introTWO")?,
-            one: load_sound(resolver, "introONE")?,
-            go: load_sound(resolver, "introGO")?,
+            three: load_sound(resolver, style, "introTHREE")?,
+            two: load_sound(resolver, style, "introTWO")?,
+            one: load_sound(resolver, style, "introONE")?,
+            go: load_sound(resolver, style, "introGO")?,
         })
     }
 
@@ -124,8 +128,9 @@ enum CountdownStep {
     Go,
 }
 
-fn load_sound(resolver: &OverlayResolver, name: &str) -> Result<Arc<[u8]>> {
-    let path = AssetPath::new(format!("sounds/gameplay/countdown/funkin/{name}.ogg"))?;
+fn load_sound(resolver: &OverlayResolver, style: &str, name: &str) -> Result<Arc<[u8]>> {
+    let dir = if style == "pixel" { "pixel" } else { "funkin" };
+    let path = AssetPath::new(format!("sounds/gameplay/countdown/{dir}/{name}.ogg"))?;
     load_bytes(resolver, &path).with_context(|| format!("load {}", path.as_str()))
 }
 
@@ -188,5 +193,20 @@ mod tests {
             audio.next_step(Samples(-86_400), 48_000, 100.0),
             Some(CountdownStep::Two)
         );
+    }
+
+    #[test]
+    fn countdown_sound_paths_follow_note_style() {
+        let resolver = OverlayResolver::new().with_baked_root(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("assets/source"),
+        );
+
+        assert!(load_sound(&resolver, "funkin", "introGO").is_ok());
+        assert!(load_sound(&resolver, "pixel", "introGO").is_ok());
     }
 }

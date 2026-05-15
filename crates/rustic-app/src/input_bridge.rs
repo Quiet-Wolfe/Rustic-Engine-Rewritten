@@ -28,6 +28,7 @@ pub fn map_key(key: PhysicalKey) -> Option<InputAction> {
         KeyCode::F5 => InputAction::Reset,
         KeyCode::F6 => InputAction::UiLeft,
         KeyCode::F7 => InputAction::UiRight,
+        KeyCode::Tab => InputAction::UiSelect,
         KeyCode::Pause => InputAction::Pause,
         _ => return None,
     })
@@ -68,6 +69,14 @@ mod tests {
         assert_eq!(
             map_key(PhysicalKey::Code(KeyCode::KeyP)),
             Some(InputAction::Pause)
+        );
+    }
+
+    #[test]
+    fn tab_drives_ui_select_action() {
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::Tab)),
+            Some(InputAction::UiSelect)
         );
     }
 }

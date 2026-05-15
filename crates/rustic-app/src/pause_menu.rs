@@ -42,6 +42,7 @@ enum PauseMenuMode {
 pub enum PauseMenuAction {
     Resume,
     RestartSong,
+    EnablePracticeMode,
     ChangeDifficulty(PreviewDifficulty),
     ExitToMenu,
     None,
@@ -60,17 +61,22 @@ impl PauseMenuState {
         self.cursor
     }
 
-    pub fn input(&mut self, action: InputAction, selection: PreviewSelection) -> PauseMenuAction {
+    pub fn input(
+        &mut self,
+        action: InputAction,
+        selection: PreviewSelection,
+        practice_mode: bool,
+    ) -> PauseMenuAction {
         match action {
             InputAction::LaneUp | InputAction::UiUp => {
-                self.change_selection(-1, selection);
+                self.change_selection(-1, selection, practice_mode);
                 PauseMenuAction::None
             }
             InputAction::LaneDown | InputAction::UiDown => {
-                self.change_selection(1, selection);
+                self.change_selection(1, selection, practice_mode);
                 PauseMenuAction::None
             }
-            InputAction::Confirm => self.confirm(selection),
+            InputAction::Confirm => self.confirm(selection, practice_mode),
             InputAction::Back | InputAction::Pause => {
                 if self.mode == PauseMenuMode::Difficulty {
                     self.mode = PauseMenuMode::Standard;
@@ -89,13 +95,15 @@ impl PauseMenuState {
         sprites: &mut RenderCommandList,
         text: &mut TextCommandList,
         selection: PreviewSelection,
+        practice_mode: bool,
+        death_counter: u32,
     ) {
         sprites.push(overlay_command());
-        push_metadata_text(text, selection);
-        push_menu_text(text, self.entries(selection), self.selected);
+        push_metadata_text(text, selection, practice_mode, death_counter);
+        push_menu_text(text, self.entries(selection, practice_mode), self.selected);
     }
 
-    fn confirm(&mut self, selection: PreviewSelection) -> PauseMenuAction {
+    fn confirm(&mut self, selection: PreviewSelection, practice_mode: bool) -> PauseMenuAction {
         match self.mode {
             PauseMenuMode::Standard => match self.selected {
                 0 => PauseMenuAction::Resume,
@@ -105,7 +113,9 @@ impl PauseMenuState {
                     self.selected = 0;
                     PauseMenuAction::None
                 }
+                3 if !practice_mode => PauseMenuAction::EnablePracticeMode,
                 3 => PauseMenuAction::ExitToMenu,
+                4 => PauseMenuAction::ExitToMenu,
                 _ => PauseMenuAction::None,
             },
             PauseMenuMode::Difficulty => {
@@ -124,8 +134,8 @@ impl PauseMenuState {
         }
     }
 
-    fn change_selection(&mut self, delta: isize, selection: PreviewSelection) {
-        let count = self.entries(selection).len();
+    fn change_selection(&mut self, delta: isize, selection: PreviewSelection, practice_mode: bool) {
+        let count = self.entries(selection, practice_mode).len();
         if count == 0 {
             self.selected = 0;
             return;
@@ -133,9 +143,9 @@ impl PauseMenuState {
         self.selected = (self.selected as isize + delta).rem_euclid(count as isize) as usize;
     }
 
-    fn entries(&self, selection: PreviewSelection) -> Vec<String> {
+    fn entries(&self, selection: PreviewSelection, practice_mode: bool) -> Vec<String> {
         match self.mode {
-            PauseMenuMode::Standard => standard_entries(),
+            PauseMenuMode::Standard => standard_entries(practice_mode),
             PauseMenuMode::Difficulty => {
                 let mut entries = vec!["Back".to_string()];
                 entries.extend(
@@ -167,13 +177,17 @@ pub fn ensure_pause_overlay_texture(
     });
 }
 
-fn standard_entries() -> Vec<String> {
-    vec![
+fn standard_entries(practice_mode: bool) -> Vec<String> {
+    let mut entries = vec![
         "Resume".to_string(),
         "Restart Song".to_string(),
         "Change Difficulty".to_string(),
-        "Exit to Menu".to_string(),
-    ]
+    ];
+    if !practice_mode {
+        entries.push("Enable Practice Mode".to_string());
+    }
+    entries.push("Exit to Menu".to_string());
+    entries
 }
 
 fn difficulty_entries(selection: PreviewSelection) -> Vec<PreviewDifficulty> {
@@ -206,13 +220,21 @@ fn overlay_command() -> DrawCommand {
     cmd
 }
 
-fn push_metadata_text(commands: &mut TextCommandList, selection: PreviewSelection) {
-    let rows = [
+fn push_metadata_text(
+    commands: &mut TextCommandList,
+    selection: PreviewSelection,
+    practice_mode: bool,
+    death_counter: u32,
+) {
+    let mut rows = vec![
         selection.song.display_name().to_string(),
         "Artist: Kawai Sprite".to_string(),
         format!("Difficulty: {}", difficulty_title(selection.difficulty)),
-        "0 Blue Balls".to_string(),
+        format!("{death_counter} Blue Balls"),
     ];
+    if practice_mode {
+        rows.push("PRACTICE MODE".to_string());
+    }
     for (index, row) in rows.into_iter().enumerate() {
         let mut cmd = TextCommand::new(
             row,
@@ -254,11 +276,11 @@ mod tests {
         let selection = PreviewSelection::new(PreviewSong::BOPEEBO, PreviewDifficulty::Normal);
         let mut menu = PauseMenuState::new(Samples(12_000));
 
-        assert_eq!(menu.confirm(selection), PauseMenuAction::Resume);
-        menu.change_selection(1, selection);
-        assert_eq!(menu.confirm(selection), PauseMenuAction::RestartSong);
-        menu.change_selection(1, selection);
-        assert_eq!(menu.confirm(selection), PauseMenuAction::None);
+        assert_eq!(menu.confirm(selection, false), PauseMenuAction::Resume);
+        menu.change_selection(1, selection, false);
+        assert_eq!(menu.confirm(selection, false), PauseMenuAction::RestartSong);
+        menu.change_selection(1, selection, false);
+        assert_eq!(menu.confirm(selection, false), PauseMenuAction::None);
         assert_eq!(menu.mode, PauseMenuMode::Difficulty);
     }
 
@@ -267,11 +289,11 @@ mod tests {
         let selection = PreviewSelection::new(PreviewSong::BOPEEBO, PreviewDifficulty::Normal);
         let mut menu = PauseMenuState::new(Samples(0));
 
-        menu.input(InputAction::LaneDown, selection);
-        menu.input(InputAction::LaneDown, selection);
-        menu.input(InputAction::Confirm, selection);
+        menu.input(InputAction::LaneDown, selection, false);
+        menu.input(InputAction::LaneDown, selection, false);
+        menu.input(InputAction::Confirm, selection, false);
 
-        let entries = menu.entries(selection);
+        let entries = menu.entries(selection, false);
         assert_eq!(
             entries,
             vec!["Back", "Easy", "Normal", "Hard", "Erect", "Nightmare"]
@@ -283,16 +305,49 @@ mod tests {
         let selection = PreviewSelection::new(PreviewSong::TUTORIAL, PreviewDifficulty::Normal);
         let mut menu = PauseMenuState::new(Samples(0));
 
-        menu.input(InputAction::LaneDown, selection);
-        menu.input(InputAction::LaneDown, selection);
-        menu.input(InputAction::Confirm, selection);
+        menu.input(InputAction::LaneDown, selection, false);
+        menu.input(InputAction::LaneDown, selection, false);
+        menu.input(InputAction::Confirm, selection, false);
         assert_eq!(menu.mode, PauseMenuMode::Difficulty);
 
-        let action = menu.input(InputAction::Back, selection);
+        let action = menu.input(InputAction::Back, selection, false);
 
         assert_eq!(action, PauseMenuAction::None);
         assert_eq!(menu.mode, PauseMenuMode::Standard);
         assert_eq!(menu.selected, 0);
+    }
+
+    #[test]
+    fn standard_pause_can_enable_practice_mode_once() {
+        let selection = PreviewSelection::new(PreviewSong::BOPEEBO, PreviewDifficulty::Normal);
+        let mut menu = PauseMenuState::new(Samples(0));
+
+        assert_eq!(
+            menu.entries(selection, false),
+            vec![
+                "Resume",
+                "Restart Song",
+                "Change Difficulty",
+                "Enable Practice Mode",
+                "Exit to Menu"
+            ]
+        );
+        menu.selected = 3;
+        assert_eq!(
+            menu.confirm(selection, false),
+            PauseMenuAction::EnablePracticeMode
+        );
+
+        assert_eq!(
+            menu.entries(selection, true),
+            vec![
+                "Resume",
+                "Restart Song",
+                "Change Difficulty",
+                "Exit to Menu"
+            ]
+        );
+        assert_eq!(menu.confirm(selection, true), PauseMenuAction::ExitToMenu);
     }
 
     #[test]

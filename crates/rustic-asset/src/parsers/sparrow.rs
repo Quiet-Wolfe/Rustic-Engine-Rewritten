@@ -38,6 +38,23 @@ pub struct SparrowFrame {
     pub rotated: bool,
 }
 
+impl SparrowFrame {
+    pub fn untrimmed(name: String, x: i32, y: i32, width: u32, height: u32) -> Self {
+        Self {
+            name,
+            x,
+            y,
+            width,
+            height,
+            frame_x: 0,
+            frame_y: 0,
+            frame_width: width,
+            frame_height: height,
+            rotated: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 #[non_exhaustive]
 pub struct SparrowAtlas {
@@ -46,6 +63,10 @@ pub struct SparrowAtlas {
 }
 
 impl SparrowAtlas {
+    pub fn from_frames(image_path: String, frames: Vec<SparrowFrame>) -> Self {
+        Self { image_path, frames }
+    }
+
     /// Parse Sparrow XML bytes. Errors only on malformed XML or
     /// non-numeric attributes. Missing optional `frame*` attributes
     /// default to the trimmed rect.

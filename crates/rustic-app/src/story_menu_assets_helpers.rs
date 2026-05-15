@@ -1,4 +1,5 @@
 use super::*;
+use crate::animation_timing::flixel_frame_index;
 
 pub(super) fn story_difficulties(level: &LevelDefinition) -> Vec<PreviewDifficulty> {
     let mut difficulties = STORY_DIFFICULTIES.to_vec();
@@ -109,16 +110,7 @@ pub(super) fn animation_frame_index(
     frame_count: usize,
     looped: bool,
 ) -> usize {
-    if frame_count <= 1 {
-        return 0;
-    }
-    let elapsed = cursor.0.saturating_sub(started_at.0).max(0) as u128;
-    let index = (elapsed * u128::from(fps) / u128::from(sample_rate.max(1))) as usize;
-    if looped {
-        index % frame_count
-    } else {
-        index.min(frame_count - 1)
-    }
+    flixel_frame_index(cursor, sample_rate, started_at, fps, frame_count, looped)
 }
 
 pub(super) fn story_beat(cursor: Samples, sample_rate: u32) -> i64 {

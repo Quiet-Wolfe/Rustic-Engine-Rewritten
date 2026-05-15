@@ -1,17 +1,56 @@
 use super::capsule_metadata::load_capsule_metadata_assets;
+// LINT-ALLOW: long-file Freeplay asset bootstrap covers vanilla screen dependencies.
+use super::difficulty_stars::load_freeplay_difficulty_stars;
 use super::helpers::{clone_frames, load_sparrow_atlas, load_static_texture};
-use super::{CapsuleKind, FreeplayAssets, FreeplayCapsule, WHITE_TEXTURE_ID};
+use super::song_metadata::{FreeplayDifficultyRatings, FreeplaySongMetadata};
+use super::{CapsuleKind, FreeplayAlbum, FreeplayAssets, FreeplayCapsule, WHITE_TEXTURE_ID};
 use crate::asset_roots::baked_assets_root;
 use crate::bitmap_text_assets::load_bitmap_text_assets;
-use crate::freeplay_dj::load_freeplay_dj;
-use crate::preview_song::PreviewSong;
-use anyhow::Result;
-use rustic_asset::OverlayResolver;
+use crate::freeplay_dj::load_freeplay_dj_for_asset;
+use crate::preview_song::{PreviewDifficulty, PreviewSong, VARIATION_BF, VARIATION_PICO};
+use anyhow::{Context, Result};
+use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
 use rustic_render::{FilterMode, Texture};
+use serde::Deserialize;
 use std::collections::HashMap;
 
+#[cfg(test)]
+#[path = "freeplay_loader_tests.rs"]
+mod tests;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FreeplayStyle {
+    Bf,
+    Pico,
+}
+
+impl FreeplayStyle {
+    fn data_path(self) -> &'static str {
+        match self {
+            Self::Bf => "data/ui/freeplay/styles/bf.json",
+            Self::Pico => "data/ui/freeplay/styles/pico.json",
+        }
+    }
+
+    fn dj_asset_path(self) -> &'static str {
+        match self {
+            Self::Bf => "images/freeplay/freeplay-boyfriend",
+            Self::Pico => "images/freeplay/freeplay-pico",
+        }
+    }
+}
+
 pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<FreeplayAssets> {
+    load_freeplay_assets_for_style(device, queue, FreeplayStyle::Bf)
+}
+
+pub fn load_freeplay_assets_for_style(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    style: FreeplayStyle,
+) -> Result<FreeplayAssets> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let style_config = load_freeplay_style_config(&resolver, style)?;
     let mut textures = HashMap::new();
     textures.insert(
         WHITE_TEXTURE_ID,
@@ -25,7 +64,7 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
             Some("rustic.freeplay.white"),
         ),
     );
-    let pink_back = load_static_texture(
+    load_static_texture(
         device,
         queue,
         &resolver,
@@ -46,30 +85,28 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         FilterMode::Linear,
     )
     .ok();
+    let bg_image_path = style_config.bg_image_path();
     let bg_image = load_static_texture(
         device,
         queue,
         &resolver,
         &mut textures,
-        "images/freeplay/freeplayBGweek1-bf.png",
+        &bg_image_path,
         FilterMode::Linear,
     )?;
-    let (capsule_atlas, capsule_atlas_data) = load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/freeplayCapsule/capsule/freeplayCapsule.xml",
-    )?;
+    let capsule_atlas_path = style_config.capsule_atlas_path();
+    let (capsule_atlas, capsule_atlas_data) =
+        load_sparrow_atlas(device, queue, &resolver, &mut textures, &capsule_atlas_path)?;
     let capsule_selected_frames = clone_frames(&capsule_atlas_data, "mp3 capsule w backing0");
     let capsule_unselected_frames =
         clone_frames(&capsule_atlas_data, "mp3 capsule w backing NOT SELECTED");
+    let selector_atlas_path = style_config.selector_atlas_path();
     let (selector_atlas, selector_atlas_data) = load_sparrow_atlas(
         device,
         queue,
         &resolver,
         &mut textures,
-        "images/freeplay/freeplaySelector/freeplaySelector.xml",
+        &selector_atlas_path,
     )?;
     let selector_frames = clone_frames(&selector_atlas_data, "arrow pointer loop");
     let difficulty_easy = load_static_texture(
@@ -123,12 +160,17 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         kind: CapsuleKind::Random,
         display_name: "RANDOM".to_string(),
     }];
-    songs.extend(PreviewSong::ALL.iter().map(|song| FreeplayCapsule {
-        kind: CapsuleKind::Song(*song),
-        display_name: song.display_name().to_ascii_uppercase(),
-    }));
+    songs.extend(
+        PreviewSong::ALL
+            .iter()
+            .chain(PreviewSong::FREEPLAY_EXTRA.iter())
+            .map(|song| FreeplayCapsule {
+                kind: CapsuleKind::Song(*song),
+                display_name: song.display_name().to_ascii_uppercase(),
+            }),
+    );
 
-    let dj = match load_freeplay_dj(device, queue) {
+    let dj = match load_freeplay_dj_for_asset(device, queue, style.dj_asset_path()) {
         Ok(mut dj) => {
             if let Some((tex_id, tex)) = dj.take_texture() {
                 textures.insert(tex_id, tex);
@@ -164,34 +206,18 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         }
     };
 
-    let album_cover = match load_static_texture(
+    let song_albums = load_song_metadata_map(&resolver);
+    let albums = load_freeplay_albums(device, queue, &resolver, &mut textures, &song_albums);
+    let difficulty_stars = match load_freeplay_difficulty_stars(
         device,
         queue,
         &resolver,
         &mut textures,
-        "images/freeplay/albumRoll/volume1.png",
-        FilterMode::Linear,
     ) {
-        Ok(tex) => Some(tex),
+        Ok(stars) => Some(stars),
         Err(e) => {
-            tracing::warn!(target: "rustic.asset", "freeplay album cover unavailable: {e:#}");
+            tracing::warn!(target: "rustic.asset", "freeplay difficulty stars unavailable: {e:#}");
             None
-        }
-    };
-    let (album_title_atlas, album_title_frame) = match load_sparrow_atlas(
-        device,
-        queue,
-        &resolver,
-        &mut textures,
-        "images/freeplay/albumRoll/volume1-text.xml",
-    ) {
-        Ok((handle, atlas)) => {
-            let frame = atlas.first_animation_frame("idle", &[]).cloned();
-            (Some(handle), frame)
-        }
-        Err(e) => {
-            tracing::warn!(target: "rustic.asset", "freeplay album title unavailable: {e:#}");
-            (None, None)
         }
     };
 
@@ -248,7 +274,6 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
 
     Ok(FreeplayAssets {
         songs,
-        pink_back,
         back_triangle,
         bg_image,
         capsule_atlas,
@@ -266,9 +291,9 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         capsule_metadata,
         highscore_atlas,
         highscore_frame,
-        album_cover,
-        album_title_atlas,
-        album_title_frame,
+        albums,
+        song_albums,
+        difficulty_stars,
         mini_arrow,
         seperator,
         sparkle_atlas,
@@ -276,6 +301,278 @@ pub fn load_freeplay_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resul
         clear_box,
         backing_text_skin,
         enter_started_at: None,
+        start_delay_secs: style_config.start_delay,
+        capsule_text_colors: style_config.capsule_text_colors,
         textures,
     })
+}
+
+fn load_freeplay_style_config(
+    resolver: &OverlayResolver,
+    style: FreeplayStyle,
+) -> Result<FreeplayStyleConfig> {
+    let path = AssetPath::new(style.data_path())?;
+    let bytes = load_bytes(resolver, &path).with_context(|| format!("load {}", path.as_str()))?;
+    let raw: RawFreeplayStyle =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.as_str()))?;
+    Ok(raw.into_config())
+}
+
+fn load_song_metadata_map(resolver: &OverlayResolver) -> HashMap<u32, FreeplaySongMetadata> {
+    PreviewSong::ALL
+        .iter()
+        .chain(PreviewSong::FREEPLAY_EXTRA.iter())
+        .map(|song| {
+            let base =
+                load_song_metadata(resolver, song.metadata_path_for(PreviewDifficulty::Normal))
+                    .unwrap_or_else(|error| {
+                        tracing::warn!(
+                            target: "rustic.asset",
+                            "freeplay metadata unavailable for {}: {error:#}",
+                            song.folder
+                        );
+                        FreeplayLoadedSongMetadata::fallback("volume1")
+                    });
+            let mut variant_albums = HashMap::new();
+            let mut variant_ratings = HashMap::new();
+            if song
+                .available_difficulties()
+                .contains(&PreviewDifficulty::Erect)
+            {
+                if let Ok(metadata) =
+                    load_song_metadata(resolver, song.metadata_path_for(PreviewDifficulty::Erect))
+                {
+                    variant_albums.insert("erect".to_string(), metadata.album);
+                    variant_ratings.insert("erect".to_string(), metadata.ratings);
+                }
+            }
+            for variation in [VARIATION_BF, VARIATION_PICO] {
+                if song.has_variation(variation) {
+                    if let Ok(metadata) =
+                        load_song_metadata(resolver, song.metadata_path_for_suffix(Some(variation)))
+                    {
+                        variant_albums.insert(variation.to_string(), metadata.album);
+                        variant_ratings.insert(variation.to_string(), metadata.ratings);
+                    }
+                }
+            }
+            (
+                song.id,
+                FreeplaySongMetadata::new(
+                    base.album,
+                    variant_albums,
+                    base.ratings,
+                    variant_ratings,
+                ),
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn load_song_album_id(resolver: &OverlayResolver, path: String) -> Result<String> {
+    Ok(load_song_metadata(resolver, path)?.album)
+}
+
+fn load_song_metadata(
+    resolver: &OverlayResolver,
+    path: String,
+) -> Result<FreeplayLoadedSongMetadata> {
+    let path = AssetPath::new(path)?;
+    let bytes = load_bytes(resolver, &path).with_context(|| format!("load {}", path.as_str()))?;
+    let metadata: RawSongMetadata =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.as_str()))?;
+    Ok(FreeplayLoadedSongMetadata {
+        album: metadata.play_data.album,
+        ratings: FreeplayDifficultyRatings::from_map(&metadata.play_data.ratings),
+    })
+}
+
+fn load_freeplay_albums(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<rustic_core::ids::AssetId, Texture>,
+    song_albums: &HashMap<u32, FreeplaySongMetadata>,
+) -> HashMap<String, FreeplayAlbum> {
+    let mut ids = vec!["volume1".to_string()];
+    for metadata in song_albums.values() {
+        ids.extend(metadata.album_ids().map(ToString::to_string));
+    }
+    ids.sort();
+    ids.dedup();
+    ids.into_iter()
+        .filter_map(|album_id| {
+            match load_freeplay_album(device, queue, resolver, textures, &album_id) {
+                Ok(album) => Some((album_id, album)),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "rustic.asset",
+                        "freeplay album {album_id} unavailable: {error:#}"
+                    );
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+fn load_freeplay_album(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<rustic_core::ids::AssetId, Texture>,
+    album_id: &str,
+) -> Result<FreeplayAlbum> {
+    let path = AssetPath::new(format!("data/ui/freeplay/albums/{album_id}.json"))?;
+    let bytes = load_bytes(resolver, &path).with_context(|| format!("load {}", path.as_str()))?;
+    let data: RawFreeplayAlbum =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.as_str()))?;
+    let cover = load_static_texture(
+        device,
+        queue,
+        resolver,
+        textures,
+        &format!("images/{}.png", data.album_art_asset),
+        FilterMode::Linear,
+    )?;
+    let (title_atlas, title_data) = load_sparrow_atlas(
+        device,
+        queue,
+        resolver,
+        textures,
+        &format!("images/{}.xml", data.album_title_asset),
+    )?;
+    let title_frame = title_data
+        .first_animation_frame("idle", &[])
+        .or_else(|| title_data.first_animation_frame("switch", &[]))
+        .or_else(|| title_data.frames.first())
+        .cloned();
+    let [offset_x, offset_y] = data.album_title_offsets.unwrap_or([0.0, 0.0]);
+    Ok(FreeplayAlbum {
+        cover,
+        title_atlas,
+        title_frame,
+        title_offset: glam::vec2(offset_x, offset_y),
+    })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawSongMetadata {
+    play_data: RawSongPlayData,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawSongPlayData {
+    album: String,
+    ratings: HashMap<String, u8>,
+}
+
+struct FreeplayLoadedSongMetadata {
+    album: String,
+    ratings: FreeplayDifficultyRatings,
+}
+
+impl FreeplayLoadedSongMetadata {
+    fn fallback(album: &str) -> Self {
+        Self {
+            album: album.to_string(),
+            ratings: FreeplayDifficultyRatings::default(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawFreeplayAlbum {
+    album_art_asset: String,
+    album_title_asset: String,
+    album_title_offsets: Option<[f32; 2]>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawFreeplayStyle {
+    bg_asset: String,
+    selector_asset: String,
+    capsule_asset: String,
+    capsule_text_colors: Option<[String; 2]>,
+    #[serde(default = "default_start_delay")]
+    start_delay: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct FreeplayStyleConfig {
+    bg_asset: String,
+    selector_asset: String,
+    capsule_asset: String,
+    capsule_text_colors: [glam::Vec4; 2],
+    start_delay: f64,
+}
+
+impl RawFreeplayStyle {
+    fn into_config(self) -> FreeplayStyleConfig {
+        FreeplayStyleConfig {
+            bg_asset: self.bg_asset,
+            selector_asset: self.selector_asset,
+            capsule_asset: self.capsule_asset,
+            capsule_text_colors: parse_capsule_text_colors(self.capsule_text_colors),
+            start_delay: self.start_delay,
+        }
+    }
+}
+
+impl FreeplayStyleConfig {
+    fn bg_image_path(&self) -> String {
+        image_asset_path(&self.bg_asset, "png")
+    }
+
+    fn selector_atlas_path(&self) -> String {
+        image_asset_path(&self.selector_asset, "xml")
+    }
+
+    fn capsule_atlas_path(&self) -> String {
+        image_asset_path(&self.capsule_asset, "xml")
+    }
+}
+
+fn image_asset_path(asset: &str, extension: &str) -> String {
+    let asset = asset.strip_prefix("images/").unwrap_or(asset);
+    let with_prefix = format!("images/{asset}");
+    if with_prefix.ends_with(&format!(".{extension}")) {
+        with_prefix
+    } else {
+        format!("{with_prefix}.{extension}")
+    }
+}
+
+fn default_start_delay() -> f64 {
+    1.0
+}
+
+fn parse_capsule_text_colors(colors: Option<[String; 2]>) -> [glam::Vec4; 2] {
+    colors
+        .map(|[selected, unselected]| {
+            [
+                parse_hex_color(&selected).unwrap_or(glam::Vec4::ONE),
+                parse_hex_color(&unselected).unwrap_or(glam::Vec4::ONE),
+            ]
+        })
+        .unwrap_or([glam::Vec4::ONE, glam::Vec4::ONE])
+}
+
+fn parse_hex_color(value: &str) -> Option<glam::Vec4> {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let parse = |range: std::ops::Range<usize>| u8::from_str_radix(&hex[range], 16).ok();
+    Some(glam::vec4(
+        f32::from(parse(0..2)?) / 255.0,
+        f32::from(parse(2..4)?) / 255.0,
+        f32::from(parse(4..6)?) / 255.0,
+        1.0,
+    ))
 }

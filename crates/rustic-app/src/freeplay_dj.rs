@@ -1,9 +1,7 @@
 //! Freeplay DJ sprite from Funkin' v0.8.5.
 //!
 //! Drives BF's `Intro → Idle` and `Confirm` frame labels. FistPump, FistPumpLoss,
-//! AFK easter egg, NewUnlock, and CharSelect states are deferred. Multi-style
-//! (Sparrow / Packer / MultiSparrow) DJ paths are also deferred - for now we
-//! hard-code BF's Adobe Animate atlas at `images/freeplay/freeplay-boyfriend/`.
+//! AFK easter egg, NewUnlock, and CharSelect states are deferred.
 //!
 //! ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx
 //! ref: bdedc0aa:source/funkin/ui/freeplay/dj/AnimateAtlasFreeplayDJ.hx
@@ -141,10 +139,18 @@ impl FreeplayDJ {
 }
 
 pub fn load_freeplay_dj(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<FreeplayDJ> {
+    load_freeplay_dj_for_asset(device, queue, "images/freeplay/freeplay-boyfriend")
+}
+
+pub fn load_freeplay_dj_for_asset(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    asset_path: &str,
+) -> Result<FreeplayDJ> {
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
-    let animation_path = AssetPath::new("images/freeplay/freeplay-boyfriend/Animation.json")?;
-    let spritemap_path = AssetPath::new("images/freeplay/freeplay-boyfriend/spritemap1.json")?;
-    let texture_path = AssetPath::new("images/freeplay/freeplay-boyfriend/spritemap1.png")?;
+    let animation_path = AssetPath::new(format!("{asset_path}/Animation.json"))?;
+    let spritemap_path = AssetPath::new(format!("{asset_path}/spritemap1.json"))?;
+    let texture_path = AssetPath::new(format!("{asset_path}/spritemap1.png"))?;
     let animation = load_animate_animation(&resolver, &animation_path)
         .with_context(|| format!("load {animation_path}"))?;
     let atlas = load_animate_spritemap(&resolver, &spritemap_path)

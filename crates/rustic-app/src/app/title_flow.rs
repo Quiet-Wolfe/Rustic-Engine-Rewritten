@@ -2,10 +2,12 @@ use super::App;
 // LINT-ALLOW: long-file app flow is being split screen by screen.
 use crate::app_text::song_select_text_commands;
 use crate::camera_fx::CameraFx;
-use crate::freeplay_assets::load_freeplay_assets as load_freeplay_screen_assets;
+use crate::freeplay_assets::{
+    load_freeplay_assets_for_style as load_freeplay_screen_assets, FreeplayStyle,
+};
 use crate::main_menu_assets::{load_main_menu_assets, MainMenuAction};
 use crate::menu_audio::MenuSound;
-use crate::preview_song::PreviewSelection;
+use crate::preview_song::{PreviewSelection, PreviewSong, VARIATION_BF, VARIATION_PICO};
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
 use crate::story_menu_assets::load_story_menu_assets;
 use crate::title_assets::load_title_screen_assets;
@@ -249,6 +251,7 @@ impl App {
             | AppMode::Options
             | AppMode::StoryMenu
             | AppMode::SongSelect => self.title_cursor(play_sample_rate(&self.mixer)),
+            AppMode::Play if self.dialogue.is_some() => self.song_start_cursor,
             AppMode::Play => self.advance_song_clock(),
         }
     }
@@ -445,6 +448,9 @@ impl App {
             InputAction::LaneRight | InputAction::UiRight => {
                 self.change_freeplay_difficulty(1);
             }
+            InputAction::UiSelect => {
+                self.toggle_freeplay_character();
+            }
             InputAction::Confirm => {
                 self.play_menu_sound(MenuSound::Confirm);
                 if self.current_freeplay_is_random() && !self.choose_random_freeplay_song() {
@@ -503,11 +509,13 @@ impl App {
     fn start_freeplay_confirm(&mut self) {
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = self.title_cursor(sample_rate);
-        if let Some(assets) = self.freeplay_assets.as_mut() {
+        let delay_secs = if let Some(assets) = self.freeplay_assets.as_mut() {
             assets.dj_enter_confirm(cursor);
-        }
-        // ref: bdedc0aa:assets/preload/data/ui/freeplay/styles/bf.json:8 (getStartDelay ~0.5s)
-        let delay_samples = (f64::from(sample_rate) * 0.5) as i64;
+            assets.start_delay_secs
+        } else {
+            1.0
+        };
+        let delay_samples = (f64::from(sample_rate) * delay_secs) as i64;
         self.freeplay_confirm_at = Some(Samples(cursor.0 + delay_samples));
         // No further input until the delay elapses; the per-frame
         // rebuild_song_select_commands hook calls enter_play() at that point.
@@ -522,7 +530,8 @@ impl App {
         };
         self.freeplay_selected_index = index;
         if let Some(song) = assets.song_at(index) {
-            self.preview_selection = PreviewSelection::new(song, self.preview_selection.difficulty);
+            self.preview_selection =
+                self.freeplay_selection_for_song(song, self.preview_selection.difficulty);
         }
     }
 
@@ -537,7 +546,8 @@ impl App {
                 self.preview_selection.previous_song()
             } else {
                 self.preview_selection.next_song()
-            };
+            }
+            .with_variation(Some(self.freeplay_variation));
             return;
         }
         let next = (self.freeplay_selected_index as isize + delta).rem_euclid(count as isize);
@@ -547,7 +557,8 @@ impl App {
             .as_ref()
             .and_then(|assets| assets.song_at(self.freeplay_selected_index))
         {
-            self.preview_selection = PreviewSelection::new(song, self.preview_selection.difficulty);
+            self.preview_selection =
+                self.freeplay_selection_for_song(song, self.preview_selection.difficulty);
         }
     }
 
@@ -559,9 +570,17 @@ impl App {
                 self.preview_selection.difficulty.next_freeplay()
             };
         } else if delta < 0 {
-            self.preview_selection = self.preview_selection.previous_difficulty();
+            self.preview_selection = self
+                .freeplay_assets
+                .as_ref()
+                .map(|assets| assets.cycle_selection_difficulty(self.preview_selection, -1))
+                .unwrap_or_else(|| self.preview_selection.previous_difficulty());
         } else {
-            self.preview_selection = self.preview_selection.next_difficulty();
+            self.preview_selection = self
+                .freeplay_assets
+                .as_ref()
+                .map(|assets| assets.cycle_selection_difficulty(self.preview_selection, 1))
+                .unwrap_or_else(|| self.preview_selection.next_difficulty());
         }
     }
 
@@ -584,15 +603,58 @@ impl App {
             return false;
         };
         self.freeplay_selected_index = random_offset;
-        self.preview_selection = PreviewSelection::new(song, self.preview_selection.difficulty);
+        self.preview_selection =
+            self.freeplay_selection_for_song(song, self.preview_selection.difficulty);
         true
+    }
+
+    fn toggle_freeplay_character(&mut self) {
+        self.freeplay_variation = match self.freeplay_variation {
+            VARIATION_BF => VARIATION_PICO,
+            _ => VARIATION_BF,
+        };
+        let selected_song = self
+            .freeplay_assets
+            .as_ref()
+            .and_then(|assets| assets.song_at(self.freeplay_selected_index));
+        if let Some(song) = selected_song {
+            self.preview_selection =
+                self.freeplay_selection_for_song(song, self.preview_selection.difficulty);
+        } else {
+            self.preview_selection = self
+                .preview_selection
+                .with_variation(Some(self.freeplay_variation));
+        }
+        self.load_freeplay_assets();
+        let sample_rate = play_sample_rate(&self.mixer);
+        let cursor = self.title_cursor(sample_rate);
+        if let Some(assets) = self.freeplay_assets.as_mut() {
+            assets.reset_dj_intro(cursor);
+        }
+    }
+
+    fn freeplay_selection_for_song(
+        &self,
+        song: PreviewSong,
+        difficulty: crate::preview_song::PreviewDifficulty,
+    ) -> PreviewSelection {
+        let selection =
+            PreviewSelection::new(song, difficulty).with_variation(Some(self.freeplay_variation));
+        self.freeplay_assets
+            .as_ref()
+            .map(|assets| assets.clamp_selection_difficulty(selection))
+            .unwrap_or(selection)
     }
 
     fn load_freeplay_assets(&mut self) {
         let Some(runtime) = self.runtime.as_ref() else {
             return;
         };
-        match load_freeplay_screen_assets(&runtime.rs.device, &runtime.rs.queue) {
+        let style = match self.freeplay_variation {
+            VARIATION_PICO => FreeplayStyle::Pico,
+            _ => FreeplayStyle::Bf,
+        };
+        match load_freeplay_screen_assets(&runtime.rs.device, &runtime.rs.queue, style) {
             Ok(mut freeplay) => {
                 self.atlases = std::mem::take(&mut freeplay.textures);
                 self.freeplay_assets = Some(freeplay);

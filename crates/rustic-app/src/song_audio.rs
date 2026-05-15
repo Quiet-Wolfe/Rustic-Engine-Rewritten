@@ -106,7 +106,7 @@ fn load_optional_vocals(
 
 fn inst_paths(selection: PreviewSelection) -> Vec<String> {
     let mut paths = Vec::new();
-    if let Some(suffix) = selection.difficulty.chart_variation_suffix() {
+    if let Some(suffix) = selection.effective_variation_suffix() {
         paths.push(format!("songs/{}/Inst-{suffix}.ogg", selection.song.folder));
     }
     paths.push(format!("songs/{}/Inst.ogg", selection.song.folder));
@@ -125,7 +125,7 @@ fn vocal_paths(selection: PreviewSelection, parsed: Option<&ParsedSong>) -> Vec<
 }
 
 fn vocal_path_groups(selection: PreviewSelection, parsed: Option<&ParsedSong>) -> Vec<Vec<String>> {
-    let suffix = selection.difficulty.chart_variation_suffix();
+    let suffix = selection.effective_variation_suffix();
     parsed
         .map(|parsed| {
             vocal_character_ids(parsed)
@@ -249,6 +249,47 @@ mod tests {
                 "songs/dadbattle/Voices-gf-erect.ogg",
                 "songs/dadbattle/Voices-gf.ogg",
                 "music/Dadbattle_Voices.ogg"
+            ]
+        );
+    }
+
+    #[test]
+    fn preview_stem_paths_prefer_character_variant_stems() {
+        const CHART: &str = r#"{"scrollSpeed":{"hard":1},"notes":{"hard":[]}}"#;
+        const METADATA: &str = r#"{
+            "songName": "Bopeebo Pico",
+            "playData": {
+                "characters": {
+                    "player": "pico-playable",
+                    "opponent": "dad",
+                    "girlfriend": "gf"
+                }
+            },
+            "timeChanges": [{ "bpm": 100 }]
+        }"#;
+        let selection = PreviewSelection::from_keys(Some("bopeebo"), Some("hard"))
+            .with_variation(Some(crate::preview_song::VARIATION_PICO));
+        let parsed =
+            ParsedSong::parse_vslice(CHART.as_bytes(), METADATA.as_bytes(), "hard").unwrap();
+
+        assert_eq!(
+            inst_paths(selection),
+            vec![
+                "songs/bopeebo/Inst-pico.ogg",
+                "songs/bopeebo/Inst.ogg",
+                "music/Bopeebo_Inst.ogg"
+            ]
+        );
+        assert_eq!(
+            vocal_paths(selection, Some(&parsed)),
+            vec![
+                "songs/bopeebo/Voices-pico-playable-pico.ogg",
+                "songs/bopeebo/Voices-pico-playable.ogg",
+                "songs/bopeebo/Voices-dad-pico.ogg",
+                "songs/bopeebo/Voices-dad.ogg",
+                "songs/bopeebo/Voices-gf-pico.ogg",
+                "songs/bopeebo/Voices-gf.ogg",
+                "music/Bopeebo_Voices.ogg"
             ]
         );
     }

@@ -1,4 +1,5 @@
 //! Character definition parser.
+// LINT-ALLOW: long-file character JSON schema and parser tests stay together.
 //!
 //! Base FNF stores vanilla character layout and animation definitions in
 //! `Character.hx`. RusticV3 bakes that source-derived data into typed JSON
@@ -23,6 +24,8 @@ pub struct CharacterDefinition {
     pub asset_path: Option<AssetPath>,
     #[serde(default)]
     pub icon: Option<AssetPath>,
+    #[serde(default)]
+    pub health_icon: CharacterHealthIconDefinition,
     #[serde(default, alias = "startingAnimation")]
     pub initial_animation: Option<String>,
     #[serde(
@@ -53,6 +56,13 @@ pub struct CharacterDefinition {
     pub animations: Vec<CharacterAnimation>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct CharacterHealthIconDefinition {
+    pub id: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 #[non_exhaustive]
@@ -69,6 +79,7 @@ pub struct CharacterDeathDefinition {
 pub enum CharacterRenderType {
     #[default]
     Sparrow,
+    Packer,
     AnimateAtlas,
     MultiSparrow,
     MultiAnimateAtlas,
@@ -287,6 +298,7 @@ mod tests {
             "name": "Daddy Dearest",
             "renderType": "animateatlas",
             "assetPath": "shared:characters/dad",
+            "healthIcon": { "id": "dad" },
             "offsets": [13, 3],
             "cameraOffsets": [11, 6],
             "animations": [
@@ -308,6 +320,7 @@ mod tests {
 
         assert_eq!(character.id, "Daddy Dearest");
         assert_eq!(character.render_type, CharacterRenderType::AnimateAtlas);
+        assert_eq!(character.health_icon.id.as_deref(), Some("dad"));
         assert_eq!(character.atlas, None);
         assert_eq!(
             character.asset_path.as_ref().unwrap().as_str(),

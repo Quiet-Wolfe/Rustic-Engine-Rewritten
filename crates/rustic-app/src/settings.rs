@@ -16,6 +16,7 @@ pub struct Settings {
     pub render: RenderSettings,
     pub audio: AudioSettings,
     pub input: InputSettings,
+    pub preferences: PreferenceSettings,
 }
 
 impl Settings {
@@ -97,6 +98,39 @@ pub struct InputSettings {
     pub touch_opacity: f32,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default)]
+#[non_exhaustive]
+pub struct PreferenceSettings {
+    pub downscroll: bool,
+    pub strumline_background: u8,
+    pub flashing_lights: bool,
+    pub camera_zooms: bool,
+    pub subtitles: bool,
+    pub pause_on_unfocus: bool,
+    pub launch_fullscreen: bool,
+    pub vsync: bool,
+    pub unlocked_framerate: bool,
+    pub fps: u16,
+}
+
+impl Default for PreferenceSettings {
+    fn default() -> Self {
+        Self {
+            downscroll: false,
+            strumline_background: 0,
+            flashing_lights: true,
+            camera_zooms: true,
+            subtitles: true,
+            pause_on_unfocus: true,
+            launch_fullscreen: false,
+            vsync: true,
+            unlocked_framerate: false,
+            fps: 60,
+        }
+    }
+}
+
 impl Default for InputSettings {
     fn default() -> Self {
         Self {
@@ -167,6 +201,8 @@ mod tests {
         assert_eq!(settings.audio.sfx_volume, 1.0);
         assert_eq!(settings.input.touch_lane_height_px, 240);
         assert_eq!(settings.input.touch_opacity, 0.45);
+        assert!(settings.preferences.camera_zooms);
+        assert_eq!(settings.preferences.fps, 60);
     }
 
     #[test]
@@ -176,12 +212,16 @@ mod tests {
         let mut settings = Settings::default();
         settings.audio.master_volume = 0.75;
         settings.input.touch_enabled = true;
+        settings.preferences.camera_zooms = false;
+        settings.preferences.fps = 144;
 
         settings.save_atomic(&path).unwrap();
         let loaded = Settings::load_or_default(&path).unwrap();
 
         assert_eq!(loaded.audio.master_volume, 0.75);
         assert!(loaded.input.touch_enabled);
+        assert!(!loaded.preferences.camera_zooms);
+        assert_eq!(loaded.preferences.fps, 144);
     }
 
     #[test]

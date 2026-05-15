@@ -184,6 +184,19 @@ impl CameraFx {
         self.zooming = true;
     }
 
+    pub(crate) fn set_zooming_enabled(&mut self, cameras: &mut CameraRegistry, enabled: bool) {
+        self.zooming = enabled;
+        if enabled {
+            return;
+        }
+        self.camera_bop_multiplier = 1.0;
+        self.zoom_tween = None;
+        if let Some(camera) = cameras.get_mut(CameraId(1)) {
+            camera.zoom = DEFAULT_HUD_CAMERA_ZOOM;
+        }
+        self.write_zooms(cameras);
+    }
+
     pub(crate) fn zoom_camera(
         &mut self,
         cameras: &mut CameraRegistry,
@@ -588,6 +601,25 @@ mod tests {
         fx.update(&mut cameras, Samples(0), 48_000, 120.0);
         assert!((cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom) - 1.015).abs() < 1e-6);
         assert!((cameras.get(CameraId(1)).map_or(0.0, |camera| camera.zoom) - 1.03).abs() < 1e-6);
+    }
+
+    #[test]
+    fn disabling_camera_zoom_suppresses_active_bop_zoom() {
+        let mut cameras = CameraRegistry::with_default_fnf();
+        let mut fx = CameraFx::default();
+        fx.reset(&mut cameras, 1.0);
+        fx.update(&mut cameras, Samples(0), 48_000, 120.0);
+
+        fx.set_zooming_enabled(&mut cameras, false);
+
+        assert_eq!(
+            cameras.get(CameraId(0)).map_or(0.0, |camera| camera.zoom),
+            1.0
+        );
+        assert_eq!(
+            cameras.get(CameraId(1)).map_or(0.0, |camera| camera.zoom),
+            1.0
+        );
     }
 
     #[test]

@@ -11,6 +11,20 @@ use std::time::Instant;
 use winit::event::ElementState;
 
 impl App {
+    pub(super) fn pause_on_unfocus(&mut self, cursor: Samples) -> bool {
+        if !should_pause_on_unfocus(
+            self.options_preferences.pause_on_unfocus,
+            self.mode,
+            self.pause_menu.is_some(),
+            self.game_over.is_some(),
+            self.dialogue.is_some(),
+        ) {
+            return false;
+        }
+        self.enter_pause_menu(cursor);
+        true
+    }
+
     pub(super) fn pause_cursor(&self) -> Option<Samples> {
         self.pause_menu.as_ref().map(PauseMenuState::cursor)
     }
@@ -45,11 +59,16 @@ impl App {
         let pause_action = self
             .pause_menu
             .as_mut()
-            .map(|menu| menu.input(action, self.preview_selection))
+            .map(|menu| menu.input(action, self.preview_selection, self.practice_mode))
             .unwrap_or(PauseMenuAction::None);
         match pause_action {
             PauseMenuAction::Resume => self.resume_from_pause(),
             PauseMenuAction::RestartSong => self.restart_song_from_pause(),
+            PauseMenuAction::EnablePracticeMode => {
+                // ref: bdedc0aa:source/funkin/play/PauseSubState.hx:1084-1090
+                self.practice_mode = true;
+                self.rebuild_pause_commands();
+            }
             PauseMenuAction::ChangeDifficulty(difficulty) => {
                 self.change_difficulty_from_pause(difficulty);
             }
@@ -100,7 +119,13 @@ impl App {
         }
 
         self.pause_music.update_gain(&self.mixer);
-        menu.append_commands(&mut sprites, &mut text, self.preview_selection);
+        menu.append_commands(
+            &mut sprites,
+            &mut text,
+            self.preview_selection,
+            self.practice_mode,
+            self.death_counter,
+        );
         self.cmds = sprites;
         self.text_cmds = text;
     }
@@ -125,14 +150,15 @@ impl App {
     fn restart_song_from_pause(&mut self) {
         self.pause_menu = None;
         self.pause_music.stop(&self.mixer);
-        self.load_selected_song();
+        self.restart_loaded_song_from_start();
     }
 
     fn change_difficulty_from_pause(&mut self, difficulty: crate::preview_song::PreviewDifficulty) {
         self.pause_menu = None;
         self.pause_music.stop(&self.mixer);
         self.preview_selection =
-            crate::preview_song::PreviewSelection::new(self.preview_selection.song, difficulty);
+            crate::preview_song::PreviewSelection::new(self.preview_selection.song, difficulty)
+                .with_variation(self.preview_selection.variation);
         if !self.story_playlist.is_empty() {
             self.story_playlist_difficulty = self.preview_selection.difficulty;
         }
@@ -157,5 +183,71 @@ impl App {
             InputAction::Back | InputAction::Pause => self.play_menu_sound(MenuSound::Cancel),
             _ => {}
         }
+    }
+}
+
+fn should_pause_on_unfocus(
+    enabled: bool,
+    mode: super::title_flow::AppMode,
+    pause_menu_active: bool,
+    game_over_active: bool,
+    dialogue_active: bool,
+) -> bool {
+    enabled
+        && mode == super::title_flow::AppMode::Play
+        && !pause_menu_active
+        && !game_over_active
+        && !dialogue_active
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::title_flow::AppMode;
+    use super::*;
+
+    #[test]
+    fn pause_on_unfocus_only_applies_to_live_gameplay() {
+        assert!(should_pause_on_unfocus(
+            true,
+            AppMode::Play,
+            false,
+            false,
+            false
+        ));
+        assert!(!should_pause_on_unfocus(
+            false,
+            AppMode::Play,
+            false,
+            false,
+            false
+        ));
+        assert!(!should_pause_on_unfocus(
+            true,
+            AppMode::SongSelect,
+            false,
+            false,
+            false
+        ));
+        assert!(!should_pause_on_unfocus(
+            true,
+            AppMode::Play,
+            true,
+            false,
+            false
+        ));
+        assert!(!should_pause_on_unfocus(
+            true,
+            AppMode::Play,
+            false,
+            true,
+            false
+        ));
+        assert!(!should_pause_on_unfocus(
+            true,
+            AppMode::Play,
+            false,
+            false,
+            true
+        ));
     }
 }

@@ -1,19 +1,54 @@
-//! Development preview song selection for the current gameplay slice.
-// LINT-ALLOW: long-file preview song data and focused selection tests stay together.
+// LINT-ALLOW: long-file vanilla song registry and focused selection tests stay together.
 
 use std::env;
 
 const PREVIEW_SONG_ENV: &str = "RUSTIC_PREVIEW_SONG";
 const PREVIEW_DIFFICULTY_ENV: &str = "RUSTIC_PREVIEW_DIFFICULTY";
+pub const VARIATION_BF: &str = "bf";
+pub const VARIATION_PICO: &str = "pico";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreviewSong {
     pub id: u32,
     pub folder: &'static str,
     pub audio_prefix: &'static str,
+    display_name: &'static str,
+    base_bpm: u16,
+    base_ratings: [u8; 3],
+    erect_bpm: Option<u16>,
+    erect_ratings: Option<[u8; 2]>,
 }
 
 impl PreviewSong {
+    pub const ALL: [Self; 26] = [
+        Self::TUTORIAL,
+        Self::BOPEEBO,
+        Self::FRESH,
+        Self::DADBATTLE,
+        Self::SPOOKEEZ,
+        Self::SOUTH,
+        Self::MONSTER,
+        Self::PICO,
+        Self::PHILLY_NICE,
+        Self::BLAMMED,
+        Self::SATIN_PANTIES,
+        Self::HIGH,
+        Self::MILF,
+        Self::COCOA,
+        Self::EGGNOG,
+        Self::WINTER_HORRORLAND,
+        Self::SENPAI,
+        Self::ROSES,
+        Self::THORNS,
+        Self::UGH,
+        Self::GUNS,
+        Self::STRESS,
+        Self::DARNELL,
+        Self::LIT_UP,
+        Self::TWO_HOT,
+        Self::BLAZIN,
+    ];
+    pub const FREEPLAY_EXTRA: [Self; 1] = [Self::SPAGHETTI];
     pub const CYCLABLE_WEEK1: [Self; 4] =
         [Self::TUTORIAL, Self::BOPEEBO, Self::FRESH, Self::DADBATTLE];
     const BASE_DIFFICULTIES: [PreviewDifficulty; 3] = [
@@ -21,7 +56,7 @@ impl PreviewSong {
         PreviewDifficulty::Normal,
         PreviewDifficulty::Hard,
     ];
-    const WEEK1_VARIANT_DIFFICULTIES: [PreviewDifficulty; 5] = [
+    const VARIANT_DIFFICULTIES: [PreviewDifficulty; 5] = [
         PreviewDifficulty::Easy,
         PreviewDifficulty::Normal,
         PreviewDifficulty::Hard,
@@ -37,12 +72,15 @@ impl PreviewSong {
     }
 
     pub fn from_key(value: &str) -> Option<Self> {
-        match normalized_key(value).as_str() {
-            "tutorial" => Some(Self::TUTORIAL),
-            "bopeebo" => Some(Self::BOPEEBO),
-            "fresh" => Some(Self::FRESH),
-            "dadbattle" | "dad-battle" => Some(Self::DADBATTLE),
-            _ => None,
+        let key = normalized_key(value);
+        match key.as_str() {
+            "dad-battle" => Some(Self::DADBATTLE),
+            "2-hot" => Some(Self::TWO_HOT),
+            "spaghetti" => Some(Self::SPAGHETTI),
+            _ => Self::ALL
+                .iter()
+                .copied()
+                .find(|song| song.matches_key(&key)),
         }
     }
 
@@ -51,13 +89,7 @@ impl PreviewSong {
     }
 
     pub fn chart_path_for(self, difficulty: PreviewDifficulty) -> String {
-        if let Some(suffix) = difficulty.chart_variation_suffix() {
-            return format!(
-                "data/songs/{}/{}-chart-{suffix}.json",
-                self.folder, self.folder
-            );
-        }
-        format!("data/songs/{}/{}-chart.json", self.folder, self.folder)
+        self.chart_path_for_suffix(self.effective_variation_suffix(difficulty, None))
     }
 
     pub fn metadata_path(self) -> String {
@@ -65,13 +97,62 @@ impl PreviewSong {
     }
 
     pub fn metadata_path_for(self, difficulty: PreviewDifficulty) -> String {
-        if let Some(suffix) = difficulty.chart_variation_suffix() {
-            return format!(
+        self.metadata_path_for_suffix(self.effective_variation_suffix(difficulty, None))
+    }
+
+    pub fn chart_path_for_suffix(self, suffix: Option<&str>) -> String {
+        match suffix {
+            Some(suffix) => format!(
+                "data/songs/{}/{}-chart-{suffix}.json",
+                self.folder, self.folder
+            ),
+            None => format!("data/songs/{}/{}-chart.json", self.folder, self.folder),
+        }
+    }
+
+    pub fn metadata_path_for_suffix(self, suffix: Option<&str>) -> String {
+        match suffix {
+            Some(suffix) => format!(
                 "data/songs/{}/{}-metadata-{suffix}.json",
                 self.folder, self.folder
-            );
+            ),
+            None => format!("data/songs/{}/{}-metadata.json", self.folder, self.folder),
         }
-        format!("data/songs/{}/{}-metadata.json", self.folder, self.folder)
+    }
+
+    pub fn has_variation(self, variation: &str) -> bool {
+        match variation {
+            VARIATION_BF => matches!(self.folder, "darnell" | "lit-up"),
+            VARIATION_PICO => matches!(
+                self.folder,
+                "bopeebo"
+                    | "fresh"
+                    | "dadbattle"
+                    | "spookeez"
+                    | "south"
+                    | "pico"
+                    | "philly-nice"
+                    | "blammed"
+                    | "cocoa"
+                    | "eggnog"
+                    | "senpai"
+                    | "roses"
+                    | "ugh"
+                    | "guns"
+                    | "stress"
+            ),
+            _ => false,
+        }
+    }
+
+    pub fn effective_variation_suffix(
+        self,
+        difficulty: PreviewDifficulty,
+        variation: Option<&'static str>,
+    ) -> Option<&'static str> {
+        difficulty.chart_variation_suffix().or_else(|| {
+            variation.and_then(|variation| self.has_variation(variation).then_some(variation))
+        })
     }
 
     pub fn inst_path(self) -> String {
@@ -83,89 +164,241 @@ impl PreviewSong {
     }
 
     pub fn display_name(self) -> &'static str {
-        match self.id {
-            0 => "Tutorial",
-            1 => "Bopeebo",
-            2 => "Fresh",
-            3 => "Dad Battle",
-            _ => self.folder,
-        }
+        self.display_name
     }
 
     pub fn starting_bpm_for(self, difficulty: PreviewDifficulty) -> u16 {
-        // ref: bdedc0aa:assets/preload/data/songs/*/*-metadata*.json timeChanges[0].bpm
-        match (self.id, difficulty_for_song(self, difficulty)) {
-            (Self::FRESH_ID, PreviewDifficulty::Erect | PreviewDifficulty::Nightmare) => 125,
-            (Self::FRESH_ID, _) => 120,
-            (Self::DADBATTLE_ID, PreviewDifficulty::Erect | PreviewDifficulty::Nightmare) => 190,
-            (Self::DADBATTLE_ID, _) => 180,
-            (Self::BOPEEBO_ID, PreviewDifficulty::Erect | PreviewDifficulty::Nightmare) => 123,
-            _ => 100,
+        match difficulty_for_song(self, difficulty) {
+            PreviewDifficulty::Erect | PreviewDifficulty::Nightmare => {
+                self.erect_bpm.unwrap_or(self.base_bpm)
+            }
+            PreviewDifficulty::Easy | PreviewDifficulty::Normal | PreviewDifficulty::Hard => {
+                self.base_bpm
+            }
         }
     }
 
     pub fn difficulty_rating_for(self, difficulty: PreviewDifficulty) -> u8 {
-        // ref: bdedc0aa:assets/preload/data/songs/*/*-metadata*.json playData.ratings
-        match (self.id, difficulty_for_song(self, difficulty)) {
-            (Self::TUTORIAL_ID, PreviewDifficulty::Hard) => 1,
-            (Self::TUTORIAL_ID, _) => 0,
-            (Self::BOPEEBO_ID, PreviewDifficulty::Easy | PreviewDifficulty::Normal) => 1,
-            (Self::BOPEEBO_ID, PreviewDifficulty::Hard) => 2,
-            (Self::BOPEEBO_ID, PreviewDifficulty::Erect) => 7,
-            (Self::BOPEEBO_ID, PreviewDifficulty::Nightmare) => 8,
-            (Self::FRESH_ID, PreviewDifficulty::Easy | PreviewDifficulty::Normal) => 1,
-            (Self::FRESH_ID, PreviewDifficulty::Hard) => 2,
-            (Self::FRESH_ID, PreviewDifficulty::Erect) => 6,
-            (Self::FRESH_ID, PreviewDifficulty::Nightmare) => 7,
-            (Self::DADBATTLE_ID, PreviewDifficulty::Easy) => 1,
-            (Self::DADBATTLE_ID, PreviewDifficulty::Normal) => 2,
-            (Self::DADBATTLE_ID, PreviewDifficulty::Hard) => 3,
-            (Self::DADBATTLE_ID, PreviewDifficulty::Erect) => 9,
-            (Self::DADBATTLE_ID, PreviewDifficulty::Nightmare) => 10,
-            _ => 0,
+        match difficulty_for_song(self, difficulty) {
+            PreviewDifficulty::Easy => self.base_ratings[0],
+            PreviewDifficulty::Normal => self.base_ratings[1],
+            PreviewDifficulty::Hard => self.base_ratings[2],
+            PreviewDifficulty::Erect => self.erect_ratings.map(|ratings| ratings[0]).unwrap_or(0),
+            PreviewDifficulty::Nightmare => {
+                self.erect_ratings.map(|ratings| ratings[1]).unwrap_or(0)
+            }
         }
     }
 
     pub fn next(self) -> Self {
-        next_in(&Self::CYCLABLE_WEEK1, self)
+        next_in(&Self::ALL, self)
     }
 
     pub fn previous(self) -> Self {
-        previous_in(&Self::CYCLABLE_WEEK1, self)
+        previous_in(&Self::ALL, self)
     }
 
     pub fn available_difficulties(self) -> &'static [PreviewDifficulty] {
-        match self.id {
-            Self::BOPEEBO_ID..=Self::DADBATTLE_ID => &Self::WEEK1_VARIANT_DIFFICULTIES,
-            _ => &Self::BASE_DIFFICULTIES,
+        if self.erect_ratings.is_some() {
+            &Self::VARIANT_DIFFICULTIES
+        } else {
+            &Self::BASE_DIFFICULTIES
         }
     }
 
-    const TUTORIAL_ID: u32 = 0;
-    const BOPEEBO_ID: u32 = 1;
-    const FRESH_ID: u32 = 2;
-    const DADBATTLE_ID: u32 = 3;
+    fn matches_key(self, key: &str) -> bool {
+        key == normalized_key(self.folder) || key == normalized_key(self.display_name)
+    }
 
-    pub const TUTORIAL: Self = Self {
-        id: 0,
-        folder: "tutorial",
-        audio_prefix: "Tutorial",
+    pub const TUTORIAL: Self = song(0, "tutorial", "Tutorial", "Tutorial", 100, [0, 0, 1], None);
+    pub const BOPEEBO: Self = song(
+        1,
+        "bopeebo",
+        "Bopeebo",
+        "Bopeebo",
+        100,
+        [1, 1, 2],
+        Some((123, [7, 8])),
+    );
+    pub const FRESH: Self = song(
+        2,
+        "fresh",
+        "Fresh",
+        "Fresh",
+        120,
+        [1, 1, 2],
+        Some((125, [6, 7])),
+    );
+    pub const DADBATTLE: Self = song(
+        3,
+        "dadbattle",
+        "Dadbattle",
+        "Dad Battle",
+        180,
+        [1, 2, 3],
+        Some((190, [9, 10])),
+    );
+    pub const SPOOKEEZ: Self = song(
+        4,
+        "spookeez",
+        "Spookeez",
+        "Spookeez",
+        150,
+        [1, 1, 2],
+        Some((166, [11, 12])),
+    );
+    pub const SOUTH: Self = song(
+        5,
+        "south",
+        "South",
+        "South",
+        165,
+        [1, 2, 2],
+        Some((177, [8, 9])),
+    );
+    pub const MONSTER: Self = song(6, "monster", "Monster", "Monster", 95, [1, 2, 2], None);
+    pub const PICO: Self = song(
+        7,
+        "pico",
+        "Pico",
+        "Pico",
+        150,
+        [1, 2, 2],
+        Some((162, [9, 10])),
+    );
+    pub const PHILLY_NICE: Self = song(
+        8,
+        "philly-nice",
+        "PhillyNice",
+        "Philly Nice",
+        175,
+        [1, 2, 3],
+        Some((175, [8, 9])),
+    );
+    pub const BLAMMED: Self = song(
+        9,
+        "blammed",
+        "Blammed",
+        "Blammed",
+        165,
+        [1, 2, 3],
+        Some((170, [11, 12])),
+    );
+    pub const SATIN_PANTIES: Self = song(
+        10,
+        "satin-panties",
+        "SatinPanties",
+        "Satin Panties",
+        110,
+        [1, 2, 2],
+        Some((135, [11, 12])),
+    );
+    pub const HIGH: Self = song(
+        11,
+        "high",
+        "High",
+        "High",
+        125,
+        [1, 2, 3],
+        Some((125, [8, 9])),
+    );
+    pub const MILF: Self = song(12, "milf", "Milf", "M.I.L.F", 180, [2, 3, 4], None);
+    pub const COCOA: Self = song(
+        13,
+        "cocoa",
+        "Cocoa",
+        "Cocoa",
+        100,
+        [1, 2, 2],
+        Some((174, [7, 8])),
+    );
+    pub const EGGNOG: Self = song(
+        14,
+        "eggnog",
+        "Eggnog",
+        "Eggnog",
+        150,
+        [1, 2, 3],
+        Some((140, [6, 7])),
+    );
+    pub const WINTER_HORRORLAND: Self = song(
+        15,
+        "winter-horrorland",
+        "WinterHorrorland",
+        "Winter Horrorland",
+        159,
+        [1, 2, 2],
+        None,
+    );
+    pub const SENPAI: Self = song(
+        16,
+        "senpai",
+        "Senpai",
+        "Senpai",
+        144,
+        [1, 2, 3],
+        Some((158, [6, 7])),
+    );
+    pub const ROSES: Self = song(
+        17,
+        "roses",
+        "Roses",
+        "Roses",
+        120,
+        [2, 3, 4],
+        Some((128, [8, 9])),
+    );
+    pub const THORNS: Self = song(
+        18,
+        "thorns",
+        "Thorns",
+        "Thorns",
+        190,
+        [2, 3, 4],
+        Some((190, [9, 10])),
+    );
+    pub const UGH: Self = song(19, "ugh", "Ugh", "Ugh", 160, [2, 3, 4], Some((170, [8, 9])));
+    pub const GUNS: Self = song(20, "guns", "Guns", "Guns", 185, [3, 4, 5], None);
+    pub const STRESS: Self = song(21, "stress", "Stress", "Stress", 178, [3, 4, 5], None);
+    pub const DARNELL: Self = song(
+        22,
+        "darnell",
+        "Darnell",
+        "Darnell",
+        155,
+        [2, 3, 4],
+        Some((155, [8, 9])),
+    );
+    pub const LIT_UP: Self = song(23, "lit-up", "LitUp", "Lit Up", 176, [2, 3, 4], None);
+    pub const TWO_HOT: Self = song(24, "2hot", "2Hot", "2hot", 182, [3, 4, 5], None);
+    pub const BLAZIN: Self = song(25, "blazin", "Blazin", "Blazin'", 180, [3, 4, 5], None);
+    #[rustfmt::skip]
+    pub const SPAGHETTI: Self = song(26, "spaghetti", "Spaghetti", "Spaghetti", 112, [2, 3, 5], None);
+}
+
+const fn song(
+    id: u32,
+    folder: &'static str,
+    audio_prefix: &'static str,
+    display_name: &'static str,
+    base_bpm: u16,
+    base_ratings: [u8; 3],
+    erect: Option<(u16, [u8; 2])>,
+) -> PreviewSong {
+    let (erect_bpm, erect_ratings) = match erect {
+        Some((bpm, ratings)) => (Some(bpm), Some(ratings)),
+        None => (None, None),
     };
-    pub const BOPEEBO: Self = Self {
-        id: 1,
-        folder: "bopeebo",
-        audio_prefix: "Bopeebo",
-    };
-    pub const FRESH: Self = Self {
-        id: 2,
-        folder: "fresh",
-        audio_prefix: "Fresh",
-    };
-    pub const DADBATTLE: Self = Self {
-        id: 3,
-        folder: "dadbattle",
-        audio_prefix: "Dadbattle",
-    };
+    PreviewSong {
+        id,
+        folder,
+        audio_prefix,
+        display_name,
+        base_bpm,
+        base_ratings,
+        erect_bpm,
+        erect_ratings,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -234,6 +467,7 @@ impl PreviewDifficulty {
 pub struct PreviewSelection {
     pub song: PreviewSong,
     pub difficulty: PreviewDifficulty,
+    pub variation: Option<&'static str>,
 }
 
 impl PreviewSelection {
@@ -255,23 +489,18 @@ impl PreviewSelection {
         Self {
             song,
             difficulty: difficulty_for_song(song, difficulty),
+            variation: None,
         }
     }
 
     pub fn next_song(self) -> Self {
         let song = self.song.next();
-        Self {
-            song,
-            difficulty: difficulty_for_song(song, self.difficulty),
-        }
+        Self::new(song, self.difficulty).with_variation(self.variation)
     }
 
     pub fn previous_song(self) -> Self {
         let song = self.song.previous();
-        Self {
-            song,
-            difficulty: difficulty_for_song(song, self.difficulty),
-        }
+        Self::new(song, self.difficulty).with_variation(self.variation)
     }
 
     pub fn next_difficulty(self) -> Self {
@@ -286,6 +515,35 @@ impl PreviewSelection {
             difficulty: previous_in_slice(self.song.available_difficulties(), self.difficulty),
             ..self
         }
+    }
+
+    pub fn with_difficulty(self, difficulty: PreviewDifficulty) -> Self {
+        Self {
+            difficulty: difficulty_for_song(self.song, difficulty),
+            ..self
+        }
+    }
+
+    pub fn with_variation(self, variation: Option<&'static str>) -> Self {
+        Self {
+            variation: variation.and_then(|id| self.song.has_variation(id).then_some(id)),
+            ..self
+        }
+    }
+
+    pub fn effective_variation_suffix(self) -> Option<&'static str> {
+        self.song
+            .effective_variation_suffix(self.difficulty, self.variation)
+    }
+
+    pub fn chart_path(self) -> String {
+        self.song
+            .chart_path_for_suffix(self.effective_variation_suffix())
+    }
+
+    pub fn metadata_path(self) -> String {
+        self.song
+            .metadata_path_for_suffix(self.effective_variation_suffix())
     }
 }
 
@@ -331,17 +589,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preview_song_key_accepts_week_one_names() {
-        assert_eq!(
-            PreviewSong::from_key("tutorial"),
-            Some(PreviewSong::TUTORIAL)
-        );
-        assert_eq!(PreviewSong::from_key("Bopeebo"), Some(PreviewSong::BOPEEBO));
-        assert_eq!(PreviewSong::from_key("fresh"), Some(PreviewSong::FRESH));
-        assert_eq!(
-            PreviewSong::from_key("Dad Battle"),
-            Some(PreviewSong::DADBATTLE)
-        );
+    fn preview_song_key_accepts_story_song_names() {
+        for (key, song) in [
+            ("tutorial", PreviewSong::TUTORIAL),
+            ("Bopeebo", PreviewSong::BOPEEBO),
+            ("Dad Battle", PreviewSong::DADBATTLE),
+            ("philly_nice", PreviewSong::PHILLY_NICE),
+            ("2 hot", PreviewSong::TWO_HOT),
+            ("Blazin'", PreviewSong::BLAZIN),
+            ("spaghetti", PreviewSong::SPAGHETTI),
+        ] {
+            assert_eq!(PreviewSong::from_key(key), Some(song));
+        }
+    }
+
+    #[test]
+    fn preview_song_registry_covers_vanilla_story_catalog() {
+        assert_eq!(PreviewSong::ALL.len(), 26);
+        assert_eq!(PreviewSong::ALL[0], PreviewSong::TUTORIAL);
+        assert_eq!(PreviewSong::ALL[25], PreviewSong::BLAZIN);
     }
 
     #[test]
@@ -390,6 +656,7 @@ mod tests {
             PreviewSelection {
                 song: PreviewSong::BOPEEBO,
                 difficulty: PreviewDifficulty::Normal,
+                variation: None,
             }
         );
     }
@@ -401,6 +668,7 @@ mod tests {
             PreviewSelection {
                 song: PreviewSong::FRESH,
                 difficulty: PreviewDifficulty::Hard,
+                variation: None,
             }
         );
         assert_eq!(
@@ -408,14 +676,43 @@ mod tests {
             PreviewSelection {
                 song: PreviewSong::TUTORIAL,
                 difficulty: PreviewDifficulty::Normal,
+                variation: None,
             }
+        );
+    }
+
+    #[test]
+    fn preview_selection_uses_character_variation_suffixes_for_base_difficulties() {
+        let pico = PreviewSelection::new(PreviewSong::BOPEEBO, PreviewDifficulty::Hard)
+            .with_variation(Some(VARIATION_PICO));
+        assert_eq!(
+            pico.chart_path(),
+            "data/songs/bopeebo/bopeebo-chart-pico.json"
+        );
+        assert_eq!(
+            pico.metadata_path(),
+            "data/songs/bopeebo/bopeebo-metadata-pico.json"
+        );
+
+        let bf = PreviewSelection::new(PreviewSong::DARNELL, PreviewDifficulty::Normal)
+            .with_variation(Some(VARIATION_BF));
+        assert_eq!(bf.chart_path(), "data/songs/darnell/darnell-chart-bf.json");
+    }
+
+    #[test]
+    fn erect_difficulty_takes_precedence_over_character_variation() {
+        let selection = PreviewSelection::new(PreviewSong::BOPEEBO, PreviewDifficulty::Erect)
+            .with_variation(Some(VARIATION_PICO));
+        assert_eq!(
+            selection.chart_path(),
+            "data/songs/bopeebo/bopeebo-chart-erect.json"
         );
     }
 
     #[test]
     fn preview_selection_cycles_songs_and_difficulties() {
         let selection = PreviewSelection::from_keys(Some("dadbattle"), Some("hard"));
-        assert_eq!(selection.next_song().song, PreviewSong::TUTORIAL);
+        assert_eq!(selection.next_song().song, PreviewSong::SPOOKEEZ);
         assert_eq!(
             selection.next_difficulty().difficulty,
             PreviewDifficulty::Erect
@@ -436,19 +733,19 @@ mod tests {
             PreviewSelection::from_keys(Some("dadbattle"), Some("nightmare"))
                 .next_song()
                 .difficulty,
-            PreviewDifficulty::Normal
+            PreviewDifficulty::Nightmare
         );
         assert_eq!(
             PreviewSelection::from_keys(Some("tutorial"), Some("easy"))
                 .previous_song()
                 .song,
-            PreviewSong::DADBATTLE
+            PreviewSong::BLAZIN
         );
         assert_eq!(
-            PreviewSelection::from_keys(Some("bopeebo"), Some("easy"))
+            PreviewSelection::from_keys(Some("monster"), Some("easy"))
                 .previous_difficulty()
                 .difficulty,
-            PreviewDifficulty::Nightmare
+            PreviewDifficulty::Hard
         );
     }
 
@@ -469,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn freeplay_metadata_values_match_week_one_metadata() {
+    fn freeplay_metadata_values_match_vanilla_metadata() {
         assert_eq!(
             PreviewSong::TUTORIAL.difficulty_rating_for(PreviewDifficulty::Hard),
             1
@@ -479,16 +776,20 @@ mod tests {
             123
         );
         assert_eq!(
-            PreviewSong::FRESH.difficulty_rating_for(PreviewDifficulty::Erect),
-            6
+            PreviewSong::SPOOKEEZ.difficulty_rating_for(PreviewDifficulty::Nightmare),
+            12
         );
         assert_eq!(
             PreviewSong::DADBATTLE.starting_bpm_for(PreviewDifficulty::Erect),
             190
         );
         assert_eq!(
-            PreviewSong::DADBATTLE.difficulty_rating_for(PreviewDifficulty::Nightmare),
-            10
+            PreviewSong::WINTER_HORRORLAND.available_difficulties(),
+            &PreviewSong::BASE_DIFFICULTIES
+        );
+        assert_eq!(
+            PreviewSong::DARNELL.difficulty_rating_for(PreviewDifficulty::Erect),
+            8
         );
     }
 }

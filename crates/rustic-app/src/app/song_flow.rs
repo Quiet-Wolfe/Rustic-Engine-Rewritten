@@ -29,6 +29,10 @@ impl App {
     }
 
     pub(super) fn return_to_play_menu(&mut self) {
+        // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:552
+        // ref: bdedc0aa:source/funkin/play/PauseSubState.hx:1152-1157
+        self.death_counter = 0;
+        self.practice_mode = false;
         if self.story_playlist.is_empty() {
             self.enter_song_select();
         } else {
@@ -52,6 +56,9 @@ impl App {
     }
 
     fn finish_current_song(&mut self) {
+        // ref: bdedc0aa:source/funkin/play/PlayState.hx:3435
+        self.death_counter = 0;
+        self.practice_mode = false;
         if self.story_playlist.is_empty() {
             self.enter_song_select();
             return;

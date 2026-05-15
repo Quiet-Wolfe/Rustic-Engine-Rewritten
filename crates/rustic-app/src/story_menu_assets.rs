@@ -21,7 +21,9 @@ use std::collections::HashMap;
 mod helpers;
 use helpers::*;
 
-const STORY_LEVEL_IDS: [&str; 2] = ["tutorial", "week1"];
+const STORY_LEVEL_IDS: [&str; 9] = [
+    "tutorial", "week1", "week2", "week3", "week4", "week5", "week6", "week7", "weekend1",
+];
 const STORY_DIFFICULTIES: [PreviewDifficulty; 3] = [
     PreviewDifficulty::Easy,
     PreviewDifficulty::Normal,

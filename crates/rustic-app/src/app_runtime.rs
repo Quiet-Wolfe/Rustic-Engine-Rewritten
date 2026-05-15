@@ -1,20 +1,25 @@
 //! Window and renderer runtime creation for the app shell.
 
 use crate::app_types::{AppOptions, Runtime};
+use crate::options_preferences::OptionsPreferences;
 use anyhow::Result;
 use rustic_render::{Composite, RenderState, SpritePipeline, TextSystem};
 use std::sync::Arc;
 use winit::event_loop::ActiveEventLoop;
-use winit::window::WindowAttributes;
+use winit::window::{Fullscreen, WindowAttributes};
 
 pub(crate) fn create_runtime(
     options: &AppOptions,
     event_loop: &ActiveEventLoop,
+    preferences: OptionsPreferences,
 ) -> Result<Runtime> {
     let attrs = WindowAttributes::default()
         .with_title(options.title)
         .with_inner_size(winit::dpi::LogicalSize::new(options.width, options.height));
     let window = Arc::new(event_loop.create_window(attrs)?);
+    if preferences.launch_fullscreen {
+        window.set_fullscreen(Some(Fullscreen::Borderless(window.current_monitor())));
+    }
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,
         ..Default::default()
@@ -24,8 +29,12 @@ pub(crate) fn create_runtime(
         .map_err(|e| anyhow::anyhow!("create_surface: {e}"))?;
     let rs = pollster::block_on(RenderState::new_async(instance, Some(&surface)))?;
     let inner = window.inner_size();
-    let surface_cfg =
-        rs.configure_surface(&surface, inner.width, inner.height, wgpu::PresentMode::Fifo)?;
+    let surface_cfg = rs.configure_surface(
+        &surface,
+        inner.width,
+        inner.height,
+        present_mode_for_preferences(preferences),
+    )?;
     let pipeline = SpritePipeline::new(&rs.device, wgpu::TextureFormat::Rgba8UnormSrgb);
     let composite = Composite::new(&rs, surface_cfg.format);
     let mut text = TextSystem::new(&rs, wgpu::TextureFormat::Rgba8UnormSrgb);
@@ -49,6 +58,14 @@ pub(crate) fn create_runtime(
     })
 }
 
+fn present_mode_for_preferences(preferences: OptionsPreferences) -> wgpu::PresentMode {
+    if preferences.vsync {
+        wgpu::PresentMode::Fifo
+    } else {
+        wgpu::PresentMode::Immediate
+    }
+}
+
 pub(crate) fn reconfigure_surface(rt: &mut Runtime, width: u32, height: u32) {
     rt.surface_cfg.width = width;
     rt.surface_cfg.height = height;
@@ -65,4 +82,24 @@ pub(crate) fn reconfigure_surface(rt: &mut Runtime, width: u32, height: u32) {
             desired_maximum_frame_latency: 2,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn present_mode_tracks_vsync_preference() {
+        let mut preferences = OptionsPreferences::default();
+        assert_eq!(
+            present_mode_for_preferences(preferences),
+            wgpu::PresentMode::Fifo
+        );
+
+        preferences.vsync = false;
+        assert_eq!(
+            present_mode_for_preferences(preferences),
+            wgpu::PresentMode::Immediate
+        );
+    }
 }

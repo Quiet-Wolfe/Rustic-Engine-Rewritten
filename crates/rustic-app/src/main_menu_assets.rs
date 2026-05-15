@@ -2,6 +2,7 @@
 //!
 //! ref: bdedc0aa:source/funkin/ui/mainmenu/MainMenuState.hx:115-232
 
+use crate::animation_timing::flixel_frame_index;
 use crate::asset_roots::baked_assets_root;
 use anyhow::{Context, Result};
 use rustic_asset::{load_png, load_sparrow, AssetPath, OverlayResolver, SparrowFrame};
@@ -273,12 +274,14 @@ fn menu_top(count: usize) -> f32 {
 }
 
 fn animation_frame_index(cursor: Samples, sample_rate: u32, frame_count: usize) -> usize {
-    if frame_count <= 1 {
-        return 0;
-    }
-    let elapsed = cursor.0.max(0) as u128;
-    (elapsed * u128::from(MENU_ANIMATION_FPS) / u128::from(sample_rate.max(1))) as usize
-        % frame_count
+    flixel_frame_index(
+        cursor,
+        sample_rate,
+        Samples(0),
+        MENU_ANIMATION_FPS,
+        frame_count,
+        true,
+    )
 }
 
 fn frame_draw_size(frame: &SparrowFrame) -> glam::Vec2 {
@@ -321,5 +324,13 @@ mod tests {
     #[test]
     fn menu_item_top_matches_og_spacing() {
         assert_eq!(menu_top(4), 120.0);
+    }
+
+    #[test]
+    fn menu_animation_holds_previous_frame_on_exact_boundary() {
+        assert_eq!(animation_frame_index(Samples(2_000), 48_000, 3), 0);
+        assert_eq!(animation_frame_index(Samples(2_001), 48_000, 3), 1);
+        assert_eq!(animation_frame_index(Samples(6_000), 48_000, 3), 2);
+        assert_eq!(animation_frame_index(Samples(6_001), 48_000, 3), 0);
     }
 }

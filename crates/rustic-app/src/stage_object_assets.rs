@@ -1,9 +1,21 @@
 //! Stage prop texture loading and render command wiring.
-// LINT-ALLOW: long-file stage prop loading, animation, and render tests stay together.
+// LINT-ALLOW: long-file stage prop loading, animation dispatch, and tests share fixtures.
 
+use crate::preview_song::PreviewSong;
+use crate::stage_object_asset_helpers::{
+    asset_id_for_path, filter_for_antialiasing, halloween_lightning_start, stage_beat,
+    stage_beat_start, stage_frame_index,
+};
+use crate::stage_scripted_motion::{
+    limo_shooting_star_state, philly_blazin_lightning_state, philly_car_pose,
+    philly_traffic_light_state, tank_rolling_pose, PhillyCarLane,
+};
+use crate::stage_static_prop::{scripted_static_stage_object, StaticStagePropSprite};
 use anyhow::{Context, Result};
 use rustic_asset::{
-    load_png, load_sparrow, AssetPath, OverlayResolver, SparrowAtlas, SparrowFrame, StageObject,
+    load_animate_animation, load_animate_spritemap, load_bytes, load_png, load_sparrow,
+    AnimateAnimation, AnimateAtlas, AnimateDrawPart, AssetPath, OverlayResolver, SparrowAtlas,
+    SparrowFrame, StageObject, StageObjectRenderType,
 };
 use rustic_core::ids::AssetId;
 use rustic_core::time::Samples;
@@ -20,24 +32,83 @@ impl StagePropSet {
         self.props.push(prop);
     }
 
-    pub(crate) fn commands(&self, cursor: Samples, sample_rate: u32) -> Vec<DrawCommand> {
+    pub(crate) fn commands(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        song: Option<PreviewSong>,
+    ) -> Vec<DrawCommand> {
         self.props
             .iter()
-            .map(|prop| prop.command(cursor, sample_rate))
+            .flat_map(|prop| prop.commands(cursor, sample_rate, bpm, song))
             .collect()
     }
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct StagePropSprite {
+pub(crate) enum StagePropSprite {
+    Static(StaticStagePropSprite),
+    Sparrow(SparrowStagePropSprite),
+    Animate(AnimateStagePropSprite),
+}
+
+impl StagePropSprite {
+    fn commands(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        song: Option<PreviewSong>,
+    ) -> Vec<DrawCommand> {
+        match self {
+            Self::Static(prop) => prop.commands(cursor, sample_rate, bpm),
+            Self::Sparrow(prop) => prop.commands(cursor, sample_rate, bpm, song),
+            Self::Animate(prop) => prop.commands(cursor, sample_rate),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SparrowStagePropSprite {
     texture_id: AssetId,
     texture_width: u32,
     texture_height: u32,
     object: StageObject,
+    animations: Vec<LoadedSparrowStageAnimation>,
+    starting_animation: usize,
+    dance_left: Option<usize>,
+    dance_right: Option<usize>,
+    filter: FilterMode,
+}
+
+#[derive(Debug, Clone)]
+struct LoadedSparrowStageAnimation {
+    name: String,
     frames: Vec<SparrowFrame>,
     frame_rate: u16,
     looped: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AnimateStagePropSprite {
+    texture_id: AssetId,
+    object: StageObject,
+    animation: AnimateAnimation,
+    atlas: AnimateAtlas,
+    label: String,
+    source: AnimateStagePoseSource,
+    frame_count: usize,
+    frame_rate: u16,
+    looped: bool,
     filter: FilterMode,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum AnimateStagePoseSource {
+    Root,
+    FrameLabel,
+    Symbol,
 }
 
 pub(crate) fn load_stage_object(
@@ -49,24 +120,60 @@ pub(crate) fn load_stage_object(
     commands: &mut RenderCommandList,
 ) -> Result<Option<StagePropSprite>> {
     if object.solid_color.is_some() {
-        load_solid_stage_object(device, queue, object, textures, commands);
-        Ok(None)
+        Ok(load_solid_stage_object(
+            device, queue, object, textures, commands,
+        ))
+    } else if object.render_type == StageObjectRenderType::AnimateAtlas {
+        load_animate_stage_object(device, queue, resolver, object, textures)
+    } else if object.render_type == StageObjectRenderType::Packer {
+        load_packer_stage_object(device, queue, resolver, object, textures, commands)
     } else if let Some(animation) = &object.animation {
         load_sparrow_stage_object(device, queue, resolver, object, animation, textures)
     } else {
-        load_png_stage_object(device, queue, resolver, object, textures, commands)?;
-        Ok(None)
+        load_png_stage_object(device, queue, resolver, object, textures, commands)
     }
 }
 
-impl StagePropSprite {
-    fn command(&self, cursor: Samples, sample_rate: u32) -> DrawCommand {
-        let frame = &self.frames[stage_frame_index(
+impl SparrowStagePropSprite {
+    fn commands(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        song: Option<PreviewSong>,
+    ) -> Vec<DrawCommand> {
+        if self.object.image.as_str() == "images/phillyBlazin/lightning.png"
+            && philly_blazin_lightning_state(cursor, sample_rate).is_none()
+            || self.object.id == "shootingStar"
+                && limo_shooting_star_state(cursor, sample_rate, bpm).is_none()
+        {
+            return Vec::new();
+        }
+        let mut cmd = self.command_for_song(cursor, sample_rate, bpm, song);
+        self.apply_scripted_motion(&mut cmd, cursor, sample_rate, bpm);
+        vec![cmd]
+    }
+
+    #[cfg(test)]
+    fn command(&self, cursor: Samples, sample_rate: u32, bpm: f64) -> DrawCommand {
+        self.command_for_song(cursor, sample_rate, bpm, None)
+    }
+
+    fn command_for_song(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        song: Option<PreviewSong>,
+    ) -> DrawCommand {
+        let (animation, started_at) = self.active_animation(cursor, sample_rate, bpm, song);
+        let frame = &animation.frames[stage_frame_index(
             cursor,
             sample_rate,
-            self.frame_rate,
-            self.frames.len(),
-            self.looped,
+            started_at,
+            animation.frame_rate,
+            animation.frames.len(),
+            animation.looped,
         )];
         let mut cmd = base_stage_command(
             &self.object,
@@ -79,6 +186,186 @@ impl StagePropSprite {
         cmd.uv_rotated = frame.rotated;
         cmd
     }
+
+    fn apply_scripted_motion(
+        &self,
+        cmd: &mut DrawCommand,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+    ) {
+        match self.object.id.as_str() {
+            "phillyCars" => {
+                self.apply_philly_car_motion(cmd, cursor, sample_rate, bpm, PhillyCarLane::Forward)
+            }
+            "phillyCars2" => {
+                self.apply_philly_car_motion(cmd, cursor, sample_rate, bpm, PhillyCarLane::Back)
+            }
+            "shootingStar" => {
+                if let Some(state) = limo_shooting_star_state(cursor, sample_rate, bpm) {
+                    let base_pos = glam::vec2(self.object.position.x, self.object.position.y);
+                    cmd.world_pos += state.position - base_pos;
+                }
+            }
+            "tankRolling" => {
+                let pose = tank_rolling_pose(cursor, sample_rate);
+                let base_pos = glam::vec2(self.object.position.x, self.object.position.y);
+                cmd.world_pos += pose.position - base_pos;
+                cmd.rotation = pose.rotation;
+            }
+            _ if self.object.image.as_str() == "images/phillyBlazin/lightning.png" => {
+                if let Some(state) = philly_blazin_lightning_state(cursor, sample_rate) {
+                    let base_pos = glam::vec2(self.object.position.x, self.object.position.y);
+                    cmd.world_pos += glam::vec2(state.x, self.object.position.y) - base_pos;
+                    cmd.color.w *= state.alpha;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn apply_philly_car_motion(
+        &self,
+        cmd: &mut DrawCommand,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        lane: PhillyCarLane,
+    ) {
+        if let Some(pose) = philly_car_pose(cursor, sample_rate, bpm, lane) {
+            let base_pos = glam::vec2(self.object.position.x, self.object.position.y);
+            cmd.world_pos += pose.position - base_pos;
+            cmd.rotation = pose.rotation;
+        }
+    }
+
+    fn active_animation(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        song: Option<PreviewSong>,
+    ) -> (&LoadedSparrowStageAnimation, Samples) {
+        if self.object.id == "halloweenBG" {
+            if let (Some(lightning), Some(started_at)) = (
+                animation_index(&self.animations, "lightning"),
+                halloween_lightning_start(cursor, sample_rate, bpm),
+            ) {
+                return (&self.animations[lightning], started_at);
+            }
+        }
+        if self.object.id == "phillyTraffic" {
+            if let Some((name, started_at)) = philly_traffic_light_state(cursor, sample_rate, bpm) {
+                if let Some(animation) = animation_index(&self.animations, name) {
+                    return (&self.animations[animation], started_at);
+                }
+            }
+        }
+        let lane = match self.object.id.as_str() {
+            "phillyCars" => Some(PhillyCarLane::Forward),
+            "phillyCars2" => Some(PhillyCarLane::Back),
+            _ => None,
+        };
+        if let Some((pose, animation)) = lane
+            .and_then(|lane| philly_car_pose(cursor, sample_rate, bpm, lane))
+            .and_then(|pose| {
+                animation_index(&self.animations, pose.animation).map(|index| (pose, index))
+            })
+        {
+            return (&self.animations[animation], pose.started_at);
+        }
+        if self.object.id == "shootingStar" {
+            if let Some(state) = limo_shooting_star_state(cursor, sample_rate, bpm) {
+                return (&self.animations[self.starting_animation], state.started_at);
+            }
+        }
+        if self.object.image.as_str() == "images/phillyBlazin/lightning.png" {
+            if let Some(state) = philly_blazin_lightning_state(cursor, sample_rate) {
+                return (&self.animations[self.starting_animation], state.started_at);
+            }
+        }
+        if self.object.dance_every > 0.0 {
+            if let (Some(left), Some(right)) = (self.dance_left, self.dance_right) {
+                let scared = self.object.id == "freaks" && song == Some(PreviewSong::ROSES);
+                let left = if scared {
+                    animation_index(&self.animations, "danceLeft-scared").unwrap_or(left)
+                } else {
+                    left
+                };
+                let right = if scared {
+                    animation_index(&self.animations, "danceRight-scared").unwrap_or(right)
+                } else {
+                    right
+                };
+                let beat = stage_beat(cursor, sample_rate, bpm);
+                let interval = self.object.dance_every.max(1.0).round() as i64;
+                let dance_index = beat.div_euclid(interval.max(1));
+                let animation = if dance_index % 2 == 0 {
+                    &self.animations[left]
+                } else {
+                    &self.animations[right]
+                };
+                return (animation, stage_beat_start(cursor, sample_rate, bpm));
+            }
+        }
+        (&self.animations[self.starting_animation], Samples(0))
+    }
+}
+
+impl AnimateStagePropSprite {
+    fn commands(&self, cursor: Samples, sample_rate: u32) -> Vec<DrawCommand> {
+        let frame_index = stage_frame_index(
+            cursor,
+            sample_rate,
+            Samples(0),
+            self.frame_rate,
+            self.frame_count,
+            self.looped,
+        );
+        let frame_offset = self
+            .object
+            .animation
+            .as_ref()
+            .and_then(|animation| animation.indices.get(frame_index))
+            .map(|index| u32::from(*index))
+            .unwrap_or(frame_index as u32);
+        let parts = match self.source {
+            AnimateStagePoseSource::Root => self.animation.flatten_root_frame(frame_offset),
+            AnimateStagePoseSource::FrameLabel => self
+                .animation
+                .flatten_label_frame(&self.label, frame_offset),
+            AnimateStagePoseSource::Symbol => self
+                .animation
+                .flatten_symbol_frame(&self.label, frame_offset),
+        };
+        parts
+            .map(|parts| {
+                parts
+                    .iter()
+                    .filter_map(|part| self.command_for_part(part))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn command_for_part(&self, part: &AnimateDrawPart) -> Option<DrawCommand> {
+        let frame = self.atlas.frame(&part.frame_name)?;
+        let mut cmd = base_stage_command(
+            &self.object,
+            self.texture_id,
+            self.filter,
+            glam::vec2(self.object.position.x, self.object.position.y),
+            frame.size,
+        );
+        cmd.affine = scaled_affine(part.matrix, self.object.scale.x);
+        cmd.uv_min = frame.uv_min;
+        cmd.uv_max = frame.uv_max;
+        cmd.uv_rotated = frame.rotated;
+        cmd.color = glam::Vec4::from_array(part.color);
+        cmd.color.w *= self.object.alpha;
+        cmd.color_offset = glam::Vec4::from_array(part.color_offset);
+        Some(cmd)
+    }
 }
 
 fn load_solid_stage_object(
@@ -87,7 +374,7 @@ fn load_solid_stage_object(
     object: &StageObject,
     textures: &mut HashMap<AssetId, Texture>,
     commands: &mut RenderCommandList,
-) {
+) -> Option<StagePropSprite> {
     let texture_id = asset_id_for_path(&object.image);
     let filter = filter_for_antialiasing(object.antialiasing);
     let color = object.solid_color.unwrap_or([0, 0, 0, 255]);
@@ -101,13 +388,18 @@ fn load_solid_stage_object(
         Some(object.image.as_str()),
     );
     textures.insert(texture_id, texture);
-    commands.push(base_stage_command(
-        object,
+    let sprite = StaticStagePropSprite::new(
         texture_id,
-        filter,
-        glam::vec2(object.position.x, object.position.y),
+        object.clone(),
         glam::vec2(object.scale.x, object.scale.y),
-    ));
+        filter,
+    );
+    if scripted_static_stage_object(object) {
+        Some(StagePropSprite::Static(sprite))
+    } else {
+        commands.push(sprite.command());
+        None
+    }
 }
 
 fn load_png_stage_object(
@@ -117,7 +409,7 @@ fn load_png_stage_object(
     object: &StageObject,
     textures: &mut HashMap<AssetId, Texture>,
     commands: &mut RenderCommandList,
-) -> Result<()> {
+) -> Result<Option<StagePropSprite>> {
     let image = load_png(resolver, &object.image)
         .with_context(|| format!("load {}", object.image.as_str()))?;
     let texture_id = asset_id_for_path(&object.image);
@@ -129,14 +421,13 @@ fn load_png_stage_object(
     let texture =
         Texture::from_png_image(device, queue, &image, filter, Some(object.image.as_str()));
     textures.insert(texture_id, texture);
-    commands.push(base_stage_command(
-        object,
-        texture_id,
-        filter,
-        glam::vec2(object.position.x, object.position.y),
-        size,
-    ));
-    Ok(())
+    let sprite = StaticStagePropSprite::new(texture_id, object.clone(), size, filter);
+    if scripted_static_stage_object(object) {
+        Ok(Some(StagePropSprite::Static(sprite)))
+    } else {
+        commands.push(sprite.command());
+        Ok(None)
+    }
 }
 
 fn load_sparrow_stage_object(
@@ -150,18 +441,7 @@ fn load_sparrow_stage_object(
     let atlas_path = stage_object_atlas_path(&object.image)?;
     let atlas = load_sparrow(resolver, &atlas_path)
         .with_context(|| format!("load {}", atlas_path.as_str()))?;
-    let frames: Vec<_> = atlas
-        .animation_frames(&animation.prefix, &[])
-        .into_iter()
-        .cloned()
-        .collect();
-    if frames.is_empty() {
-        anyhow::bail!(
-            "resolve stage prop frame {}:{}",
-            object.id,
-            animation.prefix
-        );
-    }
+    let animations = load_sparrow_stage_animations(object, animation, &atlas)?;
     let texture_path = atlas_texture_path(&atlas_path, &atlas)?;
     let image = load_png(resolver, &texture_path)
         .with_context(|| format!("load {}", texture_path.as_str()))?;
@@ -170,16 +450,117 @@ fn load_sparrow_stage_object(
     let texture =
         Texture::from_png_image(device, queue, &image, filter, Some(texture_path.as_str()));
     textures.insert(texture_id, texture);
-    Ok(Some(StagePropSprite {
+    Ok(Some(StagePropSprite::Sparrow(SparrowStagePropSprite {
         texture_id,
         texture_width: image.width,
         texture_height: image.height,
         object: object.clone(),
-        frames,
-        frame_rate: animation.frame_rate,
-        looped: animation.looped,
+        starting_animation: starting_animation_index(&animations, &animation.name),
+        dance_left: animation_index(&animations, "danceLeft"),
+        dance_right: animation_index(&animations, "danceRight"),
+        animations,
         filter,
-    }))
+    })))
+}
+
+fn load_packer_stage_object(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    object: &StageObject,
+    textures: &mut HashMap<AssetId, Texture>,
+    commands: &mut RenderCommandList,
+) -> Result<Option<StagePropSprite>> {
+    let Some(animation) = &object.animation else {
+        load_png_stage_object(device, queue, resolver, object, textures, commands)?;
+        return Ok(None);
+    };
+    let image = load_png(resolver, &object.image)
+        .with_context(|| format!("load {}", object.image.as_str()))?;
+    let texture_id = asset_id_for_path(&object.image);
+    let filter = filter_for_antialiasing(object.antialiasing);
+    let texture =
+        Texture::from_png_image(device, queue, &image, filter, Some(object.image.as_str()));
+    textures.insert(texture_id, texture);
+
+    let packer_path = stage_object_packer_path(&object.image)?;
+    let bytes = load_bytes(resolver, &packer_path)
+        .with_context(|| format!("load {}", packer_path.as_str()))?;
+    let frames = packer_animation_frames(&bytes, animation)
+        .with_context(|| format!("parse {}", packer_path.as_str()))?;
+    if frames.is_empty() {
+        anyhow::bail!(
+            "resolve packer stage prop frame {}:{}",
+            object.id,
+            animation.name
+        );
+    }
+    Ok(Some(StagePropSprite::Sparrow(SparrowStagePropSprite {
+        texture_id,
+        texture_width: image.width,
+        texture_height: image.height,
+        object: object.clone(),
+        animations: vec![LoadedSparrowStageAnimation {
+            name: animation.name.clone(),
+            frames,
+            frame_rate: animation.frame_rate,
+            looped: animation.looped,
+        }],
+        starting_animation: 0,
+        dance_left: None,
+        dance_right: None,
+        filter,
+    })))
+}
+
+fn load_animate_stage_object(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    object: &StageObject,
+    textures: &mut HashMap<AssetId, Texture>,
+) -> Result<Option<StagePropSprite>> {
+    let animation_def = object
+        .animation
+        .as_ref()
+        .with_context(|| format!("stage animate prop {} has no starting animation", object.id))?;
+    let animation_path = animate_asset_file(&object.image, "Animation.json")?;
+    let spritemap_path = animate_asset_file(&object.image, "spritemap1.json")?;
+    let texture_path = animate_asset_file(&object.image, "spritemap1.png")?;
+    let animation = load_animate_animation(resolver, &animation_path)
+        .with_context(|| format!("load {}", animation_path.as_str()))?;
+    let source = animate_stage_pose_source(&animation, animation_def);
+    let frame_count = animate_stage_frame_count(&animation, animation_def, source)?;
+    let atlas = load_animate_spritemap(resolver, &spritemap_path)
+        .with_context(|| format!("load {}", spritemap_path.as_str()))?;
+    let image = load_png(resolver, &texture_path)
+        .with_context(|| format!("load {}", texture_path.as_str()))?;
+    let texture_id = asset_id_for_path(&texture_path);
+    let filter = filter_for_antialiasing(object.antialiasing);
+    let texture =
+        Texture::from_png_image(device, queue, &image, filter, Some(texture_path.as_str()));
+    textures.insert(texture_id, texture);
+
+    let sprite = AnimateStagePropSprite {
+        texture_id,
+        object: object.clone(),
+        animation,
+        atlas,
+        label: animation_def.prefix.clone(),
+        source,
+        frame_count,
+        frame_rate: animation_def.frame_rate,
+        looped: animation_def.looped,
+        filter,
+    };
+    if sprite.commands(Samples(0), 48_000).is_empty() {
+        anyhow::bail!(
+            "resolve animate stage prop frame {}:{}",
+            object.id,
+            animation_def.prefix
+        );
+    }
+    Ok(Some(StagePropSprite::Animate(sprite)))
 }
 
 fn base_stage_command(
@@ -195,9 +576,9 @@ fn base_stage_command(
     cmd.z = object.z;
     cmd.filter = filter;
     cmd.scroll_factor = glam::vec2(object.scroll_factor.x, object.scroll_factor.y);
+    cmd.color.w = object.alpha;
     cmd
 }
-
 fn stage_object_atlas_path(image: &AssetPath) -> Result<AssetPath> {
     let base = image
         .as_str()
@@ -205,7 +586,13 @@ fn stage_object_atlas_path(image: &AssetPath) -> Result<AssetPath> {
         .with_context(|| format!("stage prop image is not a png: {}", image.as_str()))?;
     Ok(AssetPath::new(format!("{base}.xml"))?)
 }
-
+fn stage_object_packer_path(image: &AssetPath) -> Result<AssetPath> {
+    let base = image
+        .as_str()
+        .strip_suffix(".png")
+        .with_context(|| format!("stage prop image is not a png: {}", image.as_str()))?;
+    Ok(AssetPath::new(format!("{base}.txt"))?)
+}
 fn atlas_texture_path(atlas_path: &AssetPath, atlas: &SparrowAtlas) -> Result<AssetPath> {
     if atlas.image_path.contains('/') {
         Ok(AssetPath::new(atlas.image_path.clone())?)
@@ -213,13 +600,156 @@ fn atlas_texture_path(atlas_path: &AssetPath, atlas: &SparrowAtlas) -> Result<As
         Ok(atlas_path.sibling(&atlas.image_path)?)
     }
 }
+fn animate_asset_file(asset_path: &AssetPath, file_name: &str) -> Result<AssetPath> {
+    Ok(AssetPath::new(format!(
+        "{}/{file_name}",
+        asset_path.as_str()
+    ))?)
+}
 
+fn packer_animation_frames(
+    bytes: &[u8],
+    animation: &rustic_asset::StageObjectAnimation,
+) -> Result<Vec<SparrowFrame>> {
+    let text = std::str::from_utf8(bytes).context("packer atlas is not utf-8")?;
+    let mut frames = Vec::new();
+    for (line_index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let (name, coords) = line
+            .split_once('=')
+            .with_context(|| format!("packer line {} missing '='", line_index + 1))?;
+        let values = coords
+            .split_whitespace()
+            .map(str::parse::<i32>)
+            .collect::<Result<Vec<_>, _>>()
+            .with_context(|| format!("packer line {} has invalid number", line_index + 1))?;
+        if values.len() != 4 {
+            anyhow::bail!("packer line {} needs 4 numbers", line_index + 1);
+        }
+        let width = u32::try_from(values[2]).context("packer width is negative")?;
+        let height = u32::try_from(values[3]).context("packer height is negative")?;
+        frames.push(SparrowFrame::untrimmed(
+            name.trim().to_string(),
+            values[0],
+            values[1],
+            width,
+            height,
+        ));
+    }
+
+    let selected = frames
+        .into_iter()
+        .filter(|frame| animation.prefix.is_empty() || frame.name.starts_with(&animation.prefix))
+        .collect::<Vec<_>>();
+    if animation.indices.is_empty() {
+        return Ok(selected);
+    }
+    Ok(animation
+        .indices
+        .iter()
+        .filter_map(|index| selected.get(usize::from(*index)).cloned())
+        .collect())
+}
+fn animate_stage_frame_count(
+    animation: &AnimateAnimation,
+    animation_def: &rustic_asset::StageObjectAnimation,
+    source: AnimateStagePoseSource,
+) -> Result<usize> {
+    if !animation_def.indices.is_empty() {
+        return Ok(animation_def.indices.len());
+    }
+    match source {
+        AnimateStagePoseSource::Root => Ok(animation.duration().max(1) as usize),
+        AnimateStagePoseSource::FrameLabel => {
+            let label = animation
+                .label(&animation_def.prefix)
+                .with_context(|| format!("resolve animate label {}", animation_def.prefix))?;
+            Ok(label.duration.max(1) as usize)
+        }
+        AnimateStagePoseSource::Symbol => {
+            let symbol = animation
+                .symbol(&animation_def.prefix)
+                .with_context(|| format!("resolve animate symbol {}", animation_def.prefix))?;
+            Ok(symbol.duration().max(1) as usize)
+        }
+    }
+}
+fn animate_stage_pose_source(
+    animate: &AnimateAnimation,
+    animation_def: &rustic_asset::StageObjectAnimation,
+) -> AnimateStagePoseSource {
+    match animation_def.anim_type.as_deref() {
+        Some("symbol") if animate.symbol(&animation_def.prefix).is_some() => {
+            AnimateStagePoseSource::Symbol
+        }
+        Some("symbol") => AnimateStagePoseSource::Root,
+        _ => AnimateStagePoseSource::FrameLabel,
+    }
+}
+fn scaled_affine(matrix: [f32; 6], scale: f32) -> [f32; 6] {
+    [
+        matrix[0] * scale,
+        matrix[1] * scale,
+        matrix[2] * scale,
+        matrix[3] * scale,
+        matrix[4],
+        matrix[5],
+    ]
+}
 fn stage_frame_pos(object: &StageObject, frame: &SparrowFrame) -> glam::Vec2 {
     glam::vec2(object.position.x, object.position.y)
         - glam::vec2(frame.frame_x as f32, frame.frame_y as f32)
             * glam::vec2(object.scale.x, object.scale.y)
 }
 
+fn load_sparrow_stage_animations(
+    object: &StageObject,
+    starting_animation: &rustic_asset::StageObjectAnimation,
+    atlas: &SparrowAtlas,
+) -> Result<Vec<LoadedSparrowStageAnimation>> {
+    let animation_defs = if object.animations.is_empty() {
+        vec![starting_animation.clone()]
+    } else {
+        object.animations.clone()
+    };
+    animation_defs
+        .into_iter()
+        .map(|animation| {
+            let frames: Vec<_> = atlas
+                .animation_frames(&animation.prefix, &animation.indices)
+                .into_iter()
+                .cloned()
+                .collect();
+            if frames.is_empty() {
+                anyhow::bail!(
+                    "resolve stage prop frame {}:{}",
+                    object.id,
+                    animation.prefix
+                );
+            }
+            Ok(LoadedSparrowStageAnimation {
+                name: animation.name,
+                frames,
+                frame_rate: animation.frame_rate,
+                looped: animation.looped,
+            })
+        })
+        .collect()
+}
+fn starting_animation_index(
+    animations: &[LoadedSparrowStageAnimation],
+    starting_name: &str,
+) -> usize {
+    animation_index(animations, starting_name).unwrap_or(0)
+}
+fn animation_index(animations: &[LoadedSparrowStageAnimation], name: &str) -> Option<usize> {
+    animations
+        .iter()
+        .position(|animation| animation.name == name)
+}
 fn frame_draw_size(frame: &SparrowFrame) -> glam::Vec2 {
     if frame.rotated {
         glam::vec2(frame.height as f32, frame.width as f32)
@@ -244,172 +774,6 @@ fn frame_uv(
     )
 }
 
-fn stage_frame_index(
-    cursor: Samples,
-    sample_rate: u32,
-    frame_rate: u16,
-    frame_count: usize,
-    looped: bool,
-) -> usize {
-    if frame_count <= 1 {
-        return 0;
-    }
-    let samples_per_frame = f64::from(sample_rate.max(1)) / f64::from(frame_rate.max(1));
-    let index = (cursor.0.max(0) as f64 / samples_per_frame).floor() as usize;
-    if looped {
-        index % frame_count
-    } else {
-        index.min(frame_count - 1)
-    }
-}
-
-fn filter_for_antialiasing(antialiasing: bool) -> FilterMode {
-    if antialiasing {
-        FilterMode::Linear
-    } else {
-        FilterMode::Nearest
-    }
-}
-
-fn asset_id_for_path(path: &AssetPath) -> AssetId {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in path.as_str().as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    AssetId::new(hash)
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use rustic_asset::StageDefinition;
-
-    #[test]
-    fn stage_object_atlas_path_replaces_png_extension() {
-        let path = AssetPath::new("images/erect/crowd.png").unwrap();
-
-        assert_eq!(
-            stage_object_atlas_path(&path).unwrap().as_str(),
-            "images/erect/crowd.xml"
-        );
-    }
-
-    #[test]
-    fn solid_stage_prop_uses_scale_as_draw_size() {
-        let stage = StageDefinition::parse(
-            br##"{
-              "name": "test",
-              "props": [{
-                "name": "solid",
-                "assetPath": "#222026",
-                "position": [-500, -1000],
-                "scale": [2400, 2000],
-                "scroll": [0, 0],
-                "zIndex": 0
-              }]
-            }"##,
-        )
-        .unwrap();
-        let object = &stage.objects[0];
-        let cmd = base_stage_command(
-            object,
-            AssetId::new(9),
-            FilterMode::Linear,
-            glam::vec2(object.position.x, object.position.y),
-            glam::vec2(object.scale.x, object.scale.y),
-        );
-
-        assert_eq!(cmd.world_pos, glam::vec2(-500.0, -1000.0));
-        assert_eq!(cmd.size, glam::vec2(2400.0, 2000.0));
-        assert_eq!(cmd.scroll_factor, glam::Vec2::ZERO);
-    }
-
-    #[test]
-    fn animated_stage_prop_world_pos_applies_trim_offset() {
-        let stage = StageDefinition::parse(
-            br##"{
-              "name": "test",
-              "props": [{
-                "name": "crowd",
-                "assetPath": "erect/crowd",
-                "position": [682, 290],
-                "scale": [2, 3],
-                "scroll": [1, 1],
-                "zIndex": 5,
-                "startingAnimation": "idle",
-                "animations": [{
-                  "name": "idle",
-                  "prefix": "idle0",
-                  "frameRate": 12,
-                  "looped": true
-                }]
-              }]
-            }"##,
-        )
-        .unwrap();
-        let atlas = SparrowAtlas::parse(
-            br#"<TextureAtlas imagePath="crowd.png">
-              <SubTexture name="idle0000" x="0" y="0" width="100" height="80"
-                frameX="-5" frameY="7" frameWidth="120" frameHeight="100"/>
-            </TextureAtlas>"#,
-        )
-        .unwrap();
-        let object = &stage.objects[0];
-        let frame = atlas.first_animation_frame("idle0", &[]).unwrap();
-
-        assert_eq!(stage_frame_pos(object, frame), glam::vec2(692.0, 269.0));
-    }
-
-    #[test]
-    fn stage_prop_sprite_advances_looping_frames() {
-        let stage = StageDefinition::parse(
-            br##"{
-              "name": "test",
-              "props": [{
-                "name": "crowd",
-                "assetPath": "erect/crowd",
-                "position": [0, 0],
-                "scale": [1, 1],
-                "scroll": [1, 1],
-                "zIndex": 5,
-                "startingAnimation": "idle",
-                "animations": [{
-                  "name": "idle",
-                  "prefix": "idle0",
-                  "frameRate": 12,
-                  "looped": true
-                }]
-              }]
-            }"##,
-        )
-        .unwrap();
-        let atlas = SparrowAtlas::parse(
-            br#"<TextureAtlas imagePath="crowd.png">
-              <SubTexture name="idle0000" x="0" y="0" width="100" height="80"/>
-              <SubTexture name="idle0001" x="100" y="0" width="100" height="80"/>
-            </TextureAtlas>"#,
-        )
-        .unwrap();
-        let object = stage.objects[0].clone();
-        let frames: Vec<_> = atlas
-            .animation_frames("idle0", &[])
-            .into_iter()
-            .cloned()
-            .collect();
-        let prop = StagePropSprite {
-            texture_id: AssetId::new(7),
-            texture_width: 200,
-            texture_height: 80,
-            object,
-            frames,
-            frame_rate: 12,
-            looped: true,
-            filter: FilterMode::Linear,
-        };
-
-        assert_eq!(prop.command(Samples(0), 48_000).uv_min.x, 0.0);
-        assert_eq!(prop.command(Samples(4_000), 48_000).uv_min.x, 0.5);
-        assert_eq!(prop.command(Samples(8_000), 48_000).uv_min.x, 0.0);
-    }
-}
+#[path = "stage_object_assets_tests.rs"]
+mod tests;

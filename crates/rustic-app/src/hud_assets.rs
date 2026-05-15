@@ -1,4 +1,5 @@
 //! HUD texture wiring and command generation.
+// LINT-ALLOW: long-file HUD icon loading and layout tests stay together.
 
 use anyhow::{Context, Result};
 use rustic_asset::{load_png, AssetPath, OverlayResolver};
@@ -22,8 +23,9 @@ const WHITE_TEXTURE_ID: AssetId = AssetId::new(0xfef0_0000_0000_0001);
 #[derive(Debug, Clone)]
 pub struct HudSkin {
     health_bar_texture: AssetId,
-    bf_icon: IconTexture,
-    dad_icon: IconTexture,
+    bf_icon: ActiveIcon,
+    dad_icon: ActiveIcon,
+    icons: HashMap<String, IconTexture>,
     white_texture: AssetId,
 }
 
@@ -32,6 +34,24 @@ struct IconTexture {
     texture: AssetId,
     width: u32,
     height: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActiveIcon {
+    texture: IconTexture,
+    flip_x: bool,
+    scale: f32,
+    offset: glam::Vec2,
+    filter: FilterMode,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct HealthIconEvent {
+    pub target: i8,
+    pub scale: f32,
+    pub flip_x: bool,
+    pub is_pixel: bool,
+    pub offset: glam::Vec2,
 }
 
 impl HudSkin {
@@ -76,22 +96,48 @@ impl HudSkin {
         let marker = fill_x + HEALTH_FILL_WIDTH * (1.0 - health / 2.0);
         let bf_frame = if health < 0.4 { 1 } else { 0 };
         let dad_frame = if health > 1.6 { 1 } else { 0 };
-        let icon_size = ICON_SIZE * icon_scale.max(0.01);
+        let player_size = icon_size_for(self.bf_icon, icon_scale);
+        let opponent_size = icon_size_for(self.dad_icon, icon_scale);
         commands.push(self.icon_command(
             self.bf_icon,
             bf_frame,
-            true,
-            glam::vec2(marker - ICON_OFFSET, fill_y - icon_size * 0.5),
-            icon_size,
+            glam::vec2(marker - ICON_OFFSET, fill_y - player_size * 0.5),
+            player_size,
         ));
         commands.push(self.icon_command(
             self.dad_icon,
             dad_frame,
-            false,
-            glam::vec2(marker - (icon_size - ICON_OFFSET), fill_y - icon_size * 0.5),
-            icon_size,
+            glam::vec2(
+                marker - (opponent_size - ICON_OFFSET),
+                fill_y - opponent_size * 0.5,
+            ),
+            opponent_size,
         ));
         commands
+    }
+
+    pub fn set_health_icon(&mut self, id: &str, event: HealthIconEvent) -> bool {
+        let Some(texture) = self.icons.get(id).copied() else {
+            tracing::warn!(target: "rustic.asset", "health icon {id} unavailable");
+            return false;
+        };
+        let icon = ActiveIcon {
+            texture,
+            flip_x: event.flip_x,
+            scale: event.scale.max(0.0),
+            offset: event.offset,
+            filter: if event.is_pixel {
+                FilterMode::Nearest
+            } else {
+                FilterMode::Linear
+            },
+        };
+        match event.target {
+            0 => self.bf_icon = icon,
+            1 => self.dad_icon = icon,
+            _ => return false,
+        }
+        true
     }
 
     fn color_rect(
@@ -113,21 +159,23 @@ impl HudSkin {
 
     fn icon_command(
         &self,
-        icon: IconTexture,
+        icon: ActiveIcon,
         frame_index: u32,
-        flip_x: bool,
         world_pos: glam::Vec2,
         icon_size: f32,
     ) -> DrawCommand {
-        let mut cmd =
-            DrawCommand::sprite(icon.texture, world_pos, glam::vec2(icon_size, icon_size));
+        let mut cmd = DrawCommand::sprite(
+            icon.texture.texture,
+            world_pos + icon.offset,
+            glam::vec2(icon_size, icon_size),
+        );
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
         cmd.layer = RenderLayer::Hud;
-        cmd.filter = FilterMode::Linear;
+        cmd.filter = icon.filter;
         cmd.z = 3;
-        (cmd.uv_min, cmd.uv_max) = icon_uv(frame_index, icon.width, icon.height);
-        if flip_x {
+        (cmd.uv_min, cmd.uv_max) = icon_uv(frame_index, icon.texture.width, icon.texture.height);
+        if icon.flip_x {
             std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
         }
         cmd
@@ -139,6 +187,17 @@ pub fn load_hud_assets(
     queue: &wgpu::Queue,
     resolver: &OverlayResolver,
     textures: &mut HashMap<AssetId, Texture>,
+) -> Result<HudSkin> {
+    load_hud_assets_for_icons(device, queue, resolver, textures, "bf", "dad")
+}
+
+pub fn load_hud_assets_for_icons(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+    player_icon_id: &str,
+    opponent_icon_id: &str,
 ) -> Result<HudSkin> {
     let health_bar_path = AssetPath::new("images/healthBar.png")?;
     let health_bar = load_png(resolver, &health_bar_path)
@@ -155,35 +214,9 @@ pub fn load_hud_assets(
         ),
     );
 
-    let bf_icon_path = AssetPath::new("images/icons/icon-bf.png")?;
-    let bf_icon = load_png(resolver, &bf_icon_path)
-        .with_context(|| format!("load {}", bf_icon_path.as_str()))?;
-    let bf_icon_texture = asset_id_for_path(&bf_icon_path);
-    textures.insert(
-        bf_icon_texture,
-        Texture::from_png_image(
-            device,
-            queue,
-            &bf_icon,
-            FilterMode::Linear,
-            Some(bf_icon_path.as_str()),
-        ),
-    );
-
-    let dad_icon_path = AssetPath::new("images/icons/icon-dad.png")?;
-    let dad_icon = load_png(resolver, &dad_icon_path)
-        .with_context(|| format!("load {}", dad_icon_path.as_str()))?;
-    let dad_icon_texture = asset_id_for_path(&dad_icon_path);
-    textures.insert(
-        dad_icon_texture,
-        Texture::from_png_image(
-            device,
-            queue,
-            &dad_icon,
-            FilterMode::Linear,
-            Some(dad_icon_path.as_str()),
-        ),
-    );
+    let icons = load_health_icons(device, queue, resolver, textures)?;
+    let bf_icon = icon_or_default(&icons, player_icon_id, "bf")?;
+    let dad_icon = icon_or_default(&icons, opponent_icon_id, "dad")?;
 
     textures.insert(
         WHITE_TEXTURE_ID,
@@ -200,18 +233,107 @@ pub fn load_hud_assets(
 
     Ok(HudSkin {
         health_bar_texture,
-        bf_icon: IconTexture {
-            texture: bf_icon_texture,
-            width: bf_icon.width,
-            height: bf_icon.height,
-        },
-        dad_icon: IconTexture {
-            texture: dad_icon_texture,
-            width: dad_icon.width,
-            height: dad_icon.height,
-        },
+        bf_icon: ActiveIcon::new(bf_icon, true),
+        dad_icon: ActiveIcon::new(dad_icon, false),
+        icons,
         white_texture: WHITE_TEXTURE_ID,
     })
+}
+
+fn icon_or_default(
+    icons: &HashMap<String, IconTexture>,
+    id: &str,
+    fallback: &str,
+) -> Result<IconTexture> {
+    icons
+        .get(id)
+        .or_else(|| icons.get(fallback))
+        .copied()
+        .with_context(|| format!("load {fallback} health icon"))
+}
+
+impl ActiveIcon {
+    fn new(texture: IconTexture, flip_x: bool) -> Self {
+        Self {
+            texture,
+            flip_x,
+            scale: 1.0,
+            offset: glam::Vec2::ZERO,
+            filter: FilterMode::Linear,
+        }
+    }
+}
+
+fn load_health_icons(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+) -> Result<HashMap<String, IconTexture>> {
+    let mut icons = HashMap::new();
+    for id in VANILLA_HEALTH_ICON_IDS {
+        let path = AssetPath::new(format!("images/icons/icon-{id}.png"))?;
+        let image = match load_png(resolver, &path) {
+            Ok(image) => image,
+            Err(error) => {
+                tracing::warn!(
+                    target: "rustic.asset",
+                    "health icon {id} unavailable: {error:#}"
+                );
+                continue;
+            }
+        };
+        let texture_id = asset_id_for_path(&path);
+        textures.insert(
+            texture_id,
+            Texture::from_png_image(
+                device,
+                queue,
+                &image,
+                FilterMode::Linear,
+                Some(path.as_str()),
+            ),
+        );
+        icons.insert(
+            (*id).to_string(),
+            IconTexture {
+                texture: texture_id,
+                width: image.width,
+                height: image.height,
+            },
+        );
+    }
+    Ok(icons)
+}
+
+const VANILLA_HEALTH_ICON_IDS: &[&str] = &[
+    "bf",
+    "bf-old",
+    "bf-pixel",
+    "chaewon",
+    "dad",
+    "darnell",
+    "eunchae",
+    "face",
+    "gf",
+    "kazuha",
+    "mom",
+    "monster",
+    "parents",
+    "pico",
+    "pico-pixel",
+    "sakura",
+    "senpai",
+    "senpai-angry",
+    "spirit",
+    "spooky",
+    "tankman",
+    "tankman-bloody",
+    "yunjin",
+];
+
+fn icon_size_for(icon: ActiveIcon, icon_scale: f32) -> f32 {
+    ICON_SIZE * icon_scale.max(0.01) * icon.scale.max(0.01)
 }
 
 fn icon_uv(frame_index: u32, texture_width: u32, texture_height: u32) -> (glam::Vec2, glam::Vec2) {
@@ -242,18 +364,32 @@ mod tests {
     use super::*;
 
     fn skin() -> HudSkin {
-        HudSkin {
-            health_bar_texture: AssetId::new(1),
-            bf_icon: IconTexture {
-                texture: AssetId::new(2),
+        let bf = IconTexture {
+            texture: AssetId::new(2),
+            width: 300,
+            height: 150,
+        };
+        let dad = IconTexture {
+            texture: AssetId::new(4),
+            width: 150,
+            height: 150,
+        };
+        let mut icons = HashMap::new();
+        icons.insert("bf".to_string(), bf);
+        icons.insert("dad".to_string(), dad);
+        icons.insert(
+            "tankman-bloody".to_string(),
+            IconTexture {
+                texture: AssetId::new(5),
                 width: 300,
                 height: 150,
             },
-            dad_icon: IconTexture {
-                texture: AssetId::new(4),
-                width: 150,
-                height: 150,
-            },
+        );
+        HudSkin {
+            health_bar_texture: AssetId::new(1),
+            bf_icon: ActiveIcon::new(bf, true),
+            dad_icon: ActiveIcon::new(dad, false),
+            icons,
             white_texture: AssetId::new(3),
         }
     }
@@ -319,5 +455,30 @@ mod tests {
             commands[4].world_pos,
             glam::vec2(marker - (icon_size - ICON_OFFSET), fill_y - icon_size * 0.5)
         );
+    }
+
+    #[test]
+    fn set_health_icon_updates_target_texture_and_event_shape() {
+        let mut skin = skin();
+
+        assert!(skin.set_health_icon(
+            "tankman-bloody",
+            HealthIconEvent {
+                target: 1,
+                scale: 1.1,
+                flip_x: true,
+                is_pixel: true,
+                offset: glam::vec2(2.0, -3.0),
+            },
+        ));
+
+        let commands = skin.commands(1.0);
+        assert_eq!(commands[4].texture, AssetId::new(5));
+        assert_eq!(
+            commands[4].size,
+            glam::vec2(ICON_SIZE * 1.1, ICON_SIZE * 1.1)
+        );
+        assert_eq!(commands[4].filter, FilterMode::Nearest);
+        assert!(commands[4].uv_min.x > commands[4].uv_max.x);
     }
 }

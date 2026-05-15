@@ -1,6 +1,7 @@
 use super::App;
 use crate::menu_audio::MenuSound;
 use crate::options_menu_assets::{load_options_menu_assets, OptionsMenuAction, OptionsMenuPage};
+use crate::options_preferences::{PreferenceChange, PreferenceInput};
 use rustic_core::input::InputAction;
 use rustic_core::time::Samples;
 use rustic_render::{RenderCommandList, TextCommandList};
@@ -36,7 +37,11 @@ impl App {
     pub(super) fn rebuild_options_menu_commands(&mut self) {
         if let Some(assets) = self.options_menu_assets.as_ref() {
             self.cmds = assets.commands();
-            self.text_cmds = assets.text_commands(self.options_menu_page, self.options_menu_index);
+            self.text_cmds = assets.text_commands_with_preferences(
+                self.options_menu_page,
+                self.options_menu_index,
+                self.options_preferences,
+            );
         } else {
             self.cmds = RenderCommandList::new();
             self.text_cmds = TextCommandList::new();
@@ -55,6 +60,12 @@ impl App {
         match action {
             InputAction::LaneUp | InputAction::UiUp => self.move_options_selection(-1),
             InputAction::LaneDown | InputAction::UiDown => self.move_options_selection(1),
+            InputAction::LaneLeft | InputAction::UiLeft => {
+                self.apply_options_preference_input(PreferenceInput::Left)
+            }
+            InputAction::LaneRight | InputAction::UiRight => {
+                self.apply_options_preference_input(PreferenceInput::Right)
+            }
             InputAction::Confirm => self.confirm_options_item(),
             InputAction::Back => self.back_from_options_menu(),
             _ => {}
@@ -71,6 +82,10 @@ impl App {
     }
 
     fn confirm_options_item(&mut self) {
+        if self.options_menu_page == OptionsMenuPage::Preferences {
+            self.apply_options_preference_input(PreferenceInput::Confirm);
+            return;
+        }
         if self.options_menu_page != OptionsMenuPage::Root {
             self.back_from_options_menu();
             return;
@@ -90,6 +105,27 @@ impl App {
         }
     }
 
+    fn apply_options_preference_input(&mut self, input: PreferenceInput) {
+        if self.options_menu_page != OptionsMenuPage::Preferences {
+            return;
+        }
+        match self
+            .options_preferences
+            .apply_input(self.options_menu_index, input)
+        {
+            PreferenceChange::Changed => {
+                self.play_menu_sound(match input {
+                    PreferenceInput::Confirm => MenuSound::Confirm,
+                    PreferenceInput::Left | PreferenceInput::Right => MenuSound::Scroll,
+                });
+                self.persist_options_preferences();
+                self.rebuild_options_menu_commands();
+            }
+            PreferenceChange::Back => self.back_from_options_menu(),
+            PreferenceChange::None => {}
+        }
+    }
+
     fn back_from_options_menu(&mut self) {
         self.play_menu_sound(MenuSound::Cancel);
         if self.options_menu_page == OptionsMenuPage::Root {
@@ -106,5 +142,16 @@ impl App {
             .as_ref()
             .map(|assets| assets.item_count(self.options_menu_page))
             .unwrap_or(0)
+    }
+
+    fn persist_options_preferences(&mut self) {
+        self.options_preferences
+            .write_to_settings(&mut self.settings.preferences);
+        let Some(path) = self.settings_path.as_deref() else {
+            return;
+        };
+        if let Err(e) = self.settings.save_atomic(path) {
+            tracing::warn!(target: "rustic.settings", "save settings failed: {e:#}");
+        }
     }
 }

@@ -66,6 +66,9 @@ fn test_note_skin() -> NoteSkin {
         .clone();
 
     NoteSkin {
+        scale: NOTE_ASSET_SCALE,
+        filter: FilterMode::Linear,
+        strumline_offset: glam::Vec2::ZERO,
         tap_texture_id: AssetId::new(1),
         tap_texture_width: 311,
         tap_texture_height: 311,
@@ -142,6 +145,19 @@ fn receptor_frames_center_the_source_frame_on_the_lane_slot() {
     assert!((confirm_center.y - static_center.y).abs() < 1e-5);
 }
 
+#[test]
+fn receptor_layout_can_hide_opponent_and_shift_player() {
+    let skin = test_note_skin();
+
+    let commands = skin.receptor_commands_with_layout(Samples(0), 48_000, false, -272.0, |_, _| {
+        ReceptorState::Static
+    });
+
+    assert_eq!(commands.len(), 4);
+    let shifted = skin.receptor_command(1, Lane::Left, ReceptorState::Static, Samples(0), 48_000);
+    assert_eq!(commands[0].world_pos.x, shifted.world_pos.x - 272.0);
+}
+
 fn command_source_center(cmd: &DrawCommand, frame: &SparrowFrame) -> glam::Vec2 {
     cmd.world_pos + (frame_trim_offset(frame) + frame_source_size(frame) * 0.5) * NOTE_ASSET_SCALE
 }
@@ -215,6 +231,10 @@ fn animated_note_frame_uses_started_cursor_and_clamps() {
 
     assert_eq!(
         animated_note_frame(&frames, Samples(12_000), 48_000, Samples(10_000), 24, false).name,
+        "confirm0000"
+    );
+    assert_eq!(
+        animated_note_frame(&frames, Samples(12_001), 48_000, Samples(10_000), 24, false).name,
         "confirm0001"
     );
     assert_eq!(

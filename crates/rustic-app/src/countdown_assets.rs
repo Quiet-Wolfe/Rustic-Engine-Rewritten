@@ -40,6 +40,7 @@ impl CountdownSkin {
 struct CountdownImage {
     texture_id: AssetId,
     size: glam::Vec2,
+    filter: FilterMode,
 }
 
 impl CountdownImage {
@@ -54,7 +55,7 @@ impl CountdownImage {
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
         cmd.layer = RenderLayer::Overlay;
-        cmd.filter = FilterMode::Linear;
+        cmd.filter = self.filter;
         cmd.color.w = 1.0 - eased;
         cmd
     }
@@ -66,10 +67,49 @@ pub fn load_countdown_assets(
     resolver: &OverlayResolver,
     textures: &mut HashMap<AssetId, Texture>,
 ) -> Result<CountdownSkin> {
+    load_countdown_assets_for_style(device, queue, resolver, textures, "funkin")
+}
+
+pub fn load_countdown_assets_for_style(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+    style: &str,
+) -> Result<CountdownSkin> {
+    let (dir, scale, filter) = if style == "pixel" {
+        ("pixel", 6.0, FilterMode::Nearest)
+    } else {
+        ("funkin", 1.0, FilterMode::Linear)
+    };
     Ok(CountdownSkin {
-        ready: load_countdown_image(device, queue, resolver, textures, "images/ready.png")?,
-        set: load_countdown_image(device, queue, resolver, textures, "images/set.png")?,
-        go: load_countdown_image(device, queue, resolver, textures, "images/go.png")?,
+        ready: load_countdown_image(
+            device,
+            queue,
+            resolver,
+            textures,
+            &format!("images/ui/countdown/{dir}/ready.png"),
+            scale,
+            filter,
+        )?,
+        set: load_countdown_image(
+            device,
+            queue,
+            resolver,
+            textures,
+            &format!("images/ui/countdown/{dir}/set.png"),
+            scale,
+            filter,
+        )?,
+        go: load_countdown_image(
+            device,
+            queue,
+            resolver,
+            textures,
+            &format!("images/ui/countdown/{dir}/go.png"),
+            scale,
+            filter,
+        )?,
     })
 }
 
@@ -79,23 +119,20 @@ fn load_countdown_image(
     resolver: &OverlayResolver,
     textures: &mut HashMap<AssetId, Texture>,
     path: &str,
+    scale: f32,
+    filter: FilterMode,
 ) -> Result<CountdownImage> {
     let path = AssetPath::new(path)?;
     let image = load_png(resolver, &path).with_context(|| format!("load {}", path.as_str()))?;
     let texture_id = asset_id_for_path(&path);
     textures.insert(
         texture_id,
-        Texture::from_png_image(
-            device,
-            queue,
-            &image,
-            FilterMode::Linear,
-            Some(path.as_str()),
-        ),
+        Texture::from_png_image(device, queue, &image, filter, Some(path.as_str())),
     );
     Ok(CountdownImage {
         texture_id,
-        size: glam::vec2(image.width as f32, image.height as f32),
+        size: glam::vec2(image.width as f32, image.height as f32) * scale,
+        filter,
     })
 }
 
@@ -137,14 +174,17 @@ mod tests {
             ready: CountdownImage {
                 texture_id: AssetId::new(1),
                 size: glam::vec2(100.0, 50.0),
+                filter: FilterMode::Linear,
             },
             set: CountdownImage {
                 texture_id: AssetId::new(2),
                 size: glam::vec2(100.0, 50.0),
+                filter: FilterMode::Linear,
             },
             go: CountdownImage {
                 texture_id: AssetId::new(3),
                 size: glam::vec2(100.0, 50.0),
+                filter: FilterMode::Linear,
             },
         }
     }
@@ -184,5 +224,32 @@ mod tests {
         assert_eq!(command.world_pos, glam::vec2(590.0, 335.0));
         assert_eq!(mid_fade.world_pos, glam::vec2(590.0, 335.0));
         assert!(mid_fade.color.w < command.color.w);
+    }
+
+    #[test]
+    fn pixel_countdown_scales_and_uses_nearest_filter() {
+        let skin = CountdownSkin {
+            ready: CountdownImage {
+                texture_id: AssetId::new(1),
+                size: glam::vec2(87.0, 41.0) * 6.0,
+                filter: FilterMode::Nearest,
+            },
+            set: CountdownImage {
+                texture_id: AssetId::new(2),
+                size: glam::vec2(80.0, 37.0) * 6.0,
+                filter: FilterMode::Nearest,
+            },
+            go: CountdownImage {
+                texture_id: AssetId::new(3),
+                size: glam::vec2(92.0, 37.0) * 6.0,
+                filter: FilterMode::Nearest,
+            },
+        };
+
+        let command = skin.commands(Samples(-86_400), 48_000, 100.0)[0].clone();
+
+        assert_eq!(command.filter, FilterMode::Nearest);
+        assert_eq!(command.size, glam::vec2(522.0, 246.0));
+        assert_eq!(command.world_pos, glam::vec2(379.0, 237.0));
     }
 }

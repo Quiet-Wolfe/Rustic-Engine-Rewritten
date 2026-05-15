@@ -1,6 +1,7 @@
 //! Funkin' v0.8.5 hold-note cover glow animations.
 // LINT-ALLOW: long-file four-lane hold cover atlas wiring plus animation tests
 
+use crate::animation_timing::visible_flixel_frame_index;
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_png, load_sparrow, AssetPath, OverlayResolver, SparrowAtlas, SparrowFrame,
@@ -32,6 +33,9 @@ struct LaneHoldCoverSkin {
     texture_id: AssetId,
     texture_width: u32,
     texture_height: u32,
+    scale: f32,
+    offset: glam::Vec2,
+    filter: FilterMode,
     start_frames: Vec<SparrowFrame>,
     hold_frames: Vec<SparrowFrame>,
     end_frames: Vec<SparrowFrame>,
@@ -137,6 +141,19 @@ pub fn load_hold_cover_assets(
     resolver: &OverlayResolver,
     textures: &mut HashMap<AssetId, Texture>,
 ) -> Result<HoldCoverSkin> {
+    load_hold_cover_assets_for_style(device, queue, resolver, textures, "funkin")
+}
+
+pub fn load_hold_cover_assets_for_style(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+    style: &str,
+) -> Result<HoldCoverSkin> {
+    if style == "pixel" {
+        return load_pixel_hold_cover_assets(device, queue, resolver, textures);
+    }
     Ok(HoldCoverSkin {
         lanes: [
             load_lane_cover(
@@ -146,14 +163,72 @@ pub fn load_hold_cover_assets(
                 textures,
                 "holdCoverPurple",
                 "Purple",
+                1.0,
+                glam::vec2(COVER_X_ADJUST, COVER_Y_ADJUST),
+                FilterMode::Linear,
             )?,
-            load_lane_cover(device, queue, resolver, textures, "holdCoverBlue", "Blue")?,
-            load_lane_cover(device, queue, resolver, textures, "holdCoverGreen", "Green")?,
-            load_lane_cover(device, queue, resolver, textures, "holdCoverRed", "Red")?,
+            load_lane_cover(
+                device,
+                queue,
+                resolver,
+                textures,
+                "holdCoverBlue",
+                "Blue",
+                1.0,
+                glam::vec2(COVER_X_ADJUST, COVER_Y_ADJUST),
+                FilterMode::Linear,
+            )?,
+            load_lane_cover(
+                device,
+                queue,
+                resolver,
+                textures,
+                "holdCoverGreen",
+                "Green",
+                1.0,
+                glam::vec2(COVER_X_ADJUST, COVER_Y_ADJUST),
+                FilterMode::Linear,
+            )?,
+            load_lane_cover(
+                device,
+                queue,
+                resolver,
+                textures,
+                "holdCoverRed",
+                "Red",
+                1.0,
+                glam::vec2(COVER_X_ADJUST, COVER_Y_ADJUST),
+                FilterMode::Linear,
+            )?,
         ],
     })
 }
 
+fn load_pixel_hold_cover_assets(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+) -> Result<HoldCoverSkin> {
+    let lane = load_custom_lane_cover(
+        device,
+        queue,
+        resolver,
+        textures,
+        "images/pixelNoteHoldCover.xml",
+        "loop0000",
+        "loop",
+        "explode",
+        6.0,
+        glam::vec2(29.0, -4.0),
+        FilterMode::Nearest,
+    )?;
+    Ok(HoldCoverSkin {
+        lanes: std::array::from_fn(|_| lane.clone()),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn load_lane_cover(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -161,8 +236,41 @@ fn load_lane_cover(
     textures: &mut HashMap<AssetId, Texture>,
     asset_name: &str,
     color_name: &str,
+    scale: f32,
+    offset: glam::Vec2,
+    filter: FilterMode,
 ) -> Result<LaneHoldCoverSkin> {
     let atlas_path = AssetPath::new(format!("images/{asset_name}.xml"))?;
+    load_custom_lane_cover(
+        device,
+        queue,
+        resolver,
+        textures,
+        atlas_path.as_str(),
+        &format!("holdCoverStart{color_name}"),
+        &format!("holdCover{color_name}"),
+        &format!("holdCoverEnd{color_name}"),
+        scale,
+        offset,
+        filter,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn load_custom_lane_cover(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+    atlas_path: &str,
+    start_prefix: &str,
+    hold_prefix: &str,
+    end_prefix: &str,
+    scale: f32,
+    offset: glam::Vec2,
+    filter: FilterMode,
+) -> Result<LaneHoldCoverSkin> {
+    let atlas_path = AssetPath::new(atlas_path)?;
     let atlas = load_sparrow(resolver, &atlas_path)
         .with_context(|| format!("load {}", atlas_path.as_str()))?;
     let texture_path = atlas_texture_path(&atlas_path, &atlas)?;
@@ -171,22 +279,19 @@ fn load_lane_cover(
     let texture_id = asset_id_for_path(&texture_path);
     textures.insert(
         texture_id,
-        Texture::from_png_image(
-            device,
-            queue,
-            &image,
-            FilterMode::Linear,
-            Some(texture_path.as_str()),
-        ),
+        Texture::from_png_image(device, queue, &image, filter, Some(texture_path.as_str())),
     );
 
     Ok(LaneHoldCoverSkin {
         texture_id,
         texture_width: image.width,
         texture_height: image.height,
-        start_frames: cloned_animation_frames(&atlas, &format!("holdCoverStart{color_name}"))?,
-        hold_frames: cloned_animation_frames(&atlas, &format!("holdCover{color_name}"))?,
-        end_frames: cloned_animation_frames(&atlas, &format!("holdCoverEnd{color_name}"))?,
+        scale,
+        offset,
+        filter,
+        start_frames: cloned_animation_frames(&atlas, start_prefix)?,
+        hold_frames: cloned_animation_frames(&atlas, hold_prefix)?,
+        end_frames: cloned_animation_frames(&atlas, end_prefix)?,
     })
 }
 
@@ -250,27 +355,27 @@ fn command_for_frame(
     lane: Lane,
     frame: &SparrowFrame,
 ) -> DrawCommand {
-    let size = frame_draw_size(frame);
+    let size = frame_draw_size(frame, skin.scale);
     let mut cmd = DrawCommand::sprite(
         skin.texture_id,
-        frame_world_pos(side, lane, frame, size),
+        frame_world_pos(side, lane, frame, skin.scale, skin.offset),
         size,
     );
     cmd.camera = CameraId(1);
     cmd.pivot = glam::Vec2::ZERO;
     cmd.layer = RenderLayer::Notes;
     cmd.z = 9;
-    cmd.filter = FilterMode::Linear;
+    cmd.filter = skin.filter;
     (cmd.uv_min, cmd.uv_max) = frame_uv(frame, skin.texture_width, skin.texture_height);
     cmd.uv_rotated = frame.rotated;
     cmd
 }
 
-fn frame_draw_size(frame: &SparrowFrame) -> glam::Vec2 {
+fn frame_draw_size(frame: &SparrowFrame, scale: f32) -> glam::Vec2 {
     if frame.rotated {
-        glam::vec2(frame.height as f32, frame.width as f32)
+        glam::vec2(frame.height as f32, frame.width as f32) * scale
     } else {
-        glam::vec2(frame.width as f32, frame.height as f32)
+        glam::vec2(frame.width as f32, frame.height as f32) * scale
     }
 }
 
@@ -278,16 +383,17 @@ fn frame_world_pos(
     side: StrumlineSide,
     lane: Lane,
     frame: &SparrowFrame,
-    size: glam::Vec2,
+    scale: f32,
+    offset: glam::Vec2,
 ) -> glam::Vec2 {
     // ref: bdedc0aa:source/funkin/play/notes/Strumline.hx:1107-1131
-    let frame_width = frame.frame_width as f32;
+    let frame_width = frame.frame_width as f32 * scale;
     let group_x = strumline_x(side) + lane_index(lane) as f32 * NOTE_SPACING + STRUMLINE_SIZE * 0.5
         - frame_width * 0.5
-        + COVER_X_ADJUST;
-    let group_y = STRUMLINE_Y_OFFSET + INITIAL_OFFSET + STRUMLINE_SIZE * 0.5 + COVER_Y_ADJUST;
-    let trimmed = glam::vec2(frame.frame_x as f32, frame.frame_y as f32);
-    glam::vec2(group_x, group_y) - trimmed + (frame_draw_size(frame) - size) * 0.5
+        + offset.x;
+    let group_y = STRUMLINE_Y_OFFSET + INITIAL_OFFSET + STRUMLINE_SIZE * 0.5 + offset.y;
+    let trimmed = glam::vec2(frame.frame_x as f32, frame.frame_y as f32) * scale;
+    glam::vec2(group_x, group_y) - trimmed
 }
 
 fn strumline_x(side: StrumlineSide) -> f32 {
@@ -304,16 +410,14 @@ fn animation_frame_index(
     frame_count: usize,
     looped: bool,
 ) -> Option<usize> {
-    if frame_count == 0 || cursor < started_at {
-        return None;
-    }
-    let samples_per_frame = f64::from(sample_rate.max(1)) / f64::from(COVER_FPS);
-    let frame = ((cursor.0 - started_at.0) as f64 / samples_per_frame).floor() as usize;
-    if looped {
-        Some(frame % frame_count)
-    } else {
-        (frame < frame_count).then_some(frame)
-    }
+    visible_flixel_frame_index(
+        cursor,
+        sample_rate,
+        started_at,
+        COVER_FPS,
+        frame_count,
+        looped,
+    )
 }
 
 fn frame_uv(
@@ -402,6 +506,9 @@ mod tests {
             texture_id: AssetId::new(7),
             texture_width: 599,
             texture_height: 591,
+            scale: 1.0,
+            offset: glam::vec2(COVER_X_ADJUST, COVER_Y_ADJUST),
+            filter: FilterMode::Linear,
             start_frames: cloned_animation_frames(&atlas, "holdCoverStartBlue").unwrap(),
             hold_frames: cloned_animation_frames(&atlas, "holdCoverBlue").unwrap(),
             end_frames: cloned_animation_frames(&atlas, "holdCoverEndBlue").unwrap(),
@@ -435,6 +542,9 @@ mod tests {
             texture_id: AssetId::new(7),
             texture_width: 599,
             texture_height: 591,
+            scale: 1.0,
+            offset: glam::vec2(COVER_X_ADJUST, COVER_Y_ADJUST),
+            filter: FilterMode::Linear,
             start_frames: cloned_animation_frames(&atlas, &format!("holdCoverStart{color_name}"))
                 .unwrap(),
             hold_frames: cloned_animation_frames(&atlas, &format!("holdCover{color_name}"))
@@ -522,5 +632,37 @@ mod tests {
         assert_eq!(commands.len(), 4);
         assert!(commands.iter().all(|cmd| cmd.layer == RenderLayer::Notes));
         assert!(commands.iter().all(|cmd| cmd.z == 9));
+    }
+
+    #[test]
+    fn pixel_source_hold_covers_use_shared_lane_and_nearest_filter() {
+        let resolver = source_resolver();
+        let atlas = source_atlas(&resolver, "images/pixelNoteHoldCover.xml");
+        let lane = LaneHoldCoverSkin {
+            texture_id: AssetId::new(7),
+            texture_width: 192,
+            texture_height: 64,
+            scale: 6.0,
+            offset: glam::vec2(29.0, -4.0),
+            filter: FilterMode::Nearest,
+            start_frames: cloned_animation_frames(&atlas, "loop0000").unwrap(),
+            hold_frames: cloned_animation_frames(&atlas, "loop").unwrap(),
+            end_frames: cloned_animation_frames(&atlas, "explode").unwrap(),
+        };
+
+        assert_eq!(lane.start_frames.len(), 1);
+        assert_eq!(lane.hold_frames.len(), 8);
+        assert_eq!(lane.end_frames.len(), 8);
+
+        let mut covers = HoldCovers::default();
+        let skin = HoldCoverSkin {
+            lanes: std::array::from_fn(|_| lane.clone()),
+        };
+        covers.start(Lane::Left, Samples(0), Samples(48_000));
+
+        let commands = covers.commands(&skin, Samples(0), 48_000);
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].filter, FilterMode::Nearest);
+        assert_eq!(commands[0].size, glam::vec2(36.0 * 6.0, 32.0 * 6.0));
     }
 }

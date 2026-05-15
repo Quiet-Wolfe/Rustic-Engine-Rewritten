@@ -3,6 +3,7 @@
 //! ref: bdedc0aa:source/funkin/ui/title/TitleState.hx:72-121,380-397
 // LINT-ALLOW: long-file title screen Sparrow and Animate wiring stay together.
 
+use crate::animation_timing::flixel_frame_index;
 use crate::asset_roots::baked_assets_root;
 use anyhow::{Context, Result};
 use rustic_asset::{
@@ -364,16 +365,7 @@ fn animation_frame_index(
     frame_count: usize,
     looped: bool,
 ) -> usize {
-    if frame_count <= 1 {
-        return 0;
-    }
-    let elapsed = cursor.0.saturating_sub(started_at.0).max(0) as u128;
-    let index = (elapsed * u128::from(fps) / u128::from(sample_rate.max(1))) as usize;
-    if looped {
-        index % frame_count
-    } else {
-        index.min(frame_count - 1)
-    }
+    flixel_frame_index(cursor, sample_rate, started_at, fps, frame_count, looped)
 }
 
 fn title_beat(cursor: Samples, sample_rate: u32) -> i64 {
@@ -436,11 +428,23 @@ mod tests {
             0
         );
         assert_eq!(
+            animation_frame_index(Samples(2_000), 48_000, Samples(0), 24, 3, false),
+            0
+        );
+        assert_eq!(
+            animation_frame_index(Samples(2_001), 48_000, Samples(0), 24, 3, false),
+            1
+        );
+        assert_eq!(
             animation_frame_index(Samples(96_000), 48_000, Samples(0), 24, 3, false),
             2
         );
         assert_eq!(
             animation_frame_index(Samples(96_000), 48_000, Samples(0), 24, 3, true),
+            2
+        );
+        assert_eq!(
+            animation_frame_index(Samples(96_001), 48_000, Samples(0), 24, 3, true),
             0
         );
     }

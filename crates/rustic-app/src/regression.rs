@@ -185,9 +185,12 @@ pub fn scenario_stage_prop_commands(
     scene: &LoadedScene,
     scenario: RegressionScenario,
 ) -> Vec<DrawCommand> {
-    scene
-        .stage_props
-        .commands(scenario.cursor(), REGRESSION_SAMPLE_RATE)
+    scene.stage_props.commands(
+        scenario.cursor(),
+        REGRESSION_SAMPLE_RATE,
+        scene.bpm,
+        Some(scenario.song),
+    )
 }
 
 pub fn scenario_cameras(

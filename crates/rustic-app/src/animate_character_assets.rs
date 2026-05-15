@@ -1,12 +1,14 @@
 //! Adobe Animate character asset loading and draw command expansion.
 // LINT-ALLOW: long-file Animate atlas loading plus runtime draw expansion.
 
+use crate::animation_timing::flixel_frame_index;
 use crate::character_anim::CharacterPoseRequest;
+use crate::sparrow_character_assets::{load_sparrow_character_sprite, SparrowCharacterSprite};
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_animate_animation, load_animate_spritemap, load_png, AnimateAnimation, AnimateAtlas,
-    AnimateDrawPart, AssetPath, CharacterAnimation, CharacterDefinition, OverlayResolver,
-    StageCharacterSlot,
+    AnimateDrawPart, AssetPath, CharacterAnimation, CharacterDefinition, CharacterRenderType,
+    OverlayResolver, StageCharacterSlot,
 };
 use rustic_core::ids::AssetId;
 use rustic_core::render::RenderLayer;
@@ -27,6 +29,8 @@ pub(crate) struct AnimateCharacterSprite {
     filter: FilterMode,
     assets: Vec<LoadedAnimateAtlas>,
     poses: Vec<AnimateCharacterPose>,
+    mixed_sparrow: Option<SparrowCharacterSprite>,
+    lip_sync: Option<SserafimLipSyncOverlay>,
     initial_pose: usize,
 }
 
@@ -37,15 +41,31 @@ impl AnimateCharacterSprite {
         cursor: Samples,
         sample_rate: u32,
     ) -> Vec<DrawCommand> {
+        if let Some(sprite) = &self.mixed_sparrow {
+            if sprite.has_pose(request.name) {
+                return vec![sprite.command(request, cursor, sample_rate)];
+            }
+        }
         let (pose, started_at) = self.resolve_pose_for_request(request, cursor, sample_rate);
         let asset = &self.assets[pose.asset_index];
         let parts = pose
             .parts(asset, cursor, sample_rate, started_at)
             .unwrap_or_default();
-        parts
+        let mut commands: Vec<_> = parts
             .iter()
             .filter_map(|part| self.command_for_part(pose, asset, part))
-            .collect()
+            .collect();
+        if let Some(lip_sync) = &self.lip_sync {
+            commands.extend(lip_sync.commands(
+                self,
+                pose,
+                &parts,
+                request.name,
+                cursor,
+                sample_rate,
+            ));
+        }
+        commands
     }
 
     pub(crate) fn animation_duration(
@@ -53,15 +73,20 @@ impl AnimateCharacterSprite {
         animation_name: &str,
         sample_rate: u32,
     ) -> Option<Samples> {
-        let pose = self
+        if let Some(pose) = self
             .poses
             .iter()
-            .find(|pose| pose.animation.name == animation_name)?;
-        Some(animation_duration_samples(
-            sample_rate,
-            pose.animation.fps,
-            pose.frame_count,
-        ))
+            .find(|pose| pose.animation.name == animation_name)
+        {
+            return Some(animation_duration_samples(
+                sample_rate,
+                pose.animation.fps,
+                pose.frame_count,
+            ));
+        }
+        self.mixed_sparrow
+            .as_ref()
+            .and_then(|sprite| sprite.animation_duration(animation_name, sample_rate))
     }
 
     pub(crate) fn camera_focus_point(&self) -> glam::Vec2 {
@@ -150,6 +175,44 @@ impl AnimateCharacterSprite {
         }
         Some(cmd)
     }
+
+    fn command_for_overlay_part(
+        &self,
+        pose: &AnimateCharacterPose,
+        overlay: &LoadedAnimateAtlas,
+        part: &AnimateDrawPart,
+        matrix: [f32; 6],
+        alpha: f32,
+    ) -> Option<DrawCommand> {
+        let frame = overlay.atlas.frame(&part.frame_name)?;
+        let mut cmd = DrawCommand::sprite(
+            overlay.texture_id,
+            glam::vec2(
+                self.slot.position.x + self.character.position.x
+                    - self.origin.x
+                    - pose.animation.offset.x,
+                self.slot.position.y + self.character.position.y
+                    - self.origin.y
+                    - pose.animation.offset.y,
+            ),
+            glam::vec2(frame.size.x, frame.size.y),
+        );
+        cmd.pivot = glam::Vec2::ZERO;
+        cmd.layer = RenderLayer::Characters;
+        cmd.z = self.z + 1;
+        cmd.filter = self.filter;
+        cmd.affine = scaled_affine(matrix, self.character.scale);
+        cmd.uv_min = frame.uv_min;
+        cmd.uv_max = frame.uv_max;
+        cmd.uv_rotated = frame.rotated;
+        cmd.color = glam::Vec4::from_array(part.color);
+        cmd.color.w *= alpha;
+        cmd.color_offset = glam::Vec4::from_array(part.color_offset);
+        if effective_flip_x(&self.character, self.is_player) {
+            std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
+        }
+        Some(cmd)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -164,9 +227,16 @@ pub(crate) fn load_animate_character_sprite(
     textures: &mut HashMap<AssetId, Texture>,
 ) -> Result<AnimateCharacterSprite> {
     let filter = filter_for_antialiasing(character.antialiasing);
+    let mixed_sparrow = load_mixed_sparrow_character_sprite(
+        device, queue, resolver, &character, slot, is_player, z, textures,
+    )?;
     let mut assets = Vec::new();
     let mut asset_indices = HashMap::new();
-    for animation in &character.animations {
+    for animation in character
+        .animations
+        .iter()
+        .filter(|animation| uses_animate_render_type(&character, animation))
+    {
         let asset_path = animation_asset_path(&character, animation)?;
         let key = asset_path.as_str().to_owned();
         if asset_indices.contains_key(&key) {
@@ -178,6 +248,7 @@ pub(crate) fn load_animate_character_sprite(
     }
 
     let poses = animate_character_poses(&character, &assets, &asset_indices)?;
+    let lip_sync = load_sserafim_lip_sync(device, queue, resolver, &character, filter, textures)?;
     let initial_animation = initial_animation(&character)?;
     let initial_pose = poses
         .iter()
@@ -196,8 +267,40 @@ pub(crate) fn load_animate_character_sprite(
         filter,
         assets,
         poses,
+        mixed_sparrow,
+        lip_sync,
         initial_pose,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn load_mixed_sparrow_character_sprite(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    character: &CharacterDefinition,
+    slot: StageCharacterSlot,
+    is_player: bool,
+    z: i32,
+    textures: &mut HashMap<AssetId, Texture>,
+) -> Result<Option<SparrowCharacterSprite>> {
+    let animations = character
+        .animations
+        .iter()
+        .filter(|animation| uses_sparrow_render_type(animation))
+        .cloned()
+        .collect::<Vec<_>>();
+    let Some(first) = animations.first() else {
+        return Ok(None);
+    };
+    let mut mixed = character.clone();
+    mixed.render_type = CharacterRenderType::Sparrow;
+    mixed.asset_path = first.asset_path.clone();
+    mixed.initial_animation = Some(first.name.clone());
+    mixed.animations = animations;
+    Ok(Some(load_sparrow_character_sprite(
+        device, queue, resolver, mixed, slot, is_player, z, textures,
+    )?))
 }
 
 fn load_animate_atlas(
@@ -230,12 +333,148 @@ fn load_animate_atlas(
     })
 }
 
+fn load_sserafim_lip_sync(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    character: &CharacterDefinition,
+    filter: FilterMode,
+    textures: &mut HashMap<AssetId, Texture>,
+) -> Result<Option<SserafimLipSyncOverlay>> {
+    let Some(spec) = sserafim_lip_sync_spec(character) else {
+        return Ok(None);
+    };
+    let asset_path = AssetPath::new(spec.asset_path)?;
+    let asset = load_animate_atlas(device, queue, resolver, &asset_path, filter, textures)?;
+    Ok(Some(SserafimLipSyncOverlay {
+        asset,
+        mouth_keyword: spec.mouth_keyword,
+        offset: spec.offset,
+        angle_degrees: spec.angle_degrees,
+        alpha: spec.alpha,
+    }))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SserafimLipSyncSpec {
+    asset_path: &'static str,
+    mouth_keyword: &'static str,
+    offset: glam::Vec2,
+    angle_degrees: f32,
+    alpha: f32,
+}
+
+fn sserafim_lip_sync_spec(character: &CharacterDefinition) -> Option<SserafimLipSyncSpec> {
+    let path = character.asset_path.as_ref()?.as_str();
+    let spec = if path.ends_with("sserafim/yunjin") {
+        (
+            "sserafim/sserafim-lipsync-yunjin",
+            "mouth yunjin",
+            glam::vec2(8.0, 6.0),
+            23.0,
+            1.0,
+        )
+    } else if path.ends_with("sserafim/sakura") {
+        (
+            "sserafim/sserafim-lipsync",
+            "mouth edit",
+            glam::vec2(7.0, 2.0),
+            -14.0,
+            1.0,
+        )
+    } else if path.ends_with("sserafim/chaewon") {
+        (
+            "sserafim/sserafim-lipsync",
+            "mouth default",
+            glam::vec2(41.0, 3.0),
+            -166.0,
+            0.5,
+        )
+    } else if path.ends_with("sserafim/eunchae") {
+        (
+            "sserafim/sserafim-lipsync",
+            "mouth default",
+            glam::vec2(43.0, 6.0),
+            -168.0,
+            1.0,
+        )
+    } else if path.ends_with("sserafim/kazuha") {
+        (
+            "sserafim/sserafim-lipsync",
+            "mouth default",
+            glam::vec2(5.0, 4.0),
+            -13.0,
+            1.0,
+        )
+    } else {
+        return None;
+    };
+    Some(SserafimLipSyncSpec {
+        asset_path: spec.0,
+        mouth_keyword: spec.1,
+        offset: spec.2,
+        angle_degrees: spec.3,
+        alpha: spec.4,
+    })
+}
+
 #[derive(Debug, Clone)]
 struct LoadedAnimateAtlas {
     texture_id: AssetId,
     flat_labels: Option<FlatLabelAtlas>,
     animation: AnimateAnimation,
     atlas: AnimateAtlas,
+}
+
+#[derive(Debug, Clone)]
+struct SserafimLipSyncOverlay {
+    asset: LoadedAnimateAtlas,
+    mouth_keyword: &'static str,
+    offset: glam::Vec2,
+    angle_degrees: f32,
+    alpha: f32,
+}
+
+impl SserafimLipSyncOverlay {
+    fn commands(
+        &self,
+        owner: &AnimateCharacterSprite,
+        pose: &AnimateCharacterPose,
+        parts: &[AnimateDrawPart],
+        request_name: &str,
+        cursor: Samples,
+        sample_rate: u32,
+    ) -> Vec<DrawCommand> {
+        if !request_name.starts_with("sing") {
+            return Vec::new();
+        }
+        let Some(mouth) = parts.iter().find(|part| {
+            part.symbol_stack
+                .iter()
+                .any(|symbol| symbol == self.mouth_keyword)
+        }) else {
+            return Vec::new();
+        };
+        let frame_index = lip_sync_frame_index(cursor, sample_rate);
+        let lip_parts = self
+            .asset
+            .animation
+            .flatten_symbol_frame(&self.asset.animation.symbol_name, frame_index)
+            .unwrap_or_default();
+        lip_parts
+            .iter()
+            .filter_map(|part| {
+                let matrix = compose_affine(
+                    compose_affine(
+                        mouth.matrix,
+                        lip_sync_offset(self.offset, self.angle_degrees),
+                    ),
+                    part.matrix,
+                );
+                owner.command_for_overlay_part(pose, &self.asset, part, matrix, self.alpha)
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -369,6 +608,7 @@ fn animate_character_poses(
     character
         .animations
         .iter()
+        .filter(|animation| uses_animate_render_type(character, animation))
         .map(|animation| {
             let asset_path = animation_asset_path(character, animation)?;
             let asset_index = *asset_indices
@@ -505,6 +745,23 @@ fn animate_pose_source(animation: &CharacterAnimation) -> AnimatePoseSource {
     }
 }
 
+fn uses_animate_render_type(
+    character: &CharacterDefinition,
+    animation: &CharacterAnimation,
+) -> bool {
+    matches!(
+        animation.render_type.unwrap_or(character.render_type),
+        CharacterRenderType::AnimateAtlas | CharacterRenderType::MultiAnimateAtlas
+    )
+}
+
+fn uses_sparrow_render_type(animation: &CharacterAnimation) -> bool {
+    matches!(
+        animation.render_type,
+        Some(CharacterRenderType::Sparrow | CharacterRenderType::MultiSparrow)
+    )
+}
+
 fn animation_asset_path(
     character: &CharacterDefinition,
     animation: &CharacterAnimation,
@@ -524,17 +781,7 @@ fn animation_frame_index(
     frame_count: usize,
     looped: bool,
 ) -> usize {
-    if frame_count <= 1 {
-        return 0;
-    }
-    let elapsed = cursor.0.saturating_sub(started_at.0).max(0) as f64;
-    let samples_per_frame = f64::from(sample_rate.max(1)) / f64::from(fps.max(1));
-    let frame = (elapsed / samples_per_frame).floor() as usize;
-    if looped {
-        frame % frame_count
-    } else {
-        frame.min(frame_count - 1)
-    }
+    flixel_frame_index(cursor, sample_rate, started_at, fps, frame_count, looped)
 }
 
 fn animation_duration_samples(sample_rate: u32, fps: u16, frame_count: usize) -> Samples {
@@ -568,6 +815,28 @@ fn animate_asset_file(asset_path: &AssetPath, file_name: &str) -> Result<AssetPa
     let raw = asset_path.as_str();
     let stripped = raw.split_once(':').map(|(_, path)| path).unwrap_or(raw);
     Ok(AssetPath::new(format!("images/{stripped}/{file_name}"))?)
+}
+
+fn lip_sync_frame_index(cursor: Samples, sample_rate: u32) -> u32 {
+    let seconds = cursor.0.max(0) as f32 / sample_rate.max(1) as f32;
+    (seconds * 24.0).floor().max(1.0) as u32 - 1
+}
+
+fn lip_sync_offset(offset: glam::Vec2, angle_degrees: f32) -> [f32; 6] {
+    let radians = angle_degrees.to_radians();
+    let (sin, cos) = radians.sin_cos();
+    [cos, sin, -sin, cos, offset.x, offset.y]
+}
+
+fn compose_affine(parent: [f32; 6], child: [f32; 6]) -> [f32; 6] {
+    [
+        parent[0] * child[0] + parent[2] * child[1],
+        parent[1] * child[0] + parent[3] * child[1],
+        parent[0] * child[2] + parent[2] * child[3],
+        parent[1] * child[2] + parent[3] * child[3],
+        parent[0] * child[4] + parent[2] * child[5] + parent[4],
+        parent[1] * child[4] + parent[3] * child[5] + parent[5],
+    ]
 }
 
 fn scaled_affine(matrix: [f32; 6], scale: f32) -> [f32; 6] {
@@ -607,194 +876,5 @@ fn asset_id_for_path(path: &AssetPath) -> AssetId {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-    use crate::asset_roots::baked_assets_root;
-    use rustic_asset::load_character;
-
-    fn character_with_hold() -> CharacterDefinition {
-        CharacterDefinition::parse(
-            br#"{
-                "id": "dad",
-                "assetPath": "shared:characters/dad",
-                "animations": [
-                    { "name": "singUP", "prefix": "Up", "frameRate": 24 },
-                    { "name": "singUP-hold", "prefix": "Up", "frameRate": 24,
-                      "looped": true, "frameIndices": [3, 4, 5] }
-                ]
-            }"#,
-        )
-        .unwrap()
-    }
-
-    fn pose(animation: CharacterAnimation, frame_count: usize) -> AnimateCharacterPose {
-        AnimateCharacterPose {
-            animation,
-            asset_index: 0,
-            source: AnimatePoseSource::FrameLabel,
-            frame_count,
-        }
-    }
-
-    fn baked_resolver() -> OverlayResolver {
-        OverlayResolver::new().with_baked_root(baked_assets_root())
-    }
-
-    fn test_animate_atlas(
-        resolver: &OverlayResolver,
-        asset_path: &AssetPath,
-    ) -> LoadedAnimateAtlas {
-        let animation_path = animate_asset_file(asset_path, "Animation.json").unwrap();
-        let spritemap_path = animate_asset_file(asset_path, "spritemap1.json").unwrap();
-        let animation = load_animate_animation(resolver, &animation_path).unwrap();
-        let atlas = load_animate_spritemap(resolver, &spritemap_path).unwrap();
-        LoadedAnimateAtlas {
-            texture_id: AssetId::new(1),
-            flat_labels: FlatLabelAtlas::new(&animation, &atlas),
-            animation,
-            atlas,
-        }
-    }
-
-    #[test]
-    fn finished_animate_pose_switches_to_matching_hold_animation() {
-        let character = character_with_hold();
-        let sprite = AnimateCharacterSprite {
-            poses: vec![
-                pose(character.animations[0].clone(), 2),
-                pose(character.animations[1].clone(), 3),
-            ],
-            character,
-            slot: StageCharacterSlot::default(),
-            origin: glam::Vec2::ZERO,
-            visual_height: 0.0,
-            is_player: false,
-            z: 0,
-            filter: FilterMode::Nearest,
-            assets: Vec::new(),
-            initial_pose: 0,
-        };
-        let request = CharacterPoseRequest {
-            name: "singUP",
-            started_at: Samples(100),
-        };
-
-        let (before, before_started) =
-            sprite.resolve_pose_for_request(request, Samples(4_099), 48_000);
-        assert_eq!(before.animation.name, "singUP");
-        assert_eq!(before_started, Samples(100));
-
-        let (after, after_started) =
-            sprite.resolve_pose_for_request(request, Samples(4_100), 48_000);
-        assert_eq!(after.animation.name, "singUP-hold");
-        assert_eq!(after_started, Samples(4_100));
-    }
-
-    #[test]
-    fn flat_label_indices_are_relative_to_the_label_prefix() {
-        let animation = AnimateAnimation::parse(
-            br#"{
-                "AN": {
-                    "N": "Test",
-                    "SN": "Root",
-                    "TL": {
-                        "L": [
-                            { "LN": "labels", "FR": [
-                                { "N": "Idle", "I": 0, "DU": 3, "E": [] },
-                                { "N": "Up", "I": 3, "DU": 3, "E": [] }
-                            ] },
-                            { "LN": "art", "FR": [
-                                { "I": 0, "DU": 6, "E": [] }
-                            ] }
-                        ]
-                    }
-                }
-            }"#,
-        )
-        .unwrap();
-        let atlas = AnimateAtlas::parse_spritemap(
-            br#"{
-                "ATLAS": {
-                    "SPRITES": [
-                        { "SPRITE": { "name": "idle0", "x": 0, "y": 0, "w": 10, "h": 10 } },
-                        { "SPRITE": { "name": "idle1", "x": 10, "y": 0, "w": 10, "h": 10 } },
-                        { "SPRITE": { "name": "idle2", "x": 20, "y": 0, "w": 10, "h": 10 } },
-                        { "SPRITE": { "name": "up0", "x": 30, "y": 0, "w": 10, "h": 10 } },
-                        { "SPRITE": { "name": "up1", "x": 40, "y": 0, "w": 10, "h": 10 } },
-                        { "SPRITE": { "name": "up2", "x": 50, "y": 0, "w": 10, "h": 10 } }
-                    ],
-                    "meta": { "size": { "w": 60, "h": 10 } }
-                }
-            }"#,
-        )
-        .unwrap();
-        let flat = FlatLabelAtlas::new(&animation, &atlas).unwrap();
-        let character = CharacterDefinition::parse(
-            br#"{
-                "id": "test",
-                "assetPath": "shared:characters/test",
-                "animations": [
-                    { "name": "singUP-hold", "prefix": "Up", "frameIndices": [1] }
-                ]
-            }"#,
-        )
-        .unwrap();
-
-        let parts = flat.parts(&animation, &character.animations[0], 1).unwrap();
-        assert_eq!(parts[0].frame_name, "up1");
-    }
-
-    #[test]
-    fn gf_dance_left_uses_animate_symbols_instead_of_flat_spritemap_slices() {
-        let resolver = baked_resolver();
-        let character = load_character(
-            &resolver,
-            &AssetPath::new("data/characters/gf.json").unwrap(),
-        )
-        .unwrap();
-        let asset_path = animation_asset_path(&character, &character.animations[0]).unwrap();
-        let loaded = test_animate_atlas(&resolver, &asset_path);
-        assert!(loaded.flat_labels.is_none());
-        let mut asset_indices = HashMap::new();
-        asset_indices.insert(asset_path.as_str().to_owned(), 0);
-        let poses =
-            animate_character_poses(&character, std::slice::from_ref(&loaded), &asset_indices)
-                .unwrap();
-        let dance_left = poses
-            .iter()
-            .find(|pose| pose.animation.name == "danceLeft")
-            .unwrap();
-        let parts = dance_left
-            .parts(&loaded, Samples(0), SAMPLE_RATE, Samples(0))
-            .unwrap();
-        let frame_names = parts
-            .iter()
-            .map(|part| part.frame_name.as_str())
-            .collect::<Vec<_>>();
-
-        assert!(frame_names.len() > 4);
-        assert!(frame_names.contains(&"16"));
-        assert!(!frame_names
-            .iter()
-            .any(|name| ["36", "37", "38"].contains(name)));
-    }
-
-    #[test]
-    fn animate_origin_uses_bottom_center_of_flattened_bounds() {
-        let asset = test_animate_atlas(
-            &baked_resolver(),
-            &AssetPath::new("shared:characters/dad").unwrap(),
-        );
-        let character = character_with_hold();
-        let mut asset_indices = HashMap::new();
-        asset_indices.insert("shared:characters/dad".to_owned(), 0);
-        let poses =
-            animate_character_poses(&character, std::slice::from_ref(&asset), &asset_indices)
-                .unwrap();
-        let (origin, visual_height) = animate_character_origin(&poses[0], &[asset], 1.0).unwrap();
-        assert!(origin.x.is_finite());
-        assert!(origin.y > 0.0);
-        assert!(visual_height > 0.0);
-    }
-}
+#[path = "animate_character_assets_tests.rs"]
+mod tests;

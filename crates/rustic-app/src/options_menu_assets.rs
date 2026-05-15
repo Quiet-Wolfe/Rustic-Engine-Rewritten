@@ -1,12 +1,11 @@
 //! Options-menu shell based on Funkin' v0.8.5 `OptionsState`.
 //!
-//! This first pass wires the main options codex pages so the main-menu
-//! Options entry is playable instead of a no-op. Preference persistence and
-//! full controls editing can attach to these pages later.
+//! This wires the main options codex pages and stateful desktop preference rows.
 //!
 //! ref: bdedc0aa:source/funkin/ui/options/OptionsState.hx:46-101,150-332
 
 use crate::asset_roots::baked_assets_root;
+use crate::options_preferences::{OptionsPreferences, PREFERENCE_ITEM_COUNT};
 use anyhow::{Context, Result};
 use rustic_asset::{load_png, AssetPath, OverlayResolver};
 use rustic_core::ids::{AssetId, CameraId};
@@ -44,16 +43,38 @@ impl OptionsMenuAssets {
     }
 
     pub fn text_commands(&self, page: OptionsMenuPage, selected_index: usize) -> TextCommandList {
+        self.text_commands_with_preferences(page, selected_index, OptionsPreferences::default())
+    }
+
+    pub(crate) fn text_commands_with_preferences(
+        &self,
+        page: OptionsMenuPage,
+        selected_index: usize,
+        preferences: OptionsPreferences,
+    ) -> TextCommandList {
         let mut commands = TextCommandList::new();
         push_title(&mut commands, page.title());
-        for (index, item) in page.items().iter().enumerate() {
-            push_item(&mut commands, item, index, selected_index);
+        let item_count = self.item_count(page);
+        for index in 0..item_count {
+            let Some(item) = item_label(page, index, preferences) else {
+                continue;
+            };
+            push_item(
+                &mut commands,
+                item.as_str(),
+                index,
+                selected_index,
+                item_count,
+            );
         }
         commands
     }
 
     pub fn item_count(&self, page: OptionsMenuPage) -> usize {
-        page.items().len()
+        match page {
+            OptionsMenuPage::Preferences => PREFERENCE_ITEM_COUNT,
+            _ => page.items().len(),
+        }
     }
 
     pub fn action_for_root(&self, index: usize) -> Option<OptionsMenuAction> {
@@ -112,7 +133,7 @@ impl OptionsMenuPage {
     fn items(self) -> &'static [&'static str] {
         match self {
             Self::Root => ROOT_ITEMS.as_slice(),
-            Self::Preferences => PREFERENCE_ITEMS.as_slice(),
+            Self::Preferences => &[],
             Self::Controls => CONTROL_ITEMS.as_slice(),
             Self::SaveData => SAVE_DATA_ITEMS.as_slice(),
         }
@@ -126,13 +147,6 @@ const ROOT_ACTIONS: [OptionsMenuAction; 4] = [
     OptionsMenuAction::Page(OptionsMenuPage::SaveData),
     OptionsMenuAction::Exit,
 ];
-const PREFERENCE_ITEMS: [&str; 5] = [
-    "DOWN SCROLL        OFF",
-    "FLASHING LIGHTS    ON",
-    "CAMERA ZOOM        ON",
-    "AUTO PAUSE         ON",
-    "BACK",
-];
 const CONTROL_ITEMS: [&str; 5] = [
     "LEFT        A / LEFT",
     "DOWN        S / DOWN",
@@ -141,6 +155,17 @@ const CONTROL_ITEMS: [&str; 5] = [
     "BACK",
 ];
 const SAVE_DATA_ITEMS: [&str; 2] = ["CLEAR SAVE DATA", "BACK"];
+
+fn item_label(
+    page: OptionsMenuPage,
+    index: usize,
+    preferences: OptionsPreferences,
+) -> Option<String> {
+    match page {
+        OptionsMenuPage::Preferences => preferences.label_for(index),
+        _ => page.items().get(index).map(|item| (*item).to_string()),
+    }
+}
 
 fn load_background(
     device: &wgpu::Device,
@@ -173,12 +198,32 @@ fn push_title(commands: &mut TextCommandList, title: &str) {
     commands.push(cmd);
 }
 
-fn push_item(commands: &mut TextCommandList, label: &str, index: usize, selected_index: usize) {
+fn push_item(
+    commands: &mut TextCommandList,
+    label: &str,
+    index: usize,
+    selected_index: usize,
+    item_count: usize,
+) {
     let selected = index == selected_index;
+    let dense = item_count > 7;
+    let y = if dense {
+        150.0 + index as f32 * 48.0
+    } else {
+        190.0 + index as f32 * 76.0
+    };
     let mut cmd = TextCommand::new(
         format!("{}{}", if selected { "> " } else { "  " }, label),
-        glam::vec2(420.0, 190.0 + index as f32 * 76.0),
-        if selected { 42.0 } else { 34.0 },
+        glam::vec2(380.0, y),
+        if selected && dense {
+            34.0
+        } else if selected {
+            42.0
+        } else if dense {
+            30.0
+        } else {
+            34.0
+        },
     );
     cmd.color = if selected {
         glam::vec4(1.0, 0.86, 0.24, 1.0)
@@ -218,6 +263,36 @@ mod tests {
             Some(OptionsMenuAction::Page(OptionsMenuPage::Preferences))
         );
         assert_eq!(assets.action_for_root(3), Some(OptionsMenuAction::Exit));
+    }
+
+    #[test]
+    fn preferences_include_desktop_og_toggle_rows() {
+        let assets = OptionsMenuAssets {
+            background: OptionsBackground {
+                texture_id: AssetId::new(1),
+                size: glam::vec2(1280.0, 720.0),
+            },
+            textures: HashMap::new(),
+        };
+        let preferences = OptionsPreferences::default();
+
+        assert_eq!(assets.item_count(OptionsMenuPage::Preferences), 11);
+        assert_eq!(
+            item_label(OptionsMenuPage::Preferences, 0, preferences).as_deref(),
+            Some("DOWNSCROLL             OFF")
+        );
+        assert_eq!(
+            item_label(OptionsMenuPage::Preferences, 1, preferences).as_deref(),
+            Some("STRUMLINE BACKGROUND   0%")
+        );
+        assert_eq!(
+            item_label(OptionsMenuPage::Preferences, 7, preferences).as_deref(),
+            Some("VSYNC                  ON")
+        );
+        assert_eq!(
+            item_label(OptionsMenuPage::Preferences, 10, preferences).as_deref(),
+            Some("BACK")
+        );
     }
 
     #[test]

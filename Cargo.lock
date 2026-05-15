@@ -2039,6 +2039,7 @@ dependencies = [
  "rustic-game",
  "rustic-render",
  "serde",
+ "serde_json",
  "tempfile",
  "toml",
  "tracing",

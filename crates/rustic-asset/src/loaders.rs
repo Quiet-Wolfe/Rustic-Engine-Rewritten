@@ -435,7 +435,34 @@ mod tests {
         let songs = load_text_list(&resolver, &ap("data/freeplaySonglist.txt")).unwrap();
         assert_eq!(
             songs.items,
-            vec!["Tutorial", "Bopeebo", "Fresh", "DadBattle"]
+            vec![
+                "Tutorial",
+                "Bopeebo",
+                "Fresh",
+                "DadBattle",
+                "Spookeez",
+                "South",
+                "Monster",
+                "Pico",
+                "Philly Nice",
+                "Blammed",
+                "Satin Panties",
+                "High",
+                "M.I.L.F",
+                "Cocoa",
+                "Eggnog",
+                "Winter Horrorland",
+                "Senpai",
+                "Roses",
+                "Thorns",
+                "Ugh",
+                "Guns",
+                "Stress",
+                "Darnell",
+                "Lit Up",
+                "2hot",
+                "Blazin'",
+            ]
         );
 
         let font = load_bitmap_font(&resolver, &ap("fonts/vcr-bmp.fnt")).unwrap();

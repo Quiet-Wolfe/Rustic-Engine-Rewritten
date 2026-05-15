@@ -1,5 +1,6 @@
 use super::App;
 use crate::game_over::{GameOverRestart, GameOverState};
+use crate::game_over_audio::GameOverAudioStyle;
 use crate::pause_menu::PAUSE_OVERLAY_TEXTURE_ID;
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
 use rustic_audio::Stem;
@@ -33,6 +34,7 @@ impl App {
         if self.game_over.is_some() {
             return;
         }
+        self.death_counter = self.death_counter.saturating_add(1);
         self.game_over_restart = None;
         let sample_rate = play_sample_rate(&self.mixer);
         let loop_after = self
@@ -60,7 +62,8 @@ impl App {
             tracing::warn!(target: "rustic.audio", "pause game over audio: {e:#}");
         }
         if self.audio_output.is_some() {
-            self.game_over_audio.play_loss_sfx_or_warn(&self.mixer);
+            self.game_over_audio
+                .play_loss_sfx_or_warn(&self.mixer, self.game_over_audio_style());
         }
         self.game_over = Some(GameOverState::new(cursor, loop_after));
     }
@@ -106,13 +109,14 @@ impl App {
         self.game_over_restart = None;
         self.game_over.take();
         self.game_over_audio.stop(&self.mixer);
-        self.restart_loaded_song_after_game_over();
+        self.restart_loaded_song_from_start();
         true
     }
 
-    fn restart_loaded_song_after_game_over(&mut self) {
+    pub(super) fn restart_loaded_song_from_start(&mut self) {
         // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:386-415
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:1044-1069
+        // ref: bdedc0aa:source/funkin/play/PauseSubState.hx:1009-1013
         let Some(play_state) = self.play_state.as_mut() else {
             self.load_selected_song();
             return;
@@ -136,6 +140,13 @@ impl App {
             tracing::warn!(target: "rustic.audio", "reset game over retry stems: {e:#}");
             self.load_selected_stems();
         }
+    }
+
+    fn game_over_audio_style(&self) -> GameOverAudioStyle {
+        self.characters
+            .as_ref()
+            .map(|characters| GameOverAudioStyle::for_player_icon_id(characters.player_icon_id()))
+            .unwrap_or(GameOverAudioStyle::Boyfriend)
     }
 }
 

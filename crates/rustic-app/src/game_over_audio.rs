@@ -9,14 +9,45 @@ use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem, VoiceId};
 use std::sync::{Arc, OnceLock};
 
 const LOSS_SOUND_PATH: &str = "sounds/gameplay/gameover/fnf_loss_sfx.ogg";
+const LOSS_SOUND_PICO_NENE_PATH: &str = "sounds/gameplay/gameover/fnf_loss_sfx-pico-and-nene.ogg";
 const START_MUSIC_PATH: &str = "music/gameplay/gameover/gameOverStart.ogg";
 const LOOP_MUSIC_PATH: &str = "music/gameplay/gameover/gameOver.ogg";
 const CONFIRM_MUSIC_PATH: &str = "music/gameplay/gameover/gameOverEnd.ogg";
 
 static LOSS_SOUND_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static LOSS_SOUND_PICO_NENE_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static START_MUSIC_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LOOP_MUSIC_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static CONFIRM_MUSIC_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameOverAudioStyle {
+    Boyfriend,
+    PicoAndNene,
+}
+
+impl GameOverAudioStyle {
+    pub(crate) fn for_player_icon_id(icon_id: &str) -> Self {
+        match icon_id {
+            "pico" => Self::PicoAndNene,
+            _ => Self::Boyfriend,
+        }
+    }
+
+    fn loss_sound_path(self) -> &'static str {
+        match self {
+            Self::Boyfriend => LOSS_SOUND_PATH,
+            Self::PicoAndNene => LOSS_SOUND_PICO_NENE_PATH,
+        }
+    }
+
+    fn loss_sound_cache(self) -> &'static OnceLock<Option<Arc<[u8]>>> {
+        match self {
+            Self::Boyfriend => &LOSS_SOUND_BYTES,
+            Self::PicoAndNene => &LOSS_SOUND_PICO_NENE_BYTES,
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct GameOverAudio {
@@ -27,8 +58,8 @@ pub struct GameOverAudio {
 }
 
 impl GameOverAudio {
-    pub fn play_loss_sfx_or_warn(&mut self, mixer: &SharedMixer) {
-        if let Err(e) = self.play_loss_sfx(mixer) {
+    pub fn play_loss_sfx_or_warn(&mut self, mixer: &SharedMixer, style: GameOverAudioStyle) {
+        if let Err(e) = self.play_loss_sfx(mixer, style) {
             tracing::warn!(target: "rustic.audio", "play game over loss sound: {e:#}");
         }
     }
@@ -71,8 +102,12 @@ impl GameOverAudio {
         }
     }
 
-    fn play_loss_sfx(&mut self, mixer: &SharedMixer) -> Result<()> {
-        let Some(bytes) = cached_bytes(&LOSS_SOUND_BYTES, LOSS_SOUND_PATH, "loss sound") else {
+    fn play_loss_sfx(&mut self, mixer: &SharedMixer, style: GameOverAudioStyle) -> Result<()> {
+        let Some(bytes) = cached_bytes(
+            style.loss_sound_cache(),
+            style.loss_sound_path(),
+            "loss sound",
+        ) else {
             return Ok(());
         };
         let source =
@@ -181,6 +216,10 @@ mod tests {
     fn game_over_audio_paths_match_og_assets() {
         assert_eq!(LOSS_SOUND_PATH, "sounds/gameplay/gameover/fnf_loss_sfx.ogg");
         assert_eq!(
+            LOSS_SOUND_PICO_NENE_PATH,
+            "sounds/gameplay/gameover/fnf_loss_sfx-pico-and-nene.ogg"
+        );
+        assert_eq!(
             START_MUSIC_PATH,
             "music/gameplay/gameover/gameOverStart.ogg"
         );
@@ -188,6 +227,22 @@ mod tests {
         assert_eq!(
             CONFIRM_MUSIC_PATH,
             "music/gameplay/gameover/gameOverEnd.ogg"
+        );
+    }
+
+    #[test]
+    fn pico_player_icon_uses_pico_and_nene_loss_sound() {
+        assert_eq!(
+            GameOverAudioStyle::for_player_icon_id("pico"),
+            GameOverAudioStyle::PicoAndNene
+        );
+        assert_eq!(
+            GameOverAudioStyle::for_player_icon_id("bf"),
+            GameOverAudioStyle::Boyfriend
+        );
+        assert_eq!(
+            GameOverAudioStyle::PicoAndNene.loss_sound_path(),
+            LOSS_SOUND_PICO_NENE_PATH
         );
     }
 }

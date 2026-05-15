@@ -1,5 +1,6 @@
 //! Funkin' v0.8.5 note, receptor, and hold-trail rendering.
 // LINT-ALLOW: long-file note, receptor, hold-trail rendering, and tests stay together.
+use crate::animation_timing::flixel_frame_index;
 use crate::lane_state::ReceptorState;
 use anyhow::{Context, Result};
 use rustic_asset::{
@@ -28,6 +29,9 @@ const LANES: [Lane; 4] = [Lane::Left, Lane::Down, Lane::Up, Lane::Right];
 
 #[derive(Debug, Clone)]
 pub struct NoteSkin {
+    scale: f32,
+    filter: FilterMode,
+    strumline_offset: glam::Vec2,
     tap_texture_id: AssetId,
     tap_texture_width: u32,
     tap_texture_height: u32,
@@ -52,22 +56,24 @@ pub struct NoteSkin {
 impl NoteSkin {
     pub fn command_for_view(&self, view: &NoteView) -> DrawCommand {
         let (frame, texture_id, texture_width, texture_height) = self.frame_for_view(view);
-        let size = frame_draw_size(frame) * NOTE_ASSET_SCALE;
-        let source_size = frame_source_size(frame) * NOTE_ASSET_SCALE;
-        let trimmed = frame_trim_offset(frame) * NOTE_ASSET_SCALE;
+        let size = frame_draw_size(frame) * self.scale;
+        let source_size = frame_source_size(frame) * self.scale;
+        let trimmed = frame_trim_offset(frame) * self.scale;
         let x = if view.is_sustain {
-            view.x + STRUMLINE_SIZE * 0.5 - source_size.x * 0.5 - trimmed.x
+            view.x + self.strumline_offset.x + STRUMLINE_SIZE * 0.5
+                - source_size.x * 0.5
+                - trimmed.x
         } else {
-            note_sprite_x(view.x, source_size.x) - trimmed.x
+            note_sprite_x(view.x + self.strumline_offset.x, source_size.x) - trimmed.x
         };
-        let y = view.y - trimmed.y;
+        let y = view.y + self.strumline_offset.y - trimmed.y;
 
         let mut cmd = DrawCommand::sprite(texture_id, glam::vec2(x, y), size);
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
         cmd.layer = RenderLayer::Notes;
         cmd.z = if view.is_sustain { 0 } else { 1 };
-        cmd.filter = FilterMode::Linear;
+        cmd.filter = self.filter;
         (cmd.uv_min, cmd.uv_max) = frame_uv(frame, texture_width, texture_height);
         cmd.uv_rotated = frame.rotated;
         if view.is_sustain {
@@ -79,8 +85,8 @@ impl NoteSkin {
     pub fn hold_trail_commands(&self, view: &HoldTrailView) -> Vec<DrawCommand> {
         // ref: bdedc0aa:source/funkin/play/notes/SustainTrail.hx:290-393
         let segment_width = self.hold_trail_texture_width as f32 / HOLD_TRAIL_SEGMENTS;
-        let scaled_width = segment_width * NOTE_ASSET_SCALE;
-        let scaled_texture_height = self.hold_trail_texture_height as f32 * NOTE_ASSET_SCALE;
+        let scaled_width = segment_width * self.scale;
+        let scaled_texture_height = self.hold_trail_texture_height as f32 * self.scale;
         let bottom_height = scaled_texture_height * HOLD_TRAIL_END_OFFSET;
         let part_height = view.height - bottom_height;
         let tail_height = part_height.max(0.0);
@@ -94,14 +100,14 @@ impl NoteSkin {
             ((bottom_height - view.height) / scaled_texture_height)
                 .clamp(0.0, HOLD_TRAIL_BOTTOM_CLIP)
         };
-        let x = view.x + STRUMLINE_SIZE * 0.5 - scaled_width * 0.5;
+        let x = view.x + self.strumline_offset.x + STRUMLINE_SIZE * 0.5 - scaled_width * 0.5;
         let lane_u = lane_index(view.lane) as f32 * 0.25;
         let u_width = 1.0 / HOLD_TRAIL_SEGMENTS;
         let mut commands = Vec::new();
 
         if tail_height > 0.1 {
             let mut cmd = self.hold_trail_rect(
-                glam::vec2(x, view.y),
+                glam::vec2(x, view.y + self.strumline_offset.y),
                 glam::vec2(scaled_width, tail_height),
                 glam::vec2(lane_u, -part_height / scaled_texture_height),
                 glam::vec2(lane_u + u_width, 0.0),
@@ -113,7 +119,7 @@ impl NoteSkin {
 
         if cap_height > 0.1 {
             let mut cmd = self.hold_trail_rect(
-                glam::vec2(x, view.y + tail_height),
+                glam::vec2(x, view.y + self.strumline_offset.y + tail_height),
                 glam::vec2(scaled_width, cap_height),
                 glam::vec2(lane_u + u_width, cap_uv_top),
                 glam::vec2(lane_u + u_width * 2.0, HOLD_TRAIL_BOTTOM_CLIP),
@@ -136,7 +142,7 @@ impl NoteSkin {
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
         cmd.layer = RenderLayer::Notes;
-        cmd.filter = FilterMode::Linear;
+        cmd.filter = self.filter;
         cmd.uv_min = uv_min;
         cmd.uv_max = uv_max;
         cmd
@@ -175,11 +181,32 @@ impl NoteSkin {
     where
         F: Fn(u8, Lane) -> ReceptorState,
     {
+        self.receptor_commands_with_layout(cursor, sample_rate, true, 0.0, lane_state)
+    }
+
+    pub fn receptor_commands_with_layout<F>(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        show_opponent: bool,
+        player_x_offset: f32,
+        lane_state: F,
+    ) -> Vec<DrawCommand>
+    where
+        F: Fn(u8, Lane) -> ReceptorState,
+    {
         let mut commands = Vec::with_capacity(8);
         for player in 0..=1 {
+            if player == 0 && !show_opponent {
+                continue;
+            }
             for lane in LANES {
                 let state = lane_state(player, lane);
-                commands.push(self.receptor_command(player, lane, state, cursor, sample_rate));
+                let mut command = self.receptor_command(player, lane, state, cursor, sample_rate);
+                if player == 1 {
+                    command.world_pos.x += player_x_offset;
+                }
+                commands.push(command);
             }
         }
         commands
@@ -194,16 +221,16 @@ impl NoteSkin {
         sample_rate: u32,
     ) -> DrawCommand {
         let frame = self.receptor_frame(lane, state, cursor, sample_rate);
-        let size = frame_draw_size(frame) * NOTE_ASSET_SCALE;
+        let size = frame_draw_size(frame) * self.scale;
         let mut cmd = DrawCommand::sprite(
             self.strumline_texture_id,
-            receptor_sprite_pos(player, lane, frame),
+            receptor_sprite_pos(player, lane, frame, self.scale, self.strumline_offset),
             size,
         );
         cmd.camera = CameraId(1);
         cmd.pivot = glam::Vec2::ZERO;
         cmd.layer = RenderLayer::Notes;
-        cmd.filter = FilterMode::Linear;
+        cmd.filter = self.filter;
         (cmd.uv_min, cmd.uv_max) = frame_uv(
             frame,
             self.strumline_texture_width,
@@ -281,6 +308,28 @@ pub fn load_note_skin(
     resolver: &OverlayResolver,
     textures: &mut HashMap<AssetId, Texture>,
 ) -> Result<NoteSkin> {
+    load_note_skin_for_style(device, queue, resolver, textures, "funkin")
+}
+
+pub fn load_note_skin_for_style(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+    note_style: &str,
+) -> Result<NoteSkin> {
+    match note_style {
+        "pixel" => load_pixel_note_skin(device, queue, resolver, textures),
+        _ => load_funkin_note_skin(device, queue, resolver, textures),
+    }
+}
+
+fn load_funkin_note_skin(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+) -> Result<NoteSkin> {
     let tap = load_sparrow_texture(
         device,
         queue,
@@ -315,6 +364,9 @@ pub fn load_note_skin(
     )?;
 
     Ok(NoteSkin {
+        scale: NOTE_ASSET_SCALE,
+        filter: FilterMode::Linear,
+        strumline_offset: glam::Vec2::ZERO,
         tap_texture_id: tap.texture_id,
         tap_texture_width: tap.texture_width,
         tap_texture_height: tap.texture_height,
@@ -372,6 +424,80 @@ pub fn load_note_skin(
     })
 }
 
+fn load_pixel_note_skin(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+) -> Result<NoteSkin> {
+    let arrows = load_sparrow_texture(
+        device,
+        queue,
+        resolver,
+        textures,
+        "images/weeb/pixelUI/arrows-pixels.xml",
+        FilterMode::Nearest,
+    )?;
+    let hold = load_png_texture(
+        device,
+        queue,
+        resolver,
+        textures,
+        "images/weeb/pixelUI/arrowEndsNew.png",
+        FilterMode::Nearest,
+    )?;
+
+    Ok(NoteSkin {
+        scale: 6.0,
+        filter: FilterMode::Nearest,
+        strumline_offset: glam::vec2(28.0, 32.0),
+        tap_texture_id: arrows.texture_id,
+        tap_texture_width: arrows.texture_width,
+        tap_texture_height: arrows.texture_height,
+        strumline_texture_id: arrows.texture_id,
+        strumline_texture_width: arrows.texture_width,
+        strumline_texture_height: arrows.texture_height,
+        hold_texture_id: hold.texture_id,
+        hold_texture_width: hold.texture_width,
+        hold_texture_height: hold.texture_height,
+        hold_trail_texture_id: hold.texture_id,
+        hold_trail_texture_width: hold.texture_width,
+        hold_trail_texture_height: hold.texture_height,
+        static_frames: [
+            cloned_first_frame(&arrows.atlas, "staticLeft0")?,
+            cloned_first_frame(&arrows.atlas, "staticDown0")?,
+            cloned_first_frame(&arrows.atlas, "staticUp0")?,
+            cloned_first_frame(&arrows.atlas, "staticRight0")?,
+        ],
+        press_frames: [
+            cloned_animation_frames(&arrows.atlas, "pressedLeft0")?,
+            cloned_animation_frames(&arrows.atlas, "pressedDown0")?,
+            cloned_animation_frames(&arrows.atlas, "pressedUp0")?,
+            cloned_animation_frames(&arrows.atlas, "pressedRight0")?,
+        ],
+        confirm_frames: [
+            cloned_animation_frames(&arrows.atlas, "confirmLeft0")?,
+            cloned_animation_frames(&arrows.atlas, "confirmDown0")?,
+            cloned_animation_frames(&arrows.atlas, "confirmUp0")?,
+            cloned_animation_frames(&arrows.atlas, "confirmRight0")?,
+        ],
+        confirm_hold_frames: [
+            cloned_animation_frames(&arrows.atlas, "confirmLeft0")?,
+            cloned_animation_frames(&arrows.atlas, "confirmDown0")?,
+            cloned_animation_frames(&arrows.atlas, "confirmUp0")?,
+            cloned_animation_frames(&arrows.atlas, "confirmRight0")?,
+        ],
+        tap_frames: [
+            cloned_first_frame(&arrows.atlas, "noteLeft0")?,
+            cloned_first_frame(&arrows.atlas, "noteDown0")?,
+            cloned_first_frame(&arrows.atlas, "noteUp0")?,
+            cloned_first_frame(&arrows.atlas, "noteRight0")?,
+        ],
+        hold_frames: pixel_hold_frames(hold.texture_width, hold.texture_height, false),
+        hold_end_frames: pixel_hold_frames(hold.texture_width, hold.texture_height, true),
+    })
+}
+
 struct LoadedSparrowTexture {
     atlas: SparrowAtlas,
     texture_id: AssetId,
@@ -383,6 +509,20 @@ struct LoadedTexture {
     texture_id: AssetId,
     texture_width: u32,
     texture_height: u32,
+}
+
+fn pixel_hold_frames(texture_width: u32, texture_height: u32, end: bool) -> [SparrowFrame; 4] {
+    let segment_width = texture_width / 8;
+    std::array::from_fn(|lane| {
+        let segment = lane * 2 + usize::from(end);
+        SparrowFrame::untrimmed(
+            format!("pixel hold {} {}", lane, if end { "end" } else { "piece" }),
+            (segment as u32 * segment_width) as i32,
+            0,
+            segment_width,
+            texture_height,
+        )
+    })
 }
 
 fn load_png_texture(
@@ -440,15 +580,24 @@ fn note_sprite_x(slot_x: f32, sprite_width: f32) -> f32 {
     slot_x - (sprite_width - STRUMLINE_SIZE) * 0.5 - NOTE_NUDGE
 }
 
-fn receptor_sprite_pos(player: u8, lane: Lane, frame: &SparrowFrame) -> glam::Vec2 {
+fn receptor_sprite_pos(
+    player: u8,
+    lane: Lane,
+    frame: &SparrowFrame,
+    scale: f32,
+    strumline_offset: glam::Vec2,
+) -> glam::Vec2 {
     // ref: bdedc0aa:source/funkin/play/notes/StrumlineNote.hx:121-127
     // playAnimation() calls centerOffsets()/centerOrigin() only; fixOffsets() with DEFAULT_OFFSET=13
     // (line 178) is dead code in v0.8.5 and must not be applied.
     let center = glam::vec2(
-        strumline_x(player) + lane_index(lane) as f32 * NOTE_SPACING + STRUMLINE_SIZE * 0.5,
-        STRUMLINE_Y_OFFSET + STRUMLINE_SIZE * 0.5,
+        strumline_x(player)
+            + strumline_offset.x
+            + lane_index(lane) as f32 * NOTE_SPACING
+            + STRUMLINE_SIZE * 0.5,
+        STRUMLINE_Y_OFFSET + strumline_offset.y + STRUMLINE_SIZE * 0.5,
     );
-    center - (frame_source_size(frame) * 0.5 + frame_trim_offset(frame)) * NOTE_ASSET_SCALE
+    center - (frame_source_size(frame) * 0.5 + frame_trim_offset(frame)) * scale
 }
 
 fn strumline_x(player: u8) -> f32 {
@@ -522,17 +671,7 @@ fn animation_frame_index(
     frame_count: usize,
     looped: bool,
 ) -> usize {
-    if frame_count <= 1 {
-        return 0;
-    }
-    let elapsed = cursor.0.saturating_sub(started_at.0).max(0) as f64;
-    let samples_per_frame = f64::from(sample_rate.max(1)) / f64::from(fps.max(1));
-    let frame = (elapsed / samples_per_frame).floor() as usize;
-    if looped {
-        frame % frame_count
-    } else {
-        frame.min(frame_count - 1)
-    }
+    flixel_frame_index(cursor, sample_rate, started_at, fps, frame_count, looped)
 }
 
 fn animation_duration_samples(sample_rate: u32, fps: u16, frame_count: usize) -> Samples {

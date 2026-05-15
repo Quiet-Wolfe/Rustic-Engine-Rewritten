@@ -2,140 +2,12 @@ use super::*;
 use crate::preview_song::{PreviewDifficulty, PreviewSong};
 
 #[test]
-fn non_looping_animation_frames_clamp_to_last_frame() {
-    // ref: bdedc0aa:source/funkin/graphics/FunkinAnimationController.hx:28-39
-    assert_eq!(
-        animation_frame_index(Samples(0), 48_000, Samples(0), 24, 3, false),
-        0
-    );
-    assert_eq!(
-        animation_frame_index(Samples(2_000), 48_000, Samples(0), 24, 3, false),
-        1
-    );
-    assert_eq!(
-        animation_frame_index(Samples(96_000), 48_000, Samples(0), 24, 3, false),
-        2
-    );
-}
-
-#[test]
-fn looping_animation_frames_wrap() {
-    // ref: bdedc0aa:source/funkin/graphics/FunkinAnimationController.hx:28-39
-    assert_eq!(
-        animation_frame_index(Samples(6_000), 48_000, Samples(0), 24, 3, true),
-        0
-    );
-    assert_eq!(
-        animation_frame_index(Samples(8_000), 48_000, Samples(0), 24, 3, true),
-        1
-    );
-}
-
-#[test]
-fn animation_frame_index_uses_pose_start_cursor() {
-    assert_eq!(
-        animation_frame_index(Samples(12_000), 48_000, Samples(10_000), 24, 3, false),
-        1
-    );
-}
-
-#[test]
-fn animation_duration_uses_frame_count_and_fps() {
-    assert_eq!(animation_duration_samples(48_000, 24, 12), Samples(24_000));
-    assert_eq!(animation_duration_samples(48_000, 0, 0), Samples(48_000));
-}
-
-#[test]
-fn sparrow_character_position_uses_stage_feet_origin() {
-    let atlas = SparrowAtlas::parse(
-        br#"<TextureAtlas imagePath="test.png">
-          <SubTexture name="idle0000" x="0" y="0" width="80" height="90"
-            frameX="-5" frameY="-7" frameWidth="100" frameHeight="200"/>
-        </TextureAtlas>"#,
-    )
-    .unwrap();
-    let character = CharacterDefinition::parse(
-        br#"{
-          "id": "test",
-          "atlas": "images/test.xml",
-          "offsets": [10, 20],
-          "scale": 2,
-          "animations": [{ "name": "idle", "prefix": "idle", "offsets": [1, 2] }]
-        }"#,
-    )
-    .unwrap();
-    let stage =
-        StageDefinition::parse(br#"{"id":"stage","boyfriend":{"position":{"x":300,"y":400}}}"#)
-            .unwrap();
-
-    let pos = character_frame_pos(
-        &character,
-        &character.animations[0],
-        &atlas.frames[0],
-        stage.boyfriend,
-    );
-
-    assert_eq!(pos, glam::vec2(219.0, 32.0));
-}
-
-#[test]
-fn sparrow_camera_focus_uses_idle_visual_center() {
-    let atlas = SparrowAtlas::parse(
-        br#"<TextureAtlas imagePath="test.png">
-          <SubTexture name="idle0000" x="0" y="0" width="80" height="90"
-            frameX="-5" frameY="-7" frameWidth="100" frameHeight="200"/>
-        </TextureAtlas>"#,
-    )
-    .unwrap();
-    let character = CharacterDefinition::parse(
-        br#"{
-          "id": "test",
-          "atlas": "images/test.xml",
-          "cameraOffsets": [7, -9],
-          "death": { "cameraOffsets": [-73, 42], "cameraZoom": 1.2 },
-          "offsets": [10, 20],
-          "scale": 2,
-          "animations": [{ "name": "idle", "prefix": "idle" }]
-        }"#,
-    )
-    .unwrap();
-    let stage = StageDefinition::parse(
-        br#"{"id":"stage","boyfriend":{
-          "position":{"x":300,"y":400},
-          "cameraOffset":{"x":-100,"y":-100}
-        }}"#,
-    )
-    .unwrap();
-    let animation = character.animations[0].clone();
-    let sprite = SparrowCharacterSprite {
-        texture_id: AssetId::new(1),
-        texture_width: 1,
-        texture_height: 1,
-        character,
-        slot: stage.boyfriend,
-        is_player: false,
-        z: 0,
-        filter: FilterMode::Nearest,
-        poses: vec![CharacterPose {
-            animation,
-            frames: vec![atlas.frames[0].clone()],
-        }],
-        initial_pose: 0,
-    };
-
-    assert_eq!(sprite.camera_focus_point(), glam::vec2(217.0, 111.0));
-
-    let (death_focus, death_zoom) = CharacterSprite::Sparrow(sprite).game_over_camera(1.1);
-    assert_eq!(death_focus, glam::vec2(237.0, 262.0));
-    assert!((death_zoom - 1.32).abs() < 1e-6);
-}
-
-#[test]
 fn preview_play_state_uses_selected_difficulty() {
     let easy = load_preview_play_state_for(
         PreviewSelection {
             song: PreviewSong::BOPEEBO,
             difficulty: PreviewDifficulty::Easy,
+            variation: None,
         },
         48_000,
     )
@@ -144,6 +16,7 @@ fn preview_play_state_uses_selected_difficulty() {
         PreviewSelection {
             song: PreviewSong::BOPEEBO,
             difficulty: PreviewDifficulty::Hard,
+            variation: None,
         },
         48_000,
     )
@@ -158,6 +31,7 @@ fn preview_play_state_uses_erect_variant_files() {
     let erect = load_preview_song_for(PreviewSelection {
         song: PreviewSong::DADBATTLE,
         difficulty: PreviewDifficulty::Erect,
+        variation: None,
     })
     .expect("erect dadbattle chart");
 
@@ -171,6 +45,7 @@ fn preview_song_metadata_preserves_tutorial_gf_opponent() {
     let chart = load_preview_song_for(PreviewSelection {
         song: PreviewSong::TUTORIAL,
         difficulty: PreviewDifficulty::Normal,
+        variation: None,
     })
     .expect("tutorial chart metadata");
 
@@ -179,6 +54,31 @@ fn preview_song_metadata_preserves_tutorial_gf_opponent() {
     assert_eq!(chart.chart.stage, "mainStage");
     assert_eq!(stage_asset_id(&chart.chart.stage), "mainStage");
     assert_eq!(character_id(&chart.chart.girlfriend), None);
+}
+
+#[test]
+fn preview_song_metadata_preserves_pixel_note_style() {
+    let chart = load_preview_song_for(PreviewSelection {
+        song: PreviewSong::SENPAI,
+        difficulty: PreviewDifficulty::Normal,
+        variation: None,
+    })
+    .expect("senpai chart metadata");
+
+    assert_eq!(chart.chart.note_style, "pixel");
+}
+
+#[test]
+fn preview_song_uses_bf_weekend_variation_when_requested() {
+    let chart = load_preview_song_for(
+        PreviewSelection::new(PreviewSong::DARNELL, PreviewDifficulty::Normal)
+            .with_variation(Some(crate::preview_song::VARIATION_BF)),
+    )
+    .expect("darnell bf chart metadata");
+
+    assert_eq!(chart.chart.player1, "bf");
+    assert_eq!(chart.chart.player2, "darnell");
+    assert_eq!(chart.chart.stage, "phillyStreetsErect");
 }
 
 #[test]
@@ -208,4 +108,79 @@ fn baked_main_stage_erect_preserves_animated_crowd_prop() {
             .map(|animation| animation.prefix.as_str()),
         Some("idle0")
     );
+}
+
+#[test]
+fn all_registered_story_song_charts_load_for_available_difficulties() {
+    for song in PreviewSong::ALL
+        .iter()
+        .chain(PreviewSong::FREEPLAY_EXTRA.iter())
+        .copied()
+    {
+        for difficulty in song.available_difficulties() {
+            let selection = PreviewSelection::new(song, *difficulty);
+            load_preview_song_for(selection).unwrap_or_else(|error| {
+                panic!(
+                    "load {} {} chart: {error:#}",
+                    song.folder,
+                    difficulty.as_str()
+                )
+            });
+        }
+    }
+}
+
+#[test]
+fn all_imported_story_stages_parse() {
+    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    for stage_id in [
+        "mainStage",
+        "mainStageErect",
+        "spookyMansion",
+        "spookyMansionErect",
+        "phillyTrain",
+        "phillyTrainErect",
+        "phillyStreets",
+        "phillyStreetsErect",
+        "limoRide",
+        "limoRideErect",
+        "mallXmas",
+        "mallXmasErect",
+        "mallEvil",
+        "school",
+        "schoolErect",
+        "schoolEvil",
+        "schoolEvilErect",
+        "tankmanBattlefield",
+        "tankmanBattlefieldErect",
+        "phillyBlazin",
+        "sserafim",
+    ] {
+        let path = AssetPath::new(format!("data/stages/{stage_id}.json")).unwrap();
+        load_stage(&resolver, &path)
+            .unwrap_or_else(|error| panic!("load stage {stage_id}: {error:#}"));
+    }
+}
+
+#[test]
+fn all_registered_story_scenes_load_available_assets() {
+    let render_state =
+        pollster::block_on(rustic_render::RenderState::headless()).expect("headless render state");
+    for song in PreviewSong::ALL
+        .iter()
+        .chain(PreviewSong::FREEPLAY_EXTRA.iter())
+        .copied()
+    {
+        for difficulty in song.available_difficulties() {
+            let selection = PreviewSelection::new(song, *difficulty);
+            load_preview_scene_for(&render_state.device, &render_state.queue, selection)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "load scene {} {}: {error:#}",
+                        song.folder,
+                        difficulty.as_str()
+                    )
+                });
+        }
+    }
 }

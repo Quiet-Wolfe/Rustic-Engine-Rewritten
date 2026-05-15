@@ -16,6 +16,7 @@ pub enum InputAction {
     UiDown,
     UiLeft,
     UiRight,
+    UiSelect,
     Confirm,
     Back,
     Pause,

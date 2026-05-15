@@ -1,13 +1,3 @@
-//! Freeplay-menu asset wiring from Funkin' v0.8.5.
-//!
-//! Phase 1 covers the backing card, capsule list with selected/unselected
-//! animations, difficulty selector arrows + label, and the FREEPLAY/OST text.
-//! The DJ atlas, album roll, score, letter sort, rank animations, and sticker
-//! transition come in later phases.
-//!
-//! ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:331-694
-//! ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:91-752
-//! ref: bdedc0aa:source/funkin/ui/freeplay/backcards/BackingCard.hx:48-242
 // LINT-ALLOW: long-file freeplay asset loading and layout stay co-located for fidelity.
 
 use crate::bitmap_text_assets::BitmapTextSkin;
@@ -30,17 +20,23 @@ use capsule_metadata::CapsuleMetadataAssets;
 
 #[path = "freeplay_loader.rs"]
 mod freeplay_loader;
-pub use freeplay_loader::load_freeplay_assets;
+pub use freeplay_loader::{load_freeplay_assets, load_freeplay_assets_for_style, FreeplayStyle};
 
 #[path = "freeplay_backing_text.rs"]
 mod backing_text;
 
-// ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:607
+#[path = "freeplay_difficulty_stars.rs"]
+mod difficulty_stars;
+use difficulty_stars::FreeplayDifficultyStars;
+#[path = "freeplay_difficulty_cycle.rs"]
+mod difficulty_cycle;
+
+#[path = "freeplay_song_metadata.rs"]
+mod song_metadata;
+use song_metadata::FreeplaySongMetadata;
+
 const CAPSULE_REAL_SCALED: f32 = 0.8;
-// ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:745-753
 const CAPSULE_BASE_X: f32 = 270.0;
-// Selected capsule sits near the vertical middle of the visible song area
-// (between the overhang at y=64 and the orange bar at y=645).
 const CAPSULE_BASE_Y: f32 = 320.0;
 const CAPSULE_SIN_AMPLITUDE: f32 = 60.0;
 const CAPSULE_SPACING_PAD: f32 = 10.0;
@@ -98,10 +94,6 @@ const ORANGE_BAR_COLOR: glam::Vec4 = glam::Vec4::new(
     1.0,
 );
 // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx (songText color)
-// Capsule labels in OG render white on the dark capsule sprite; the cyan
-// shade we had read against the yellow back when there was no capsule fill.
-const CAPSULE_TEXT_COLOR: glam::Vec4 = glam::Vec4::new(1.0, 1.0, 1.0, 1.0);
-
 const WHITE_TEXTURE_ID: AssetId = AssetId::new(0x4672_6565_706c_6179);
 
 // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:725-744 (applyEnter tweens)
@@ -132,18 +124,18 @@ pub struct FreeplayAssets {
     capsule_metadata: CapsuleMetadataAssets,
     highscore_atlas: Option<SparrowAtlasHandle>,
     highscore_frame: Option<SparrowFrame>,
-    album_cover: Option<StaticTexture>,
-    album_title_atlas: Option<SparrowAtlasHandle>,
-    album_title_frame: Option<SparrowFrame>,
+    albums: HashMap<String, FreeplayAlbum>,
+    song_albums: HashMap<u32, FreeplaySongMetadata>,
+    difficulty_stars: Option<FreeplayDifficultyStars>,
     mini_arrow: Option<StaticTexture>,
     seperator: Option<StaticTexture>,
     sparkle_atlas: Option<SparrowAtlasHandle>,
     sparkle_frames: Vec<SparrowFrame>,
     clear_box: Option<StaticTexture>,
     backing_text_skin: Option<BitmapTextSkin>,
-    /// Cursor when the freeplay enter animation started, used to drive the
-    /// pinkBack/cardGlow/overhang/capsule slide-ins.
     enter_started_at: Option<Samples>,
+    pub start_delay_secs: f64,
+    capsule_text_colors: [glam::Vec4; 2],
     pub textures: HashMap<AssetId, Texture>,
 }
 
@@ -165,13 +157,8 @@ impl FreeplayAssets {
 
         let enter_t = self.enter_progress(cursor, sample_rate);
         let back_x = -(1.0 - enter_t) * 1280.0;
-        // Overhang sits at y=-100 when settled; before the tween completes it
-        // hides above the screen by another `height` pixels.
         let overhang_y = -100.0 - (1.0 - enter_t) * 164.0;
 
-        // overhangStuff: solid-black bar behind the FREEPLAY / OFFICIAL OST text
-        // along the top. OG positions it at y=-100 with height 164 (so the visible
-        // strip is ~64px). ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:529-541
         commands.push(solid_command(
             glam::vec2(0.0, overhang_y),
             glam::vec2(1280.0, 164.0),
@@ -179,15 +166,6 @@ impl FreeplayAssets {
             295,
         ));
 
-        // Yellow back: render pinkBack.png so its baked-in alpha mask provides
-        // the smooth diagonal right edge (no stair-stepped strips). The texture
-        // is stretched wider than its native aspect so the trapezoid extends
-        // over the BG cartoon to the right, matching OG's
-        // BitmapUtil.scalePartByWidth(pinkBack, CUTOUT_WIDTH).
-        // Yellow back = solid rectangle behind BF + a right-triangle PNG
-        // extension past his right shoulder. The triangle is wide at the top
-        // and narrows to a single point at the bottom, so the combined shape
-        // is a trapezoid wider at the top, narrowing toward the orange bar.
         let solid_rect_w = helpers::PINKBACK_RECT_WIDTH;
         let triangle_w = helpers::PINKBACK_TRIANGLE_WIDTH;
         let back_h = helpers::PINKBACK_RECT_HEIGHT;
@@ -198,8 +176,6 @@ impl FreeplayAssets {
             -90,
         ));
         if let Some(tri) = self.back_triangle.as_ref() {
-            // Render on the Background layer so the triangle sits BEHIND
-            // the BG cartoon (Daddy Dearest art) rather than covering it.
             commands.push(tri.background_command(
                 glam::vec2(back_x + solid_rect_w, 0.0),
                 PINKBACK_COLOR,
@@ -256,7 +232,7 @@ impl FreeplayAssets {
         self.push_highscore(&mut commands);
         self.push_score(&mut commands);
         self.push_clear_box(&mut commands);
-        self.push_album(&mut commands);
+        self.push_album(&mut commands, selection, cursor, sample_rate);
         self.push_letter_sort(&mut commands);
         self.push_difficulty_dots(&mut commands, selection.difficulty);
         self.push_sparkles(&mut commands, selected_index, cursor, sample_rate);
@@ -430,7 +406,7 @@ impl FreeplayAssets {
 
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:350 (charSelectHint)
         let mut hint = TextCommand::new(
-            "Press [ LOL ] to change characters",
+            "Press [ TAB ] to change characters",
             glam::vec2(420.0, 26.0 + top_y_offset),
             24.0,
         );
@@ -447,7 +423,11 @@ impl FreeplayAssets {
                 pos + capsule_text_offset(),
                 36.0 * CAPSULE_REAL_SCALED,
             );
-            let mut color = CAPSULE_TEXT_COLOR;
+            let mut color = if is_selected {
+                self.capsule_text_colors[0]
+            } else {
+                self.capsule_text_colors[1]
+            };
             color.w = if is_selected { 1.0 } else { 0.6 };
             text.color = color;
             text.z = 320 + index as i32;
@@ -631,33 +611,62 @@ impl FreeplayAssets {
         self.capsule_metadata.push_score(commands);
     }
 
-    fn push_album(&self, commands: &mut RenderCommandList) {
-        if let Some(cover) = self.album_cover.as_ref() {
-            commands.push(cover.command(
-                glam::vec2(ALBUM_ART_X, ALBUM_ART_Y),
-                glam::Vec4::ONE,
-                315,
-                glam::vec2(
-                    cover.width as f32 * ALBUM_ART_SCALE,
-                    cover.height as f32 * ALBUM_ART_SCALE,
-                ),
-            ));
-        }
-        if let (Some(atlas), Some(frame)) = (
-            self.album_title_atlas.as_ref(),
-            self.album_title_frame.as_ref(),
-        ) {
+    fn push_album(
+        &self,
+        commands: &mut RenderCommandList,
+        selection: PreviewSelection,
+        cursor: Samples,
+        sample_rate: u32,
+    ) {
+        let album_id = self.album_id_for_selection(selection);
+        let Some(album) = self
+            .albums
+            .get(album_id)
+            .or_else(|| self.albums.get("volume1"))
+        else {
+            return;
+        };
+        commands.push(album.cover.command(
+            glam::vec2(ALBUM_ART_X, ALBUM_ART_Y),
+            glam::Vec4::ONE,
+            315,
+            glam::vec2(
+                album.cover.width as f32 * ALBUM_ART_SCALE,
+                album.cover.height as f32 * ALBUM_ART_SCALE,
+            ),
+        ));
+        if let Some(frame) = album.title_frame.as_ref() {
             commands.push(sparrow_scaled_command(
-                atlas.texture_id,
-                atlas.width,
-                atlas.height,
+                album.title_atlas.texture_id,
+                album.title_atlas.width,
+                album.title_atlas.height,
                 frame,
-                glam::vec2(ALBUM_TITLE_X, ALBUM_TITLE_Y),
+                glam::vec2(ALBUM_TITLE_X, ALBUM_TITLE_Y) + album.title_offset,
                 glam::Vec2::ONE,
                 glam::Vec4::ONE,
                 316,
             ));
         }
+        if let Some(stars) = self.difficulty_stars.as_ref() {
+            let rating = self.rating_for_selection(selection);
+            for command in stars.commands(rating, cursor, sample_rate) {
+                commands.push(command);
+            }
+        }
+    }
+
+    fn album_id_for_selection(&self, selection: PreviewSelection) -> &str {
+        self.song_albums
+            .get(&selection.song.id)
+            .map(|metadata| metadata.album_id_for_selection(selection))
+            .unwrap_or("volume1")
+    }
+
+    fn rating_for_selection(&self, selection: PreviewSelection) -> u8 {
+        self.song_albums
+            .get(&selection.song.id)
+            .and_then(|metadata| metadata.rating_for_selection(selection))
+            .unwrap_or_else(|| selection.song.difficulty_rating_for(selection.difficulty))
     }
 
     fn push_clear_box(&self, commands: &mut RenderCommandList) {
@@ -772,6 +781,14 @@ impl FreeplayAssets {
 struct FreeplayCapsule {
     kind: CapsuleKind,
     display_name: String,
+}
+
+#[derive(Debug)]
+pub(super) struct FreeplayAlbum {
+    cover: StaticTexture,
+    title_atlas: SparrowAtlasHandle,
+    title_frame: Option<SparrowFrame>,
+    title_offset: glam::Vec2,
 }
 
 #[derive(Debug, Clone, Copy)]

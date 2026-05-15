@@ -14,6 +14,7 @@ const FNF_WIDTH: f32 = 1280.0;
 const FNF_HEIGHT: f32 = 720.0;
 const RATING_SCALE: f32 = 0.65;
 const DIGIT_SCALE: f32 = 0.45;
+const PIXEL_POPUP_SCALE: f32 = 4.2;
 const COMBO_DIGIT_SPACING: f32 = 36.0;
 const POPUP_FADE_SECS: f32 = 0.2;
 
@@ -27,6 +28,8 @@ pub struct PopupSkin {
 struct PopupImage {
     texture_id: AssetId,
     size: glam::Vec2,
+    scale: f32,
+    filter: FilterMode,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -92,7 +95,6 @@ impl ScorePopups {
                 commands.push(sprite_command(
                     rating,
                     popup_position(rating_base(rating), motion, age_secs),
-                    RATING_SCALE,
                     alpha,
                     20,
                 ));
@@ -112,7 +114,6 @@ impl ScorePopups {
                     commands.push(sprite_command(
                         image,
                         popup_position(combo_base(index), motion, age_secs),
-                        DIGIT_SCALE,
                         popup_alpha(age_secs, beat_secs * 2.0),
                         21 + index as i32,
                     ));
@@ -142,24 +143,156 @@ pub fn load_popup_assets(
     resolver: &OverlayResolver,
     textures: &mut HashMap<AssetId, Texture>,
 ) -> Result<PopupSkin> {
+    load_popup_assets_for_style(device, queue, resolver, textures, "funkin")
+}
+
+pub fn load_popup_assets_for_style(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    resolver: &OverlayResolver,
+    textures: &mut HashMap<AssetId, Texture>,
+    style: &str,
+) -> Result<PopupSkin> {
+    let (dir, rating_scale, digit_scale, filter) = if style == "pixel" {
+        (
+            "pixel",
+            PIXEL_POPUP_SCALE,
+            PIXEL_POPUP_SCALE,
+            FilterMode::Nearest,
+        )
+    } else {
+        ("funkin", RATING_SCALE, DIGIT_SCALE, FilterMode::Linear)
+    };
     Ok(PopupSkin {
         ratings: [
-            load_popup_image(device, queue, resolver, textures, "images/sick.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/good.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/bad.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/shit.png")?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/sick.png"),
+                rating_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/good.png"),
+                rating_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/bad.png"),
+                rating_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/shit.png"),
+                rating_scale,
+                filter,
+            )?,
         ],
         digits: [
-            load_popup_image(device, queue, resolver, textures, "images/num0.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/num1.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/num2.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/num3.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/num4.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/num5.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/num6.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/num7.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/num8.png")?,
-            load_popup_image(device, queue, resolver, textures, "images/num9.png")?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num0.png"),
+                digit_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num1.png"),
+                digit_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num2.png"),
+                digit_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num3.png"),
+                digit_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num4.png"),
+                digit_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num5.png"),
+                digit_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num6.png"),
+                digit_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num7.png"),
+                digit_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num8.png"),
+                digit_scale,
+                filter,
+            )?,
+            load_popup_image(
+                device,
+                queue,
+                resolver,
+                textures,
+                &format!("images/ui/popup/{dir}/num9.png"),
+                digit_scale,
+                filter,
+            )?,
         ],
     })
 }
@@ -170,40 +303,32 @@ fn load_popup_image(
     resolver: &OverlayResolver,
     textures: &mut HashMap<AssetId, Texture>,
     path: &str,
+    scale: f32,
+    filter: FilterMode,
 ) -> Result<PopupImage> {
     let path = AssetPath::new(path)?;
     let image = load_png(resolver, &path).with_context(|| format!("load {}", path.as_str()))?;
     let texture_id = asset_id_for_path(&path);
     textures.insert(
         texture_id,
-        Texture::from_png_image(
-            device,
-            queue,
-            &image,
-            FilterMode::Linear,
-            Some(path.as_str()),
-        ),
+        Texture::from_png_image(device, queue, &image, filter, Some(path.as_str())),
     );
     Ok(PopupImage {
         texture_id,
         size: glam::vec2(image.width as f32, image.height as f32),
+        scale,
+        filter,
     })
 }
 
-fn sprite_command(
-    image: PopupImage,
-    world_pos: glam::Vec2,
-    scale: f32,
-    alpha: f32,
-    z: i32,
-) -> DrawCommand {
-    let mut cmd = DrawCommand::sprite(image.texture_id, world_pos, image.size * scale);
+fn sprite_command(image: PopupImage, world_pos: glam::Vec2, alpha: f32, z: i32) -> DrawCommand {
+    let mut cmd = DrawCommand::sprite(image.texture_id, world_pos, image.size * image.scale);
     // ref: bdedc0aa:source/funkin/play/PlayState.hx:2348-2350
     cmd.camera = CameraId(1);
     cmd.pivot = glam::Vec2::ZERO;
     cmd.layer = RenderLayer::Overlay;
     cmd.z = z;
-    cmd.filter = FilterMode::Linear;
+    cmd.filter = image.filter;
     cmd.color.w = alpha;
     cmd
 }
@@ -216,9 +341,10 @@ struct PopupMotion {
 
 fn rating_base(image: PopupImage) -> glam::Vec2 {
     // ref: bdedc0aa:source/funkin/play/components/PopUpStuff.hx:40-43
+    let size = image.size * image.scale;
     glam::vec2(
-        FNF_WIDTH * 0.474 - image.size.x * RATING_SCALE * 0.5,
-        FNF_HEIGHT * 0.45 - 60.0 - image.size.y * RATING_SCALE * 0.5,
+        FNF_WIDTH * 0.474 - size.x * 0.5,
+        FNF_HEIGHT * 0.45 - 60.0 - size.y * 0.5,
     )
 }
 
@@ -314,6 +440,8 @@ mod tests {
         PopupImage {
             texture_id: AssetId::new(id),
             size: glam::vec2(width, height),
+            scale: if id < 10 { RATING_SCALE } else { DIGIT_SCALE },
+            filter: FilterMode::Linear,
         }
     }
 
@@ -461,5 +589,38 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![AssetId::new(10), AssetId::new(10), AssetId::new(10)]
         );
+    }
+
+    #[test]
+    fn pixel_popup_images_scale_and_use_nearest_filter() {
+        let skin = PopupSkin {
+            ratings: [
+                PopupImage {
+                    texture_id: AssetId::new(1),
+                    size: glam::vec2(51.0, 20.0),
+                    scale: PIXEL_POPUP_SCALE,
+                    filter: FilterMode::Nearest,
+                },
+                image(2, 41.0, 17.0),
+                image(3, 28.0, 16.0),
+                image(4, 28.0, 17.0),
+            ],
+            digits: std::array::from_fn(|index| PopupImage {
+                texture_id: AssetId::new(10 + index as u64),
+                size: glam::vec2(9.0, 12.0),
+                scale: PIXEL_POPUP_SCALE,
+                filter: FilterMode::Nearest,
+            }),
+        };
+        let mut popups = ScorePopups::default();
+        popups.push(Judgment::Sick, Some(0), Samples(0));
+
+        let commands = popups.commands(&skin, Samples(0), 48_000, 100.0);
+
+        assert_eq!(commands[0].filter, FilterMode::Nearest);
+        assert_eq!(commands[0].size, glam::vec2(214.2, 84.0));
+        assert_eq!(commands[1].filter, FilterMode::Nearest);
+        assert!((commands[1].size.x - 37.8).abs() < 1e-4);
+        assert!((commands[1].size.y - 50.4).abs() < 1e-4);
     }
 }
