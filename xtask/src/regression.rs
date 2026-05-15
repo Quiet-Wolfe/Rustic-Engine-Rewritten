@@ -216,6 +216,8 @@ fn build_scenario(
             &mut sprite_cmds,
             &mut text_cmds,
             scenario.selection(),
+            false,
+            0,
         );
     }
     Ok((sprite_cmds, text_cmds, textures, cameras))
@@ -352,7 +354,11 @@ fn build_freeplay_scenario(
         rustic_core::time::Samples(0),
         48_000,
     );
-    let text_cmds = freeplay.text_commands(selected_index);
+    let text_cmds = freeplay.text_commands(
+        selected_index,
+        rustic_core::time::Samples(0),
+        REGRESSION_SAMPLE_RATE,
+    );
     Ok((
         sprite_cmds,
         text_cmds,
