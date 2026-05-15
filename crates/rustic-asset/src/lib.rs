@@ -21,13 +21,16 @@ pub use loaders::{
     load_chart, load_level, load_png, load_sparrow, load_stage, load_text_list, load_vslice_chart,
 };
 pub use parsers::character::{CharacterAnimation, CharacterDefinition, CharacterRenderType};
-pub use parsers::chart::{Chart, ChartEvent, ChartEventKind, ChartNote, ChartSection, ParsedSong};
+pub use parsers::chart::{
+    Chart, ChartEvent, ChartEventKind, ChartNote, ChartSection, ParsedSong, SserafimEvent,
+};
 pub use parsers::font::{BitmapFont, BitmapFontPage, BitmapGlyph};
 pub use parsers::level::{LevelDefinition, LevelPropDefinition};
 pub use parsers::png::PngImage;
 pub use parsers::sparrow::{SparrowAtlas, SparrowFrame};
 pub use parsers::stage::{
     stage_id_for_song_name, StageCharacterSlot, StageDefinition, StageObject, StageObjectAnimation,
+    StageObjectRenderType,
 };
 pub use parsers::text_list::TextList;
 pub use parsers::types::AssetVec2;

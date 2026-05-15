@@ -27,6 +27,7 @@ pub struct NoteView {
     pub id: NoteId,
     pub lane: Lane,
     pub opponent: bool,
+    pub kind: Option<crate::note::NoteKind>,
     pub is_sustain: bool,
     pub is_sustain_end: bool,
     pub x: f32,
@@ -99,6 +100,7 @@ impl PlayState {
                 id: note.id,
                 lane: note.lane,
                 opponent: note.opponent,
+                kind: note.kind,
                 is_sustain: note.is_sustain,
                 is_sustain_end: note.is_sustain_end,
                 x: note_x(note.lane, !note.opponent),
@@ -334,6 +336,7 @@ mod tests {
             is_sustain: false,
             is_sustain_end: false,
             opponent,
+            kind: None,
         }
     }
 

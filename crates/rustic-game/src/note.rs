@@ -33,6 +33,144 @@ impl Lane {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum NoteKind {
+    NoAnim,
+    Mom,
+    Ugh,
+    HehPrettyGood,
+    Censor,
+    Weekend1LightCan,
+    Weekend1KneeCan,
+    Weekend1KickCan,
+    Weekend1CockGun,
+    Weekend1FireGun,
+    Weekend1PunchHigh,
+    Weekend1PunchHighDodged,
+    Weekend1PunchHighBlocked,
+    Weekend1PunchHighSpin,
+    Weekend1PunchLow,
+    Weekend1PunchLowDodged,
+    Weekend1PunchLowBlocked,
+    Weekend1PunchLowSpin,
+    Weekend1PicoUppercutPrep,
+    Weekend1PicoUppercut,
+    Weekend1BlockHigh,
+    Weekend1BlockLow,
+    Weekend1BlockSpin,
+    Weekend1DodgeHigh,
+    Weekend1DodgeLow,
+    Weekend1DodgeSpin,
+    Weekend1HitHigh,
+    Weekend1HitLow,
+    Weekend1HitSpin,
+    Weekend1DarnellUppercutPrep,
+    Weekend1DarnellUppercut,
+    Weekend1Idle,
+    Weekend1Fakeout,
+    Weekend1Taunt,
+    Weekend1TauntForce,
+    Weekend1ReverseFakeout,
+    SakuraJoint,
+    SakuraBf1,
+    SakuraBf2,
+    NonScoreable,
+}
+
+impl NoteKind {
+    pub fn from_id(id: &str) -> Option<Self> {
+        Some(match id {
+            "noanim" => Self::NoAnim,
+            "mom" => Self::Mom,
+            "ugh" => Self::Ugh,
+            "hehPrettyGood" => Self::HehPrettyGood,
+            "censor" => Self::Censor,
+            "weekend-1-lightcan" => Self::Weekend1LightCan,
+            "weekend-1-kneecan" => Self::Weekend1KneeCan,
+            "weekend-1-kickcan" => Self::Weekend1KickCan,
+            "weekend-1-cockgun" => Self::Weekend1CockGun,
+            "weekend-1-firegun" => Self::Weekend1FireGun,
+            "weekend-1-punchhigh" => Self::Weekend1PunchHigh,
+            "weekend-1-punchhighdodged" => Self::Weekend1PunchHighDodged,
+            "weekend-1-punchhighblocked" => Self::Weekend1PunchHighBlocked,
+            "weekend-1-punchhighspin" => Self::Weekend1PunchHighSpin,
+            "weekend-1-punchlow" => Self::Weekend1PunchLow,
+            "weekend-1-punchlowdodged" => Self::Weekend1PunchLowDodged,
+            "weekend-1-punchlowblocked" => Self::Weekend1PunchLowBlocked,
+            "weekend-1-punchlowspin" => Self::Weekend1PunchLowSpin,
+            "weekend-1-picouppercutprep" => Self::Weekend1PicoUppercutPrep,
+            "weekend-1-picouppercut" => Self::Weekend1PicoUppercut,
+            "weekend-1-blockhigh" => Self::Weekend1BlockHigh,
+            "weekend-1-blocklow" => Self::Weekend1BlockLow,
+            "weekend-1-blockspin" => Self::Weekend1BlockSpin,
+            "weekend-1-dodgehigh" => Self::Weekend1DodgeHigh,
+            "weekend-1-dodgelow" => Self::Weekend1DodgeLow,
+            "weekend-1-dodgespin" => Self::Weekend1DodgeSpin,
+            "weekend-1-hithigh" => Self::Weekend1HitHigh,
+            "weekend-1-hitlow" => Self::Weekend1HitLow,
+            "weekend-1-hitspin" => Self::Weekend1HitSpin,
+            "weekend-1-darnelluppercutprep" => Self::Weekend1DarnellUppercutPrep,
+            "weekend-1-darnelluppercut" => Self::Weekend1DarnellUppercut,
+            "weekend-1-idle" => Self::Weekend1Idle,
+            "weekend-1-fakeout" => Self::Weekend1Fakeout,
+            "weekend-1-taunt" => Self::Weekend1Taunt,
+            "weekend-1-tauntforce" => Self::Weekend1TauntForce,
+            "weekend-1-reversefakeout" => Self::Weekend1ReverseFakeout,
+            "sakura-joint" => Self::SakuraJoint,
+            "sakura-bf1" => Self::SakuraBf1,
+            "sakura-bf2" => Self::SakuraBf2,
+            "non_scoreable" => Self::NonScoreable,
+            _ => return None,
+        })
+    }
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::NoAnim => "noanim",
+            Self::Mom => "mom",
+            Self::Ugh => "ugh",
+            Self::HehPrettyGood => "hehPrettyGood",
+            Self::Censor => "censor",
+            Self::Weekend1LightCan => "weekend-1-lightcan",
+            Self::Weekend1KneeCan => "weekend-1-kneecan",
+            Self::Weekend1KickCan => "weekend-1-kickcan",
+            Self::Weekend1CockGun => "weekend-1-cockgun",
+            Self::Weekend1FireGun => "weekend-1-firegun",
+            Self::Weekend1PunchHigh => "weekend-1-punchhigh",
+            Self::Weekend1PunchHighDodged => "weekend-1-punchhighdodged",
+            Self::Weekend1PunchHighBlocked => "weekend-1-punchhighblocked",
+            Self::Weekend1PunchHighSpin => "weekend-1-punchhighspin",
+            Self::Weekend1PunchLow => "weekend-1-punchlow",
+            Self::Weekend1PunchLowDodged => "weekend-1-punchlowdodged",
+            Self::Weekend1PunchLowBlocked => "weekend-1-punchlowblocked",
+            Self::Weekend1PunchLowSpin => "weekend-1-punchlowspin",
+            Self::Weekend1PicoUppercutPrep => "weekend-1-picouppercutprep",
+            Self::Weekend1PicoUppercut => "weekend-1-picouppercut",
+            Self::Weekend1BlockHigh => "weekend-1-blockhigh",
+            Self::Weekend1BlockLow => "weekend-1-blocklow",
+            Self::Weekend1BlockSpin => "weekend-1-blockspin",
+            Self::Weekend1DodgeHigh => "weekend-1-dodgehigh",
+            Self::Weekend1DodgeLow => "weekend-1-dodgelow",
+            Self::Weekend1DodgeSpin => "weekend-1-dodgespin",
+            Self::Weekend1HitHigh => "weekend-1-hithigh",
+            Self::Weekend1HitLow => "weekend-1-hitlow",
+            Self::Weekend1HitSpin => "weekend-1-hitspin",
+            Self::Weekend1DarnellUppercutPrep => "weekend-1-darnelluppercutprep",
+            Self::Weekend1DarnellUppercut => "weekend-1-darnelluppercut",
+            Self::Weekend1Idle => "weekend-1-idle",
+            Self::Weekend1Fakeout => "weekend-1-fakeout",
+            Self::Weekend1Taunt => "weekend-1-taunt",
+            Self::Weekend1TauntForce => "weekend-1-tauntforce",
+            Self::Weekend1ReverseFakeout => "weekend-1-reversefakeout",
+            Self::SakuraJoint => "sakura-joint",
+            Self::SakuraBf1 => "sakura-bf1",
+            Self::SakuraBf2 => "sakura-bf2",
+            Self::NonScoreable => "non_scoreable",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Note {
@@ -49,6 +187,10 @@ pub struct Note {
     pub is_sustain_end: bool,
     /// Whose side the note belongs to. `false` = player, `true` = opponent.
     pub opponent: bool,
+    /// Base v-slice note kind behavior used by scripted Week 5/7/Weekend 1
+    /// charts. Unknown mod note kinds are ignored by v1 core gameplay.
+    #[serde(default)]
+    pub kind: Option<NoteKind>,
 }
 
 /// Convert a chart's notes into gameplay `Note`s, materialising sample
@@ -70,6 +212,7 @@ pub fn notes_from_chart<'a>(
             is_sustain: false,
             is_sustain_end: false,
             opponent: !n.is_player,
+            kind: n.kind.as_deref().and_then(NoteKind::from_id),
         })
         .collect();
 
@@ -129,9 +272,31 @@ mod tests {
         assert!(!notes[1].is_sustain);
         assert!(!notes[1].is_sustain_end);
         assert!(notes[1].opponent);
+        assert_eq!(notes[1].kind, None);
 
         // v0.8.5 keeps the hold as head + length; it does not
         // materialize per-step sustain children.
         assert_eq!(notes.iter().filter(|note| note.is_sustain).count(), 0);
+    }
+
+    #[test]
+    fn chart_to_notes_preserves_known_note_kinds() {
+        const CHART: &str = r#"{
+            "scrollSpeed": { "normal": 1.0 },
+            "notes": { "normal": [
+                { "t": 1000.0, "d": 6, "k": "ugh" },
+                { "t": 2000.0, "d": 0, "k": "made-up" }
+            ] }
+        }"#;
+        const METADATA: &str = r#"{
+            "songName": "Ugh",
+            "timeChanges": [{ "bpm": 100 }]
+        }"#;
+        let parsed =
+            ParsedSong::parse_vslice(CHART.as_bytes(), METADATA.as_bytes(), "normal").unwrap();
+        let notes = notes_from_chart(parsed.chart.notes.iter(), 48_000, parsed.chart.bpm);
+
+        assert_eq!(notes[0].kind, Some(NoteKind::Ugh));
+        assert_eq!(notes[1].kind, None);
     }
 }

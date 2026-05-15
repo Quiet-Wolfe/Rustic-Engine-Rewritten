@@ -1,6 +1,6 @@
 //! V-slice chart event parsing.
 
-use super::{ChartEvent, ChartEventKind, VSliceChart, VSliceEvent};
+use super::{ChartEvent, ChartEventKind, SserafimEvent, VSliceChart, VSliceEvent};
 use serde_json::Value;
 
 pub(super) fn parse_vslice_events(chart: &VSliceChart) -> Vec<ChartEvent> {
@@ -62,6 +62,61 @@ fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
             offset: event_float(&event.value, "offset", 0.0),
             intensity: event_float(&event.value, "intensity", 1.0),
         },
+        "SetHealthIcon" => ChartEventKind::SetHealthIcon {
+            target: event
+                .value
+                .get("char")
+                .and_then(value_i64)
+                .and_then(|target| i8::try_from(target).ok())
+                .unwrap_or(0),
+            id: event
+                .value
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("face")
+                .to_string(),
+            scale: event_float(&event.value, "scale", 1.0),
+            flip_x: event_bool(&event.value, "flipX", false),
+            is_pixel: event_bool(&event.value, "isPixel", false),
+            offset_x: event_float(&event.value, "offsetX", 0.0),
+            offset_y: event_float(&event.value, "offsetY", 0.0),
+        },
+        "sserafimShow" => ChartEventKind::Sserafim(SserafimEvent::Show {
+            visible: event_bool_array(&event.value, "visible"),
+        }),
+        "sserafimSing" => ChartEventKind::Sserafim(SserafimEvent::Sing {
+            singing: event_bool_array(&event.value, "singing"),
+        }),
+        "sserafimDark" => ChartEventKind::Sserafim(SserafimEvent::Dark {
+            amount: event_float(&event.value, "amount", 0.0),
+            duration: event_float(&event.value, "duration", 0.0),
+        }),
+        "sserafimLights" => ChartEventKind::Sserafim(SserafimEvent::Lights {
+            amount: event_float(&event.value, "amount", 0.0),
+            duration: event_float(&event.value, "duration", 0.0),
+        }),
+        "sserafimPulseLights" => ChartEventKind::Sserafim(SserafimEvent::PulseLights {
+            enabled: event_bool(&event.value, "enabled", false),
+            colors: event_string_array(&event.value, "colors"),
+            durations: event_float_array(&event.value, "durations"),
+            intensities: event_float_array(&event.value, "intensities"),
+        }),
+        "sserafimCover" => ChartEventKind::Sserafim(SserafimEvent::Cover {
+            visible: event_bool(&event.value, "visible", false),
+        }),
+        "sserafimFlash" => ChartEventKind::Sserafim(SserafimEvent::Flash {
+            duration: event_float(&event.value, "duration", 0.0),
+        }),
+        "sserafimKick" => ChartEventKind::Sserafim(SserafimEvent::Kick {
+            final_kick: event_bool(&event.value, "final", false),
+        }),
+        "sserafimBeautiful" => ChartEventKind::Sserafim(SserafimEvent::Beautiful {
+            beautiful: event_bool(&event.value, "beautiful", false),
+        }),
+        "sserafimGuitarVibration" => ChartEventKind::Sserafim(SserafimEvent::GuitarVibration {
+            duration: event_float(&event.value, "duration", 0.0),
+        }),
+        "sserafimEnd" => ChartEventKind::Sserafim(SserafimEvent::End),
         _ => ChartEventKind::Unknown {
             name: event.name.clone(),
         },
@@ -88,9 +143,19 @@ fn event_float_or_scalar(value: &Value, key: &str, default: f32) -> f32 {
         .unwrap_or_else(|| event_float(value, key, default))
 }
 
+fn event_bool(value: &Value, key: &str, default: bool) -> bool {
+    value.get(key).and_then(value_bool).unwrap_or(default)
+}
+
 fn value_i64(value: &Value) -> Option<i64> {
     value
         .as_i64()
+        .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+}
+
+fn value_bool(value: &Value) -> Option<bool> {
+    value
+        .as_bool()
         .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
 }
 
@@ -98,6 +163,42 @@ fn value_f64(value: &Value) -> Option<f64> {
     value
         .as_f64()
         .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+}
+
+fn event_bool_array(value: &Value, key: &str) -> Vec<bool> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| values.iter().filter_map(value_bool).collect())
+        .unwrap_or_default()
+}
+
+fn event_float_array(value: &Value, key: &str) -> Vec<f32> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(value_f64)
+                .map(|value| value as f32)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn event_string_array(value: &Value, key: &str) -> Vec<String> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn event_ease_name(value: &Value) -> String {

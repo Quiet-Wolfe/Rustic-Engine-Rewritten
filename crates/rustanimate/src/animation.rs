@@ -83,6 +83,7 @@ pub struct AtlasInstance {
 #[non_exhaustive]
 pub struct DrawPart {
     pub frame_name: String,
+    pub symbol_stack: Vec<String>,
     pub matrix: [f32; 6],
     pub color: [f32; 4],
     pub color_offset: [f32; 4],
@@ -166,6 +167,27 @@ impl Animation {
         // flxanimate loads the Animate symbol dictionary into a Map with
         // repeated set() calls, so later duplicate names replace earlier ones.
         self.symbols.iter().rev().find(|symbol| symbol.name == name)
+    }
+
+    pub fn duration(&self) -> u32 {
+        timeline_duration(&self.layers)
+    }
+
+    pub fn flatten_root_frame(&self, frame_index: u32) -> AnimateResult<Vec<DrawPart>> {
+        let frame_index = frame_index.min(self.duration().saturating_sub(1));
+        let mut parts = Vec::new();
+        self.flatten_layers(
+            &self.layers,
+            frame_index,
+            FlattenTransform {
+                matrix: self.stage_matrix,
+                color: self.stage_color,
+                color_offset: self.stage_color_offset,
+            },
+            &mut Vec::new(),
+            &mut parts,
+        )?;
+        Ok(parts)
     }
 
     pub fn flatten_label_frame(
@@ -275,6 +297,7 @@ impl Animation {
             ElementKind::Atlas(instance) => {
                 parts.push(DrawPart {
                     frame_name: instance.frame_name.clone(),
+                    symbol_stack: stack.clone(),
                     matrix,
                     color,
                     color_offset,
@@ -374,7 +397,7 @@ fn timeline_duration(layers: &[TimelineLayer]) -> u32 {
         .flat_map(|layer| layer.frames.iter())
         .map(|frame| frame.index.saturating_add(frame.duration))
         .max()
-        .unwrap_or(0)
+        .unwrap_or(1)
 }
 
 fn active_frame(frames: &[TimelineFrame], frame_index: u32) -> Option<&TimelineFrame> {

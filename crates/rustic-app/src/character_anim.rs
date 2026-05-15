@@ -1,8 +1,9 @@
 //! Runtime character pose state driven by OG note-hit rules.
 // LINT-ALLOW: long-file character pose state plus v0.8.5 timing tests
 
+use crate::note_kind_anim::{NoteKindAction, NoteKindAnimState};
 use rustic_core::time::Samples;
-use rustic_game::{Judgment, Lane};
+use rustic_game::{Judgment, Lane, NoteKind};
 
 // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:389-399,457-473
 const CHART_ANIM_HOLD_STEPS: f64 = 4.0;
@@ -62,6 +63,7 @@ pub struct CharacterAnimState {
     player_until: Samples,
     girlfriend_count_duration_seconds: Option<f64>,
     timings: CharacterAnimTimings,
+    note_kind_anim: NoteKindAnimState,
     last_beat: i64,
     gf_danced: bool,
 }
@@ -82,6 +84,7 @@ impl Default for CharacterAnimState {
             player_until: Samples(0),
             girlfriend_count_duration_seconds: None,
             timings: CharacterAnimTimings::default(),
+            note_kind_anim: NoteKindAnimState::default(),
             last_beat: i64::MIN,
             gf_danced: true,
         }
@@ -203,12 +206,46 @@ impl CharacterAnimState {
             Samples(cursor.0 + hold_samples(sample_rate, bpm, self.timings.opponent_sing_steps));
     }
 
+    pub fn opponent_note_hit_kind(
+        &mut self,
+        lane: Lane,
+        kind: Option<NoteKind>,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+    ) {
+        if let Some(kind) = kind {
+            let action = self.note_kind_anim.opponent_hit(kind, self.opponent_pose);
+            if self.apply_opponent_note_kind_action(action, lane, cursor, sample_rate, bpm) {
+                return;
+            }
+        }
+        self.opponent_note_hit(lane, cursor, sample_rate, bpm);
+    }
+
     pub fn player_note_hit(&mut self, lane: Lane, cursor: Samples, sample_rate: u32, bpm: f64) {
         // ref: bdedc0aa:source/funkin/play/character/BaseCharacter.hx:535-549
         self.player_pose = sing_pose(lane);
         self.player_started = cursor;
         self.player_until =
             Samples(cursor.0 + hold_samples(sample_rate, bpm, self.timings.player_sing_steps));
+    }
+
+    pub fn player_note_hit_kind(
+        &mut self,
+        lane: Lane,
+        kind: Option<NoteKind>,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+    ) {
+        if let Some(kind) = kind {
+            let action = self.note_kind_anim.player_hit(kind, self.player_pose);
+            if self.apply_player_note_kind_action(action, lane, cursor, sample_rate, bpm) {
+                return;
+            }
+        }
+        self.player_note_hit(lane, cursor, sample_rate, bpm);
     }
 
     pub fn player_note_miss(&mut self, lane: Lane, cursor: Samples, sample_rate: u32, bpm: f64) {
@@ -223,6 +260,91 @@ impl CharacterAnimState {
                     self.timings.player_sing_steps * MISS_SING_TIME_MULTIPLIER,
                 ),
         );
+    }
+
+    pub fn player_note_miss_kind(
+        &mut self,
+        lane: Lane,
+        kind: Option<NoteKind>,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+    ) {
+        if let Some(kind) = kind {
+            let action = self.note_kind_anim.player_miss(kind, self.player_pose);
+            if self.apply_player_note_kind_action(action, lane, cursor, sample_rate, bpm) {
+                return;
+            }
+        }
+        self.player_note_miss(lane, cursor, sample_rate, bpm);
+    }
+
+    fn apply_opponent_note_kind_action(
+        &mut self,
+        action: NoteKindAction,
+        lane: Lane,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+    ) -> bool {
+        match action {
+            NoteKindAction::Fallthrough => false,
+            NoteKindAction::Skip => true,
+            NoteKindAction::SingSuffix(suffix) => {
+                self.opponent_pose = sing_pose_with_suffix(lane, suffix);
+                self.opponent_started = cursor;
+                self.opponent_until = Samples(
+                    cursor.0 + hold_samples(sample_rate, bpm, self.timings.opponent_sing_steps),
+                );
+                true
+            }
+            NoteKindAction::MissSuffix(_) => false,
+            NoteKindAction::Pose(pose) => {
+                self.opponent_pose = pose;
+                self.opponent_started = cursor;
+                true
+            }
+        }
+    }
+
+    fn apply_player_note_kind_action(
+        &mut self,
+        action: NoteKindAction,
+        lane: Lane,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+    ) -> bool {
+        match action {
+            NoteKindAction::Fallthrough => false,
+            NoteKindAction::Skip => true,
+            NoteKindAction::SingSuffix(suffix) => {
+                self.player_pose = sing_pose_with_suffix(lane, suffix);
+                self.player_started = cursor;
+                self.player_until = Samples(
+                    cursor.0 + hold_samples(sample_rate, bpm, self.timings.player_sing_steps),
+                );
+                true
+            }
+            NoteKindAction::MissSuffix(suffix) => {
+                self.player_pose = miss_pose_with_suffix(lane, suffix);
+                self.player_started = cursor;
+                self.player_until = Samples(
+                    cursor.0
+                        + hold_samples(
+                            sample_rate,
+                            bpm,
+                            self.timings.player_sing_steps * MISS_SING_TIME_MULTIPLIER,
+                        ),
+                );
+                true
+            }
+            NoteKindAction::Pose(pose) => {
+                self.player_pose = pose;
+                self.player_started = cursor;
+                true
+            }
+        }
     }
 
     pub fn girlfriend_note_hit(&mut self, judgment: Judgment, combo_count: u32, cursor: Samples) {
@@ -335,9 +457,15 @@ fn hold_samples(sample_rate: u32, bpm: f64, steps: f64) -> i64 {
 }
 
 fn beat_index(cursor: Samples, sample_rate: u32, bpm: f64) -> i64 {
-    // ref: bdedc0aa:source/funkin/Conductor.hx:481-486
-    let samples_per_beat = f64::from(sample_rate) * 60.0 / bpm.max(1.0);
-    (cursor.0 as f64 / samples_per_beat).floor() as i64
+    // ref: bdedc0aa:source/funkin/Conductor.hx:469-486
+    let samples_per_step = f64::from(sample_rate.max(1)) * 15.0 / bpm.max(1.0);
+    let step_time = round_decimal(cursor.0 as f64 / samples_per_step, 6);
+    (step_time / 4.0).floor() as i64
+}
+
+fn round_decimal(value: f64, decimals: i32) -> f64 {
+    let scale = 10_f64.powi(decimals.max(0));
+    (value * scale).round() / scale
 }
 
 fn is_chart_special_pose(pose: &str) -> bool {
@@ -384,6 +512,47 @@ fn sing_pose(lane: Lane) -> &'static str {
     }
 }
 
+fn sing_pose_with_suffix(lane: Lane, suffix: &str) -> &'static str {
+    match suffix {
+        "alt" => match lane {
+            Lane::Left => "singLEFT-alt",
+            Lane::Down => "singDOWN-alt",
+            Lane::Up => "singUP-alt",
+            Lane::Right => "singRIGHT-alt",
+            _ => "singRIGHT-alt",
+        },
+        "censor" => match lane {
+            Lane::Left => "singLEFT-censor",
+            Lane::Down => "singDOWN-censor",
+            Lane::Up => "singUP-censor",
+            Lane::Right => "singRIGHT-censor",
+            _ => "singRIGHT-censor",
+        },
+        "joint" => match lane {
+            Lane::Left => "singLEFT-joint",
+            Lane::Down => "singDOWN-joint",
+            Lane::Up => "singUP-joint",
+            Lane::Right => "singRIGHT-joint",
+            _ => "singRIGHT-joint",
+        },
+        "bf1" => match lane {
+            Lane::Left => "singLEFT-bf1",
+            Lane::Down => "singDOWN-bf1",
+            Lane::Up => "singUP-bf1",
+            Lane::Right => "singRIGHT-bf1",
+            _ => "singRIGHT-bf1",
+        },
+        "bf2" => match lane {
+            Lane::Left => "singLEFT-bf2",
+            Lane::Down => "singDOWN-bf2",
+            Lane::Up => "singUP-bf2",
+            Lane::Right => "singRIGHT-bf2",
+            _ => "singRIGHT-bf2",
+        },
+        _ => sing_pose(lane),
+    }
+}
+
 fn miss_pose(lane: Lane) -> &'static str {
     match lane {
         Lane::Left => "singLEFTmiss",
@@ -391,6 +560,26 @@ fn miss_pose(lane: Lane) -> &'static str {
         Lane::Up => "singUPmiss",
         Lane::Right => "singRIGHTmiss",
         _ => "singRIGHTmiss",
+    }
+}
+
+fn miss_pose_with_suffix(lane: Lane, suffix: &str) -> &'static str {
+    match suffix {
+        "joint" => match lane {
+            Lane::Left => "singLEFTmiss-joint",
+            Lane::Down => "singDOWNmiss-joint",
+            Lane::Up => "singUPmiss-joint",
+            Lane::Right => "singRIGHTmiss-joint",
+            _ => "singRIGHTmiss-joint",
+        },
+        "bf2" => match lane {
+            Lane::Left => "singLEFTmiss-bf2",
+            Lane::Down => "singDOWNmiss-bf2",
+            Lane::Up => "singUPmiss-bf2",
+            Lane::Right => "singRIGHTmiss-bf2",
+            _ => "singRIGHTmiss-bf2",
+        },
+        _ => miss_pose(lane),
     }
 }
 
@@ -410,274 +599,5 @@ fn drop_pose(count: u32) -> Option<&'static str> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn count_timing(count: u32, duration_seconds: f64) -> CountAnimationTiming {
-        CountAnimationTiming {
-            count,
-            duration_seconds,
-        }
-    }
-
-    #[test]
-    fn opponent_sings_then_returns_to_idle_after_dad_hold_time() {
-        let mut state = CharacterAnimState::default();
-        state.opponent_note_hit(Lane::Left, Samples(1_000), 48_000, 100.0);
-
-        assert_eq!(state.poses().opponent.name, "singLEFT");
-        assert_eq!(state.poses().opponent.started_at, Samples(1_000));
-        state.update(Samples(58_599), 48_000, 100.0, false);
-        assert_eq!(state.poses().opponent.name, "singLEFT");
-        state.update(Samples(58_600), 48_000, 100.0, false);
-        assert_eq!(state.poses().opponent.name, "idle");
-        assert_eq!(state.poses().opponent.started_at, Samples(58_600));
-    }
-
-    #[test]
-    fn player_hold_keeps_sing_pose_until_sing_time_after_release() {
-        let mut state = CharacterAnimState::default();
-        state.player_note_hit(Lane::Down, Samples(0), 48_000, 100.0);
-
-        state.update(Samples(30_000), 48_000, 100.0, true);
-        assert_eq!(state.poses().player.name, "singDOWN");
-        state.update(Samples(30_000), 48_000, 100.0, false);
-        assert_eq!(state.poses().player.name, "singDOWN");
-        state.update(Samples(57_600), 48_000, 100.0, false);
-        assert_eq!(state.poses().player.name, "idle");
-    }
-
-    #[test]
-    fn character_sing_timing_uses_loaded_vslice_steps() {
-        let mut state = CharacterAnimState::default();
-        state.set_timings(CharacterAnimTimings {
-            player_sing_steps: 5.0,
-            opponent_sing_steps: 6.5,
-            ..CharacterAnimTimings::default()
-        });
-
-        state.player_note_hit(Lane::Down, Samples(0), 48_000, 100.0);
-        state.update(Samples(35_999), 48_000, 100.0, false);
-        assert_eq!(state.poses().player.name, "singDOWN");
-        state.update(Samples(36_000), 48_000, 100.0, false);
-        assert_eq!(state.poses().player.name, "idle");
-
-        state.opponent_note_hit(Lane::Up, Samples(0), 48_000, 100.0);
-        state.update(Samples(46_799), 48_000, 100.0, false);
-        assert_eq!(state.poses().opponent.name, "singUP");
-        state.update(Samples(46_800), 48_000, 100.0, false);
-        assert_eq!(state.poses().opponent.name, "idle");
-    }
-
-    #[test]
-    fn girlfriend_toggles_dance_on_new_beat() {
-        let mut state = CharacterAnimState::default();
-
-        assert_eq!(state.poses().girlfriend.name, "danceLeft");
-        state.update(Samples(0), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceRight");
-        assert_eq!(state.poses().girlfriend.started_at, Samples(0));
-        state.update(Samples(28_800), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceLeft");
-        assert_eq!(state.poses().girlfriend.started_at, Samples(28_800));
-    }
-
-    #[test]
-    fn girlfriend_dances_through_negative_countdown_beats() {
-        let mut state = CharacterAnimState::default();
-
-        state.update(Samples(-144_000), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceRight");
-        state.update(Samples(-115_200), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceLeft");
-        state.update(Samples(-86_400), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceRight");
-        state.update(Samples(-57_600), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceLeft");
-        state.update(Samples(-28_800), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceRight");
-        state.update(Samples(0), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceLeft");
-    }
-
-    #[test]
-    fn player_idle_restarts_on_each_beat_when_not_singing() {
-        let mut state = CharacterAnimState::default();
-
-        state.update(Samples(0), 48_000, 100.0, false);
-        state.update(Samples(28_800), 48_000, 100.0, false);
-
-        assert_eq!(state.poses().player.name, "idle");
-        assert_eq!(state.poses().player.started_at, Samples(28_800));
-    }
-
-    #[test]
-    fn opponent_idle_restarts_on_each_beat_when_not_singing() {
-        let mut state = CharacterAnimState::default();
-
-        state.update(Samples(0), 48_000, 100.0, false);
-        state.update(Samples(28_800), 48_000, 100.0, false);
-
-        assert_eq!(state.poses().opponent.name, "idle");
-        assert_eq!(state.poses().opponent.started_at, Samples(28_800));
-    }
-
-    #[test]
-    fn chart_event_triggers_bf_hey_until_next_beat() {
-        let mut state = CharacterAnimState::default();
-
-        assert!(state.play_chart_animation("bf", "hey", Samples(201_600), true));
-        assert_eq!(state.poses().player.name, "hey");
-        assert_eq!(state.poses().player.started_at, Samples(201_600));
-
-        state.update(Samples(230_400), 48_000, 100.0, false);
-        assert_eq!(state.poses().player.name, "idle");
-        assert_eq!(state.poses().player.started_at, Samples(230_400));
-    }
-
-    #[test]
-    fn chart_event_triggers_known_girlfriend_animation() {
-        let mut state = CharacterAnimState::default();
-
-        assert!(state.play_chart_animation("girlfriend", "cheer", Samples(500), true));
-
-        assert_eq!(state.poses().girlfriend.name, "cheer");
-        assert_eq!(state.poses().girlfriend.started_at, Samples(500));
-    }
-
-    #[test]
-    fn girlfriend_chart_animation_returns_to_dance_after_hold_time() {
-        let mut state = CharacterAnimState::default();
-        state.play_chart_animation("girlfriend", "cheer", Samples(0), true);
-
-        state.update(Samples(28_799), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "cheer");
-        state.update(Samples(28_800), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceRight");
-        assert_eq!(state.poses().girlfriend.started_at, Samples(28_800));
-    }
-
-    #[test]
-    fn girlfriend_plays_combo_animation_only_on_matching_good_hit_count() {
-        let mut state = CharacterAnimState::default();
-        state.set_timings(CharacterAnimTimings {
-            girlfriend_combo_timings: [Some(count_timing(50, 0.5)), None, None, None],
-            ..CharacterAnimTimings::default()
-        });
-
-        state.girlfriend_note_hit(Judgment::Sick, 49, Samples(100));
-        assert_eq!(state.poses().girlfriend.name, "danceLeft");
-
-        state.girlfriend_note_hit(Judgment::Good, 50, Samples(200));
-        assert_eq!(state.poses().girlfriend.name, "combo50");
-        assert_eq!(state.poses().girlfriend.started_at, Samples(200));
-    }
-
-    #[test]
-    fn girlfriend_plays_highest_matching_drop_animation() {
-        let mut state = CharacterAnimState::default();
-        state.set_timings(CharacterAnimTimings {
-            girlfriend_drop_timings: [
-                Some(count_timing(10, 0.1)),
-                Some(count_timing(70, 0.5)),
-                None,
-                None,
-            ],
-            ..CharacterAnimTimings::default()
-        });
-
-        state.girlfriend_note_hit(Judgment::Bad, 69, Samples(100));
-        assert_eq!(state.poses().girlfriend.name, "danceLeft");
-
-        state.girlfriend_combo_drop(70, Samples(200));
-        assert_eq!(state.poses().girlfriend.name, "drop70");
-        assert_eq!(state.poses().girlfriend.started_at, Samples(200));
-    }
-
-    #[test]
-    fn girlfriend_count_animation_returns_to_dance_after_source_duration() {
-        let mut state = CharacterAnimState::default();
-        state.set_timings(CharacterAnimTimings {
-            girlfriend_combo_timings: [Some(count_timing(50, 0.25)), None, None, None],
-            ..CharacterAnimTimings::default()
-        });
-
-        state.girlfriend_note_hit(Judgment::Sick, 50, Samples(1_000));
-        state.update(Samples(12_999), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "combo50");
-        state.update(Samples(13_000), 48_000, 100.0, false);
-        assert_eq!(state.poses().girlfriend.name, "danceRight");
-        assert_eq!(state.poses().girlfriend.started_at, Samples(13_000));
-    }
-
-    #[test]
-    fn opponent_chart_animation_returns_to_idle_after_hold_time() {
-        let mut state = CharacterAnimState::default();
-        state.play_chart_animation("dad", "cheer", Samples(0), true);
-
-        state.update(Samples(28_799), 48_000, 100.0, false);
-        assert_eq!(state.poses().opponent.name, "cheer");
-        state.update(Samples(28_800), 48_000, 100.0, false);
-        assert_eq!(state.poses().opponent.name, "idle");
-        assert_eq!(state.poses().opponent.started_at, Samples(28_800));
-    }
-
-    #[test]
-    fn miss_pose_restarts_from_the_miss_cursor() {
-        let mut state = CharacterAnimState::default();
-        state.player_note_miss(Lane::Right, Samples(1_234), 48_000, 100.0);
-
-        assert_eq!(state.poses().player.name, "singRIGHTmiss");
-        assert_eq!(state.poses().player.started_at, Samples(1_234));
-    }
-
-    #[test]
-    fn miss_pose_returns_to_idle_after_extended_sing_time() {
-        let mut state = CharacterAnimState::default();
-        state.player_note_miss(Lane::Right, Samples(0), 48_000, 100.0);
-
-        state.update(Samples(115_199), 48_000, 100.0, true);
-        assert_eq!(state.poses().player.name, "singRIGHTmiss");
-        state.update(Samples(115_200), 48_000, 100.0, true);
-        assert_eq!(state.poses().player.name, "idle");
-        assert_eq!(state.poses().player.started_at, Samples(115_200));
-    }
-
-    #[test]
-    fn death_poses_restart_from_death_cursors() {
-        let mut state = CharacterAnimState::default();
-        state.player_first_death(Samples(4_800));
-
-        assert_eq!(state.poses().player.name, "firstDeath");
-        assert_eq!(state.poses().player.started_at, Samples(4_800));
-
-        state.player_death_loop(Samples(9_600));
-        assert_eq!(state.poses().player.name, "deathLoop");
-        assert_eq!(state.poses().player.started_at, Samples(9_600));
-
-        state.player_death_confirm(Samples(14_400));
-        assert_eq!(state.poses().player.name, "deathConfirm");
-        assert_eq!(state.poses().player.started_at, Samples(14_400));
-    }
-
-    #[test]
-    fn reset_song_restores_starting_poses_and_keeps_loaded_timings() {
-        let mut state = CharacterAnimState::default();
-        let timings = CharacterAnimTimings {
-            player_sing_steps: 6.1,
-            opponent_sing_steps: 4.2,
-            girlfriend_combo_timings: [Some(count_timing(50, 0.5)), None, None, None],
-            girlfriend_drop_timings: [Some(count_timing(70, 0.5)), None, None, None],
-        };
-        state.set_timings(timings);
-        state.player_note_hit(Lane::Left, Samples(1_000), 48_000, 100.0);
-        state.opponent_note_hit(Lane::Right, Samples(1_000), 48_000, 100.0);
-
-        state.reset_song();
-
-        assert_eq!(state.poses().girlfriend.name, "danceLeft");
-        assert_eq!(state.poses().opponent.name, "idle");
-        assert_eq!(state.poses().player.name, "idle");
-        assert_eq!(state.timings, timings);
-    }
-}
+#[path = "character_anim_tests.rs"]
+mod tests;

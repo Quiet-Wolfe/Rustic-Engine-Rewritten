@@ -84,6 +84,10 @@ impl RenderCommandList {
         self.commands.iter()
     }
 
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut DrawCommand> {
+        self.commands.iter_mut()
+    }
+
     pub fn as_slice(&self) -> &[DrawCommand] {
         &self.commands
     }

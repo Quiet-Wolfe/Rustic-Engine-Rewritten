@@ -11,6 +11,7 @@ use rustic_core::time::Samples;
 pub struct ResolvedOpponentNote {
     pub note_id: rustic_core::ids::NoteId,
     pub lane: Lane,
+    pub kind: Option<crate::note::NoteKind>,
     pub is_sustain: bool,
     pub hold_end_at: Option<Samples>,
 }
@@ -49,6 +50,7 @@ impl PlayState {
                     ResolvedOpponentNote {
                         note_id: note.id,
                         lane: note.lane,
+                        kind: note.kind,
                         is_sustain: note.is_sustain,
                         hold_end_at: (note.sustain_samples > 0)
                             .then_some(Samples(note.hit_at.0 + note.sustain_samples)),
@@ -79,6 +81,7 @@ mod tests {
             is_sustain: false,
             is_sustain_end: false,
             opponent,
+            kind: None,
         }
     }
 
@@ -98,6 +101,7 @@ mod tests {
             vec![ResolvedOpponentNote {
                 note_id: NoteId::new(0),
                 lane: Lane::Left,
+                kind: None,
                 is_sustain: false,
                 hold_end_at: None
             }]
@@ -126,6 +130,7 @@ mod tests {
             vec![ResolvedOpponentNote {
                 note_id: NoteId::new(0),
                 lane: Lane::Left,
+                kind: None,
                 is_sustain: false,
                 hold_end_at: Some(Samples(4_000))
             }]

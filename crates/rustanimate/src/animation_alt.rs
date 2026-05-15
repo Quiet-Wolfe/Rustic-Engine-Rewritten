@@ -61,6 +61,7 @@ impl DrawPart {
     pub fn atlas_frame(frame_name: impl Into<String>, matrix: [f32; 6]) -> Self {
         Self {
             frame_name: frame_name.into(),
+            symbol_stack: Vec::new(),
             matrix,
             color: ID_COLOR,
             color_offset: ZERO_COLOR_OFFSET,

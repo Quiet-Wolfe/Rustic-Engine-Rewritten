@@ -15,7 +15,7 @@ use crate::judgment::{
     hold_drop_score_delta, note_miss_score_delta, score_for_timing, Judgment, JudgmentWindows,
     HEALTH_HOLD_BONUS_PER_SECOND, SCORE_HOLD_BONUS_PER_SECOND,
 };
-use crate::note::Lane;
+use crate::note::{Lane, NoteKind};
 use crate::state::{PlayState, MAX_HEALTH};
 use rustic_core::input::NormalizedInputEvent;
 use rustic_core::time::Samples;
@@ -25,6 +25,7 @@ use rustic_core::time::Samples;
 pub struct HitOutcome {
     pub note_id: rustic_core::ids::NoteId,
     pub judgment: Judgment,
+    pub kind: Option<crate::note::NoteKind>,
     pub is_sustain: bool,
     pub hold_end_at: Option<Samples>,
     pub combo_break: bool,
@@ -44,6 +45,7 @@ pub struct HoldDropOutcome {
 #[non_exhaustive]
 pub struct LateMissOutcome {
     pub lane: Lane,
+    pub kind: Option<crate::note::NoteKind>,
     pub combo_count: u32,
 }
 
@@ -128,10 +130,14 @@ impl PlayState {
 
     /// Player-side scoreable note left the hit window unhit.
     pub fn register_note_miss(&mut self) {
+        self.register_note_miss_kind(None);
+    }
+
+    pub fn register_note_miss_kind(&mut self, kind: Option<NoteKind>) {
         self.score += note_miss_score_delta();
         self.combo = 0;
         self.misses += 1;
-        self.apply_health(health_delta(Judgment::Miss));
+        self.apply_health(note_miss_health_delta(kind));
     }
 
     /// Player released an already-hit hold before completion. v0.8.5 applies
@@ -204,6 +210,7 @@ impl PlayState {
 
         let (idx, abs_diff_ms) = best?;
         let id = self.notes[idx].id;
+        let kind = self.notes[idx].kind;
         let hold_end_at = (self.notes[idx].sustain_samples > 0).then_some(Samples(
             self.notes[idx].hit_at.0 + self.notes[idx].sustain_samples,
         ));
@@ -213,6 +220,7 @@ impl PlayState {
         Some(HitOutcome {
             note_id: id,
             judgment: hit.judgment,
+            kind,
             is_sustain: false,
             hold_end_at,
             combo_break: hit.combo_break,
@@ -239,17 +247,21 @@ impl PlayState {
                 if n.is_sustain {
                     expired_sustains.push(n.id);
                 } else {
-                    newly_missed.push((n.id, n.lane));
+                    newly_missed.push((n.id, n.lane, n.kind));
                 }
             }
         }
         self.resolved_notes.extend(expired_sustains);
         let mut outcomes = Vec::with_capacity(newly_missed.len());
-        for (id, lane) in newly_missed {
+        for (id, lane, kind) in newly_missed {
             let combo_count = self.combo;
             self.resolved_notes.push(id);
-            self.register_note_miss();
-            outcomes.push(LateMissOutcome { lane, combo_count });
+            self.register_note_miss_kind(kind);
+            outcomes.push(LateMissOutcome {
+                lane,
+                kind,
+                combo_count,
+            });
         }
         outcomes
     }
@@ -259,6 +271,15 @@ impl PlayState {
         // Upstream caps at max health from above; below min health is allowed
         // and triggers game over via `is_dead`.
         self.health = if next > MAX_HEALTH { MAX_HEALTH } else { next };
+    }
+}
+
+fn note_miss_health_delta(kind: Option<NoteKind>) -> f32 {
+    match kind {
+        // ref: bdedc0aa:assets/preload/scripts/songs/2hot.hxc:onNoteMiss
+        Some(NoteKind::Weekend1CockGun) => 0.0,
+        Some(NoteKind::Weekend1FireGun) => -0.5,
+        _ => health_delta(Judgment::Miss),
     }
 }
 
@@ -290,6 +311,7 @@ mod tests {
             is_sustain: false,
             is_sustain_end: false,
             opponent: false,
+            kind: None,
         });
     }
 
@@ -302,6 +324,7 @@ mod tests {
             is_sustain: true,
             is_sustain_end: true,
             opponent: false,
+            kind: None,
         });
     }
 
@@ -320,6 +343,7 @@ mod tests {
             is_sustain: false,
             is_sustain_end: false,
             opponent: false,
+            kind: None,
         });
     }
 
@@ -455,6 +479,28 @@ mod tests {
     }
 
     #[test]
+    fn weekend1_cock_gun_miss_suppresses_normal_health_loss() {
+        let mut s = PlayState::new();
+
+        s.register_note_miss_kind(Some(NoteKind::Weekend1CockGun));
+
+        assert_eq!(s.score, -100);
+        assert_eq!(s.misses, 1);
+        assert!((s.health - INITIAL_HEALTH).abs() < 1e-6);
+    }
+
+    #[test]
+    fn weekend1_fire_gun_miss_uses_can_damage_health_loss() {
+        let mut s = PlayState::new();
+
+        s.register_note_miss_kind(Some(NoteKind::Weekend1FireGun));
+
+        assert_eq!(s.score, -100);
+        assert_eq!(s.misses, 1);
+        assert!((s.health - (INITIAL_HEALTH - 0.5)).abs() < 1e-6);
+    }
+
+    #[test]
     fn ratings_and_score_match_pbot1_thresholds() {
         let mut s = PlayState::new();
         assert_eq!(s.register_hit(46.0), Judgment::Good);
@@ -541,6 +587,7 @@ mod tests {
             is_sustain: false,
             is_sustain_end: false,
             opponent: false,
+            kind: None,
         });
         s.notes.push(Note {
             id: NoteId::new(1),
@@ -550,6 +597,7 @@ mod tests {
             is_sustain: false,
             is_sustain_end: false,
             opponent: true,
+            kind: None,
         });
         let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
         assert_eq!(j, None);
@@ -603,10 +651,12 @@ mod tests {
             vec![
                 LateMissOutcome {
                     lane: Lane::Left,
+                    kind: None,
                     combo_count: 12,
                 },
                 LateMissOutcome {
                     lane: Lane::Right,
+                    kind: None,
                     combo_count: 0,
                 },
             ]
