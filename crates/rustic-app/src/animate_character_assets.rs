@@ -42,7 +42,12 @@ impl AnimateCharacterSprite {
         cursor: Samples,
         sample_rate: u32,
     ) -> Vec<DrawCommand> {
-        self.commands_with_lip_sync(request, cursor, sample_rate, request.name.starts_with("sing"))
+        self.commands_with_lip_sync(
+            request,
+            cursor,
+            sample_rate,
+            request.name.starts_with("sing"),
+        )
     }
 
     pub(crate) fn commands_with_lip_sync(

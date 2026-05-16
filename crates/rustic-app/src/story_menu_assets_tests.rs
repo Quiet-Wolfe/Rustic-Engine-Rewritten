@@ -61,8 +61,8 @@ fn story_menu_registry_includes_all_vslice_levels() {
     assert_eq!(
         STORY_LEVEL_IDS,
         [
-            "tutorial", "week1", "week2", "week3", "week4", "week5", "week6", "week7",
-            "weekend1", "sserafim"
+            "tutorial", "week1", "week2", "week3", "week4", "week5", "week6", "week7", "weekend1",
+            "sserafim"
         ]
     );
 }
@@ -103,7 +103,10 @@ fn sserafim_level_resolves_spaghetti_playlist() {
         textures: HashMap::new(),
     };
 
-    assert_eq!(story.preview_playlist(0), Some(vec![PreviewSong::SPAGHETTI]));
+    assert_eq!(
+        story.preview_playlist(0),
+        Some(vec![PreviewSong::SPAGHETTI])
+    );
 }
 
 fn dummy_arrow() -> SparrowStill {
