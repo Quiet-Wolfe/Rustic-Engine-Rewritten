@@ -1,6 +1,7 @@
 use super::capsule_metadata::load_capsule_metadata_assets;
 // LINT-ALLOW: long-file Freeplay asset bootstrap covers vanilla screen dependencies.
 use super::difficulty_stars::load_freeplay_difficulty_stars;
+use super::freeplay_icons::load_freeplay_icons;
 use super::helpers::{clone_frames, load_sparrow_atlas, load_static_texture};
 use super::song_metadata::{FreeplayDifficultyRatings, FreeplaySongMetadata};
 use super::{CapsuleKind, FreeplayAlbum, FreeplayAssets, FreeplayCapsule, WHITE_TEXTURE_ID};
@@ -280,6 +281,7 @@ pub fn load_freeplay_assets_for_style(
         FilterMode::Linear,
     )
     .ok();
+    let icons = load_freeplay_icons(device, queue, &resolver, &mut textures);
     let backing_text_skin = match load_bitmap_text_assets(device, queue, &resolver, &mut textures) {
         Ok(skin) => Some(skin),
         Err(e) => {
@@ -317,6 +319,7 @@ pub fn load_freeplay_assets_for_style(
         sparkle_atlas,
         sparkle_frames,
         clear_box,
+        icons,
         backing_text_skin,
         enter_started_at: None,
         start_delay_secs: style_config.start_delay,
@@ -353,6 +356,7 @@ fn load_song_metadata_map(resolver: &OverlayResolver) -> HashMap<u32, FreeplaySo
                     });
             let mut variant_albums = HashMap::new();
             let mut variant_ratings = HashMap::new();
+            let mut variant_icon_ids = HashMap::new();
             if song
                 .available_difficulties()
                 .contains(&PreviewDifficulty::Erect)
@@ -362,6 +366,9 @@ fn load_song_metadata_map(resolver: &OverlayResolver) -> HashMap<u32, FreeplaySo
                 {
                     variant_albums.insert("erect".to_string(), metadata.album);
                     variant_ratings.insert("erect".to_string(), metadata.ratings);
+                    if let Some(opponent) = metadata.opponent {
+                        variant_icon_ids.insert("erect".to_string(), opponent);
+                    }
                 }
             }
             for variation in [VARIATION_BF, VARIATION_PICO] {
@@ -371,6 +378,9 @@ fn load_song_metadata_map(resolver: &OverlayResolver) -> HashMap<u32, FreeplaySo
                     {
                         variant_albums.insert(variation.to_string(), metadata.album);
                         variant_ratings.insert(variation.to_string(), metadata.ratings);
+                        if let Some(opponent) = metadata.opponent {
+                            variant_icon_ids.insert(variation.to_string(), opponent);
+                        }
                     }
                 }
             }
@@ -381,6 +391,8 @@ fn load_song_metadata_map(resolver: &OverlayResolver) -> HashMap<u32, FreeplaySo
                     variant_albums,
                     base.ratings,
                     variant_ratings,
+                    base.opponent,
+                    variant_icon_ids,
                 ),
             )
         })
@@ -403,6 +415,10 @@ fn load_song_metadata(
     Ok(FreeplayLoadedSongMetadata {
         album: metadata.play_data.album,
         ratings: FreeplayDifficultyRatings::from_map(&metadata.play_data.ratings),
+        opponent: metadata
+            .play_data
+            .characters
+            .and_then(|characters| characters.opponent),
     })
 }
 
@@ -486,11 +502,19 @@ struct RawSongMetadata {
 struct RawSongPlayData {
     album: String,
     ratings: HashMap<String, u8>,
+    characters: Option<RawSongCharacters>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawSongCharacters {
+    opponent: Option<String>,
 }
 
 struct FreeplayLoadedSongMetadata {
     album: String,
     ratings: FreeplayDifficultyRatings,
+    opponent: Option<String>,
 }
 
 impl FreeplayLoadedSongMetadata {
@@ -498,6 +522,7 @@ impl FreeplayLoadedSongMetadata {
         Self {
             album: album.to_string(),
             ratings: FreeplayDifficultyRatings::default(),
+            opponent: None,
         }
     }
 }

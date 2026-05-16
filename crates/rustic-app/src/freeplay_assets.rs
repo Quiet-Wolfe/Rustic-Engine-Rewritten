@@ -35,6 +35,10 @@ mod difficulty_cycle;
 mod song_metadata;
 use song_metadata::FreeplaySongMetadata;
 
+#[path = "freeplay_icons.rs"]
+mod freeplay_icons;
+use freeplay_icons::FreeplayIconAssets;
+
 const CAPSULE_REAL_SCALED: f32 = 0.8;
 const CAPSULE_BASE_X: f32 = 270.0;
 const CAPSULE_BASE_Y: f32 = 320.0;
@@ -122,6 +126,7 @@ pub struct FreeplayAssets {
     sparkle_atlas: Option<SparrowAtlasHandle>,
     sparkle_frames: Vec<SparrowFrame>,
     clear_box: Option<StaticTexture>,
+    icons: FreeplayIconAssets,
     backing_text_skin: Option<BitmapTextSkin>,
     enter_started_at: Option<Samples>,
     pub start_delay_secs: f64,
@@ -212,8 +217,8 @@ impl FreeplayAssets {
         let capsule_enter_offset = (1.0 - enter_t) * CAPSULE_ENTER_OFFSET_X;
         self.push_capsules(
             &mut commands,
+            selection,
             selected_index,
-            selection.difficulty,
             cursor,
             sample_rate,
             capsule_enter_offset,
@@ -549,8 +554,8 @@ impl FreeplayAssets {
     fn push_capsules(
         &self,
         commands: &mut RenderCommandList,
+        selection: PreviewSelection,
         selected_index: usize,
-        difficulty: PreviewDifficulty,
         cursor: Samples,
         sample_rate: u32,
         enter_offset_x: f32,
@@ -602,10 +607,25 @@ impl FreeplayAssets {
                 200 + index as i32,
             ));
             if let CapsuleKind::Song(song) = self.songs[index].kind {
+                let capsule_selection = PreviewSelection::new(song, selection.difficulty)
+                    .with_variation(selection.variation);
+                let icon_id = self
+                    .song_albums
+                    .get(&song.id)
+                    .and_then(|metadata| metadata.icon_id_for_selection(capsule_selection));
+                self.icons.push_capsule_icon(
+                    commands,
+                    icon_id,
+                    pos,
+                    alpha,
+                    cursor,
+                    sample_rate,
+                    222 + index as i32,
+                );
                 self.capsule_metadata.push_capsule(
                     commands,
                     song,
-                    difficulty,
+                    selection.difficulty,
                     pos,
                     alpha,
                     220 + index as i32,

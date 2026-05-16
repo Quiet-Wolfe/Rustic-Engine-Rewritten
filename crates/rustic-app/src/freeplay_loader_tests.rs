@@ -105,6 +105,30 @@ fn song_metadata_map_uses_variant_difficulty_ratings() {
 }
 
 #[test]
+fn song_metadata_map_exposes_freeplay_icon_character_ids() {
+    let resolver = source_resolver();
+    let metadata = load_song_metadata_map(&resolver);
+
+    let tutorial = metadata.get(&PreviewSong::TUTORIAL.id).unwrap();
+    assert_eq!(
+        tutorial.icon_id_for_selection(PreviewSelection::new(
+            PreviewSong::TUTORIAL,
+            PreviewDifficulty::Normal
+        )),
+        Some("gf")
+    );
+
+    let stress = metadata.get(&PreviewSong::STRESS.id).unwrap();
+    assert_eq!(
+        stress.icon_id_for_selection(
+            PreviewSelection::new(PreviewSong::STRESS, PreviewDifficulty::Normal)
+                .with_variation(Some(VARIATION_PICO))
+        ),
+        Some("tankman-bloody")
+    );
+}
+
+#[test]
 fn song_metadata_difficulties_follow_active_character_variation() {
     let resolver = source_resolver();
     let metadata = load_song_metadata_map(&resolver);

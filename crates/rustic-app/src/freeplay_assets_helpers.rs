@@ -298,7 +298,7 @@ fn frame_uv(
     )
 }
 
-fn asset_id_for_path(path: &AssetPath) -> AssetId {
+pub(super) fn asset_id_for_path(path: &AssetPath) -> AssetId {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     for byte in path.as_str().as_bytes() {
         hash ^= u64::from(*byte);
@@ -332,6 +332,32 @@ pub const REQUIRED_FREEPLAY_ASSETS: &[&str] = &[
     "images/freeplay/highscore.xml",
     "images/freeplay/sparkle.png",
     "images/freeplay/sparkle.xml",
+    "images/freeplay/icons/bfpixel.png",
+    "images/freeplay/icons/bfpixel.xml",
+    "images/freeplay/icons/dadpixel.png",
+    "images/freeplay/icons/dadpixel.xml",
+    "images/freeplay/icons/darnellpixel.png",
+    "images/freeplay/icons/darnellpixel.xml",
+    "images/freeplay/icons/gfpixel.png",
+    "images/freeplay/icons/gfpixel.xml",
+    "images/freeplay/icons/mompixel.png",
+    "images/freeplay/icons/mompixel.xml",
+    "images/freeplay/icons/monsterpixel.png",
+    "images/freeplay/icons/monsterpixel.xml",
+    "images/freeplay/icons/parents-christmaspixel.png",
+    "images/freeplay/icons/parents-christmaspixel.xml",
+    "images/freeplay/icons/picopixel.png",
+    "images/freeplay/icons/picopixel.xml",
+    "images/freeplay/icons/senpaipixel.png",
+    "images/freeplay/icons/senpaipixel.xml",
+    "images/freeplay/icons/spiritpixel.png",
+    "images/freeplay/icons/spiritpixel.xml",
+    "images/freeplay/icons/spookypixel.png",
+    "images/freeplay/icons/spookypixel.xml",
+    "images/freeplay/icons/sserafim-kazuhapixel.png",
+    "images/freeplay/icons/sserafim-kazuhapixel.xml",
+    "images/freeplay/icons/tankmanpixel.png",
+    "images/freeplay/icons/tankmanpixel.xml",
     "images/freeplay/miniArrow.png",
     "images/freeplay/favHeart.png",
     "images/freeplay/favHeart.xml",

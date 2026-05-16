@@ -15,6 +15,8 @@ pub(super) struct FreeplaySongMetadata {
     variant_albums: HashMap<String, String>,
     base_ratings: FreeplayDifficultyRatings,
     variant_ratings: HashMap<String, FreeplayDifficultyRatings>,
+    base_icon_id: Option<String>,
+    variant_icon_ids: HashMap<String, String>,
 }
 
 impl FreeplaySongMetadata {
@@ -23,12 +25,16 @@ impl FreeplaySongMetadata {
         variant_albums: HashMap<String, String>,
         base_ratings: FreeplayDifficultyRatings,
         variant_ratings: HashMap<String, FreeplayDifficultyRatings>,
+        base_icon_id: Option<String>,
+        variant_icon_ids: HashMap<String, String>,
     ) -> Self {
         Self {
             base_album,
             variant_albums,
             base_ratings,
             variant_ratings,
+            base_icon_id,
+            variant_icon_ids,
         }
     }
 
@@ -45,6 +51,14 @@ impl FreeplaySongMetadata {
             .and_then(|suffix| self.variant_ratings.get(suffix))
             .and_then(|ratings| ratings.get(selection.difficulty))
             .or_else(|| self.base_ratings.get(selection.difficulty))
+    }
+
+    pub(super) fn icon_id_for_selection(&self, selection: PreviewSelection) -> Option<&str> {
+        selection
+            .effective_variation_suffix()
+            .and_then(|suffix| self.variant_icon_ids.get(suffix))
+            .or(self.base_icon_id.as_ref())
+            .map(String::as_str)
     }
 
     pub(super) fn album_ids(&self) -> impl Iterator<Item = &str> {
