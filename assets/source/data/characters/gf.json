@@ -51,7 +51,8 @@
     {
       "name": "hairBlow",
       "prefix": "Idle (Hair blowing)",
-      "frameIndices": [0, 1, 2, 3]
+      "frameIndices": [0, 1, 2, 3],
+      "looped": true
     },
     {
       "name": "hairFall",

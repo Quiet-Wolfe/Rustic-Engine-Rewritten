@@ -35,6 +35,7 @@ use crate::options_menu_assets::{OptionsMenuAssets, OptionsMenuPage};
 use crate::options_preferences::OptionsPreferences;
 use crate::pause_audio::PauseMusic;
 use crate::pause_menu::{ensure_pause_overlay_texture, PauseMenuState};
+use crate::philly_train_stage::philly_train_pose_overrides;
 use crate::popup_assets::{PopupSkin, ScorePopups};
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
 use crate::scene_assets::{
@@ -607,6 +608,13 @@ impl App {
             let poses = spooky_lightning_pose_overrides(
                 self.preview_selection.song,
                 self.character_anim.poses(),
+                cursor,
+                sample_rate,
+                stage_bpm,
+            );
+            let poses = philly_train_pose_overrides(
+                self.preview_selection.song,
+                poses,
                 cursor,
                 sample_rate,
                 stage_bpm,

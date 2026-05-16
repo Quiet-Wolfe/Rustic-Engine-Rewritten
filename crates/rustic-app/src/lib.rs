@@ -45,6 +45,7 @@ pub mod options_menu_assets;
 pub(crate) mod options_preferences;
 pub mod pause_audio;
 pub mod pause_menu;
+pub(crate) mod philly_train_stage;
 pub mod popup_assets;
 pub mod preview_song;
 pub mod regression;
