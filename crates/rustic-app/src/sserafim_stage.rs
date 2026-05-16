@@ -193,11 +193,6 @@ impl SserafimStageState {
             {
                 cmd.color.w = 0.0;
             }
-            if matches!(cmd.layer, RenderLayer::Stage | RenderLayer::Characters) && dark > 0.0 {
-                cmd.color.x *= 1.0 - dark;
-                cmd.color.y *= 1.0 - dark;
-                cmd.color.z *= 1.0 - dark;
-            }
             if cmd.texture == sserafim_texture_id("generated/stage/solid-000000.png") {
                 cmd.color.w = if self.cover_visible || self.end_cover_visible(cursor) {
                     1.0
@@ -243,6 +238,7 @@ impl SserafimStageState {
             if let Some(started_at) = self.dust_clear {
                 apply_dust_clear(cmd, started_at, cursor);
             }
+            apply_sserafim_shader_color(cmd, dark, truck_alpha, pulse);
         }
     }
 
@@ -667,6 +663,104 @@ fn parse_sserafim_color(value: &str) -> glam::Vec4 {
     )
 }
 
+fn apply_sserafim_shader_color(
+    cmd: &mut DrawCommand,
+    dark: f32,
+    truck_alpha: f32,
+    pulse: PulseValue,
+) {
+    if !matches!(cmd.layer, RenderLayer::Stage | RenderLayer::Characters)
+        || is_sserafim_shader_exempt_texture(cmd.texture)
+    {
+        return;
+    }
+    let combined_alpha = truck_alpha + pulse.alpha;
+    if dark <= 0.0 && combined_alpha <= 0.0 {
+        return;
+    }
+
+    let mut dark_factor = combined_alpha * 0.07 + dark;
+    if dark > 0.65 {
+        dark_factor = dark - combined_alpha * 0.07;
+    }
+
+    let is_character = cmd.layer == RenderLayer::Characters;
+    let base_mix = if is_character {
+        dark_factor / 5.0
+    } else {
+        dark_factor
+    };
+    let mut multiply = glam::Vec3::ONE.lerp(glam::Vec3::ZERO, base_mix);
+
+    let light_color = hsl_with_scaled_lightness(pulse.color.truncate(), pulse.alpha);
+    let light_mix = if is_character {
+        dark_factor / 3.0
+    } else {
+        dark_factor / 2.0
+    };
+    multiply = multiply.lerp(light_color, light_mix);
+
+    cmd.color.x *= multiply.x;
+    cmd.color.y *= multiply.y;
+    cmd.color.z *= multiply.z;
+}
+
+fn hsl_with_scaled_lightness(color: glam::Vec3, strength: f32) -> glam::Vec3 {
+    let mut hsl = rgb_to_hsl(color);
+    hsl.z *= strength.clamp(0.0, 1.0);
+    hsl_to_rgb(hsl)
+}
+
+fn rgb_to_hsl(color: glam::Vec3) -> glam::Vec3 {
+    let c_min = color.x.min(color.y).min(color.z);
+    let c_max = color.x.max(color.y).max(color.z);
+    let delta = c_max - c_min;
+    let lightness = (c_max + c_min) * 0.5;
+    if delta == 0.0 {
+        return glam::vec3(0.0, 0.0, lightness);
+    }
+    let saturation = if lightness < 0.5 {
+        delta / (c_max + c_min)
+    } else {
+        delta / (2.0 - c_max - c_min)
+    };
+    let delta_r = (((c_max - color.x) / 6.0) + (delta / 2.0)) / delta;
+    let delta_g = (((c_max - color.y) / 6.0) + (delta / 2.0)) / delta;
+    let delta_b = (((c_max - color.z) / 6.0) + (delta / 2.0)) / delta;
+    let hue = if color.x == c_max {
+        delta_b - delta_g
+    } else if color.y == c_max {
+        (1.0 / 3.0) + delta_r - delta_b
+    } else {
+        (2.0 / 3.0) + delta_g - delta_r
+    }
+    .rem_euclid(1.0);
+    glam::vec3(hue, saturation, lightness)
+}
+
+fn hsl_to_rgb(hsl: glam::Vec3) -> glam::Vec3 {
+    if hsl.y == 0.0 {
+        return glam::Vec3::splat(hsl.z);
+    }
+    let b = if hsl.z < 0.5 {
+        hsl.z * (1.0 + hsl.y)
+    } else {
+        hsl.z + hsl.y - hsl.y * hsl.z
+    };
+    let a = 2.0 * hsl.z - b;
+    a + hue_to_rgb(hsl.x) * (b - a)
+}
+
+fn hue_to_rgb(hue: f32) -> glam::Vec3 {
+    let hue = hue.rem_euclid(1.0);
+    glam::vec3(
+        (hue * 6.0 - 3.0).abs() - 1.0,
+        2.0 - (hue * 6.0 - 2.0).abs(),
+        2.0 - (hue * 6.0 - 4.0).abs(),
+    )
+    .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
+}
+
 #[derive(Debug, Clone, Copy)]
 struct DustClearSpec {
     duration_samples: i64,
@@ -692,6 +786,17 @@ fn is_flash_overlay(cmd: &DrawCommand) -> bool {
 fn apply_sserafim_overlay_camera(cmd: &mut DrawCommand) {
     cmd.camera = CameraId(2);
     cmd.layer = RenderLayer::Overlay;
+}
+
+fn is_sserafim_shader_exempt_texture(texture: rustic_core::ids::AssetId) -> bool {
+    texture == sserafim_texture_id("generated/stage/solid-000000.png")
+        || texture == sserafim_texture_id("generated/stage/solid-FFFFFF.png")
+        || texture == sserafim_texture_id("images/sserafim/lights/truck-light1.png")
+        || texture == sserafim_texture_id("images/sserafim/lights/truck-light2.png")
+        || texture == sserafim_texture_id("images/sserafim/lights/back-light-color.png")
+        || texture == sserafim_texture_id("images/sserafim/lights/back-light-white.png")
+        || texture == sserafim_texture_id("images/sserafim/end/end1.png")
+        || texture == sserafim_texture_id("images/sserafim/end/end2.png")
 }
 
 fn dust_clear_spec(cmd: &DrawCommand) -> Option<DustClearSpec> {
@@ -1037,6 +1142,66 @@ mod tests {
 
         assert!(dust.color.w < 0.8);
         assert!(dust.world_pos.y > -200.0);
+    }
+
+    #[test]
+    fn sserafim_shader_tints_stage_and_characters_from_light_events() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::Dark {
+                amount: 0.5,
+                duration: 0.0,
+            }),
+            Samples(0),
+        );
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::Lights {
+                amount: 1.0,
+                duration: 1.0,
+            }),
+            Samples(0),
+        );
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::PulseLights {
+                enabled: true,
+                colors: vec!["#FF0000".to_string()],
+                durations: vec![1.0],
+                intensities: vec![1.0],
+            }),
+            Samples(0),
+        );
+
+        let mut stage = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/bg.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        stage.layer = RenderLayer::Stage;
+        let mut character = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/yunjin/spritemap1.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        character.layer = RenderLayer::Characters;
+        let mut truck_light = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/lights/truck-light1.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        truck_light.layer = RenderLayer::Stage;
+
+        state.apply_commands(
+            [&mut stage, &mut character, &mut truck_light].into_iter(),
+            Samples(0),
+            48_000,
+            100.0,
+        );
+
+        assert!(stage.color.x > stage.color.y);
+        assert!(stage.color.y < character.color.y);
+        assert_eq!(truck_light.color.truncate(), glam::Vec3::ONE);
+        assert_eq!(truck_light.color.w, 1.0);
     }
 
     #[test]
