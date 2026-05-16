@@ -792,6 +792,7 @@ impl App {
         self.winter_horrorland_cutscene = None;
         self.thorns_intro_cutscene = None;
         self.game_over = None;
+        self.weekend1_gun_cocked_until = None;
         self.game_over_restart = None;
         self.pause_menu = None;
         self.freeplay_confirm_at = None;

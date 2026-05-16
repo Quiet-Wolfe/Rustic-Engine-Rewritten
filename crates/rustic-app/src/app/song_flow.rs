@@ -41,6 +41,7 @@ impl App {
         self.thorns_intro_cutscene = None;
         self.death_counter = 0;
         self.practice_mode = false;
+        self.weekend1_gun_cocked_until = None;
         if self.story_playlist.is_empty() {
             self.enter_song_select();
         } else {
@@ -96,6 +97,7 @@ impl App {
         self.thorns_intro_cutscene = None;
         self.death_counter = 0;
         self.practice_mode = false;
+        self.weekend1_gun_cocked_until = None;
         if self.story_playlist.is_empty() {
             self.enter_song_select();
             return;

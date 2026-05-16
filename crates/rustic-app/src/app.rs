@@ -130,6 +130,7 @@ struct App {
     active_holds: ActiveHolds,
     held_lanes: HeldLanes,
     opponent_receptors: AutoReceptors,
+    weekend1_gun_cocked_until: Option<Samples>,
     preview_selection: PreviewSelection,
     mode: AppMode,
     title_assets: Option<TitleScreenAssets>,
@@ -226,6 +227,7 @@ impl App {
             active_holds: ActiveHolds::default(),
             held_lanes: HeldLanes::default(),
             opponent_receptors: AutoReceptors::default(),
+            weekend1_gun_cocked_until: None,
             preview_selection: PreviewSelection::from_env(),
             mode: AppMode::Title,
             title_assets: None,
@@ -467,6 +469,7 @@ impl App {
             self.held_lanes,
             self.opponent_receptors,
         ) = Default::default();
+        self.weekend1_gun_cocked_until = None;
         self.camera_fx
             .reset(&mut self.cameras, self.base_camera_zoom);
         focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);

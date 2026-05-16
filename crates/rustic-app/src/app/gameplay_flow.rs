@@ -10,7 +10,7 @@ use crate::stage_sfx::play_sserafim_event_sound_or_warn;
 use rustic_asset::ChartEventKind;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
-use rustic_game::{Judgment, Lane};
+use rustic_game::{Judgment, Lane, NoteKind};
 
 impl App {
     pub(super) fn apply_song_event(
@@ -112,6 +112,8 @@ impl App {
         );
         let mut restore_vocals = false;
         let should_enter_game_over;
+        let gun_cocked_until = self.weekend1_gun_cocked_until;
+        let mut gun_cocked_update = GunCockedUpdate::Keep;
         {
             let Some(play_state) = self.play_state.as_mut() else {
                 return;
@@ -127,10 +129,28 @@ impl App {
                 if already_held {
                     return;
                 }
+                let candidate_kind =
+                    play_state.hittable_note_kind_in_lane(&gameplay_event, lane, sample_rate);
+                if candidate_kind == Some(NoteKind::Weekend1FireGun)
+                    && !weekend1_gun_is_cocked(gun_cocked_until, cursor)
+                {
+                    return;
+                }
                 let anim = &mut self.character_anim;
                 if let Some(outcome) =
                     play_state.try_hit_in_lane(&gameplay_event, lane, sample_rate)
                 {
+                    match outcome.kind {
+                        Some(NoteKind::Weekend1CockGun) => {
+                            gun_cocked_update = GunCockedUpdate::Set(Samples(
+                                cursor.0.saturating_add(i64::from(sample_rate.max(1))),
+                            ));
+                        }
+                        Some(NoteKind::Weekend1FireGun) => {
+                            gun_cocked_update = GunCockedUpdate::Clear;
+                        }
+                        _ => {}
+                    }
                     self.held_lanes.confirm(lane, cursor, confirm_duration);
                     anim.player_note_hit_kind(
                         lane,
@@ -167,6 +187,11 @@ impl App {
         }
         if restore_vocals {
             set_vocals_gain(&self.mixer, 1.0);
+        }
+        match gun_cocked_update {
+            GunCockedUpdate::Keep => {}
+            GunCockedUpdate::Set(until) => self.weekend1_gun_cocked_until = Some(until),
+            GunCockedUpdate::Clear => self.weekend1_gun_cocked_until = None,
         }
         if should_enter_game_over {
             self.enter_game_over(cursor);
@@ -214,6 +239,17 @@ impl App {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GunCockedUpdate {
+    Keep,
+    Set(Samples),
+    Clear,
+}
+
+fn weekend1_gun_is_cocked(cocked_until: Option<Samples>, cursor: Samples) -> bool {
+    cocked_until.is_some_and(|until| cursor <= until)
+}
+
 fn input_event_with_global_offset(
     event: &NormalizedInputEvent,
     sample_rate: u32,
@@ -251,5 +287,18 @@ mod tests {
         assert_eq!(late.audio_sample_cursor_at_receive, Samples(4_800));
         assert_eq!(late.wall_clock_ns, 7);
         assert_eq!(late.action, InputAction::LaneLeft);
+    }
+
+    #[test]
+    fn weekend1_firegun_requires_recent_cockgun() {
+        assert!(!weekend1_gun_is_cocked(None, Samples(10_000)));
+        assert!(weekend1_gun_is_cocked(
+            Some(Samples(58_000)),
+            Samples(58_000)
+        ));
+        assert!(!weekend1_gun_is_cocked(
+            Some(Samples(58_000)),
+            Samples(58_001)
+        ));
     }
 }

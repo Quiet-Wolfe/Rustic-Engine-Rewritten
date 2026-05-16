@@ -187,6 +187,43 @@ impl PlayState {
         lane: Lane,
         sample_rate: u32,
     ) -> Option<HitOutcome> {
+        let (idx, abs_diff_ms) = self.best_hittable_note_index(event, lane, sample_rate)?;
+        let id = self.notes[idx].id;
+        let kind = self.notes[idx].kind;
+        let hold_end_at = (self.notes[idx].sustain_samples > 0).then_some(Samples(
+            self.notes[idx].hit_at.0 + self.notes[idx].sustain_samples,
+        ));
+        self.resolved_notes.push(id);
+
+        let hit = self.register_timed_hit(abs_diff_ms);
+        Some(HitOutcome {
+            note_id: id,
+            judgment: hit.judgment,
+            kind,
+            is_sustain: false,
+            hold_end_at,
+            combo_break: hit.combo_break,
+            combo_count: hit.combo_count,
+            combo_popup: hit.combo_popup,
+        })
+    }
+
+    pub fn hittable_note_kind_in_lane(
+        &self,
+        event: &NormalizedInputEvent,
+        lane: Lane,
+        sample_rate: u32,
+    ) -> Option<NoteKind> {
+        let (idx, _) = self.best_hittable_note_index(event, lane, sample_rate)?;
+        self.notes[idx].kind
+    }
+
+    fn best_hittable_note_index(
+        &self,
+        event: &NormalizedInputEvent,
+        lane: Lane,
+        sample_rate: u32,
+    ) -> Option<(usize, f64)> {
         let hit_window = JudgmentWindows::from(self.windows).hit_window_ms.0;
         let cursor = event.audio_sample_cursor_at_receive;
         let ms_per_sample = 1000.0 / sample_rate as f64;
@@ -207,26 +244,7 @@ impl PlayState {
                 best = Some((i, abs));
             }
         }
-
-        let (idx, abs_diff_ms) = best?;
-        let id = self.notes[idx].id;
-        let kind = self.notes[idx].kind;
-        let hold_end_at = (self.notes[idx].sustain_samples > 0).then_some(Samples(
-            self.notes[idx].hit_at.0 + self.notes[idx].sustain_samples,
-        ));
-        self.resolved_notes.push(id);
-
-        let hit = self.register_timed_hit(abs_diff_ms);
-        Some(HitOutcome {
-            note_id: id,
-            judgment: hit.judgment,
-            kind,
-            is_sustain: false,
-            hold_end_at,
-            combo_break: hit.combo_break,
-            combo_count: hit.combo_count,
-            combo_popup: hit.combo_popup,
-        })
+        best
     }
 
     /// Mark every player-side tap note whose hit_at is more than the hit
@@ -312,6 +330,19 @@ mod tests {
             is_sustain_end: false,
             opponent: false,
             kind: None,
+        });
+    }
+
+    fn add_note_kind(s: &mut PlayState, id: u32, lane: Lane, hit_at_samples: i64, kind: NoteKind) {
+        s.notes.push(Note {
+            id: NoteId::new(id),
+            lane,
+            hit_at: Samples(hit_at_samples),
+            sustain_samples: 0,
+            is_sustain: false,
+            is_sustain_end: false,
+            opponent: false,
+            kind: Some(kind),
         });
     }
 
@@ -522,6 +553,18 @@ mod tests {
         let j = s.try_hit_in_lane(&input_at(48_000), Lane::Left, 48_000);
         assert_eq!(j.map(|outcome| outcome.judgment), Some(Judgment::Sick));
         assert_eq!(s.resolved_notes.len(), 1);
+    }
+
+    #[test]
+    fn hittable_note_kind_peeks_without_resolving_note() {
+        let mut s = PlayState::new();
+        add_note_kind(&mut s, 0, Lane::Left, 48_000, NoteKind::Weekend1FireGun);
+
+        assert_eq!(
+            s.hittable_note_kind_in_lane(&input_at(48_000), Lane::Left, 48_000),
+            Some(NoteKind::Weekend1FireGun)
+        );
+        assert!(s.resolved_notes.is_empty());
     }
 
     #[test]
