@@ -19,6 +19,8 @@ use std::time::Instant;
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
 
+const MAIN_MENU_CONFIRM_DELAY_SECONDS: i64 = 1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AppMode {
     Title,
@@ -36,6 +38,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.main_menu_confirm_started_at = None;
         self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;
@@ -148,6 +151,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.main_menu_confirm_started_at = None;
         self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;
@@ -179,10 +183,25 @@ impl App {
         self.text_cmds = TextCommandList::new();
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = self.title_cursor(sample_rate);
+        if let Some(started_at) = self.main_menu_confirm_started_at {
+            let delay = i64::from(sample_rate.max(1)) * MAIN_MENU_CONFIRM_DELAY_SECONDS;
+            if cursor.0.saturating_sub(started_at.0) >= delay {
+                self.main_menu_confirm_started_at = None;
+                self.start_confirmed_main_menu_item();
+                return;
+            }
+        }
         self.cmds = self
             .main_menu_assets
             .as_ref()
-            .map(|assets| assets.commands(self.main_menu_index, cursor, sample_rate))
+            .map(|assets| {
+                assets.commands(
+                    self.main_menu_index,
+                    cursor,
+                    sample_rate,
+                    self.main_menu_confirm_started_at,
+                )
+            })
             .unwrap_or_default();
         self.append_debug_overlay_commands(cursor, sample_rate);
     }
@@ -192,6 +211,7 @@ impl App {
         self.title_start = Instant::now();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.main_menu_confirm_started_at = None;
         self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;
@@ -310,6 +330,9 @@ impl App {
         if state != ElementState::Pressed {
             return true;
         }
+        if self.main_menu_confirm_started_at.is_some() {
+            return true;
+        }
         // ref: bdedc0aa:source/funkin/ui/mainmenu/MainMenuState.hx:145-232
         let item_count = self
             .main_menu_assets
@@ -342,6 +365,20 @@ impl App {
     }
 
     fn confirm_main_menu_item(&mut self) {
+        if self
+            .main_menu_assets
+            .as_ref()
+            .and_then(|assets| assets.action_for(self.main_menu_index))
+            .is_none()
+        {
+            return;
+        }
+        let sample_rate = play_sample_rate(&self.mixer);
+        self.main_menu_confirm_started_at = Some(self.title_cursor(sample_rate));
+        self.rebuild_main_menu_commands();
+    }
+
+    fn start_confirmed_main_menu_item(&mut self) {
         let action = self
             .main_menu_assets
             .as_ref()
@@ -509,6 +546,7 @@ impl App {
         self.freeplay_confirm_at = None;
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.main_menu_confirm_started_at = None;
         self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;
@@ -696,6 +734,7 @@ impl App {
         self.game_over_restart = None;
         self.pause_menu = None;
         self.freeplay_confirm_at = None;
+        self.main_menu_confirm_started_at = None;
         self.story_menu_confirm_started_at = None;
         self.pause_music.stop(&self.mixer);
         self.game_over_audio.stop(&self.mixer);
@@ -736,6 +775,7 @@ impl App {
         self.stop_freeplay_preview();
         self.title_assets = None;
         self.main_menu_assets = None;
+        self.main_menu_confirm_started_at = None;
         self.credits_assets = None;
         self.options_menu_assets = None;
         self.freeplay_assets = None;

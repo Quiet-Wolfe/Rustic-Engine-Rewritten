@@ -15,6 +15,10 @@ use std::collections::HashMap;
 const MENU_ANIMATION_FPS: u16 = 24;
 const MENU_ITEM_SPACING: f32 = 160.0;
 const MENU_ITEM_X: f32 = 1280.0 * 0.5;
+const ACCEPT_ITEM_FLICKER_SECONDS: f32 = 1.0;
+const ACCEPT_ITEM_FLICKER_INTERVAL_SECONDS: f32 = 0.06;
+const ACCEPT_BG_FLICKER_SECONDS: f32 = 1.1;
+const ACCEPT_BG_FLICKER_INTERVAL_SECONDS: f32 = 0.15;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainMenuAction {
@@ -37,17 +41,24 @@ impl MainMenuAssets {
         selected_index: usize,
         cursor: Samples,
         sample_rate: u32,
+        confirm_started_at: Option<Samples>,
     ) -> RenderCommandList {
         let mut commands = RenderCommandList::new();
         commands.push(self.background.command());
+        if main_menu_confirm_bg_visible(cursor, sample_rate, confirm_started_at) {
+            commands.push(
+                self.background
+                    .command_with_color(glam::vec4(1.0, 0.0, 0.73, 1.0), -9),
+            );
+        }
         for (index, item) in self.items.iter().enumerate() {
-            if let Some(cmd) = item.command(
-                index,
-                self.items.len(),
-                index == selected_index,
-                cursor,
-                sample_rate,
-            ) {
+            let selected = index == selected_index;
+            if selected && !main_menu_confirm_item_visible(cursor, sample_rate, confirm_started_at)
+            {
+                continue;
+            }
+            if let Some(cmd) = item.command(index, self.items.len(), selected, cursor, sample_rate)
+            {
                 commands.push(cmd);
             }
         }
@@ -71,6 +82,10 @@ struct MenuBackground {
 
 impl MenuBackground {
     fn command(&self) -> DrawCommand {
+        self.command_with_color(glam::Vec4::ONE, -10)
+    }
+
+    fn command_with_color(&self, color: glam::Vec4, z: i32) -> DrawCommand {
         let scale = 1280.0 * 1.2 / self.size.x.max(1.0);
         let draw_size = self.size * scale;
         let mut cmd = DrawCommand::sprite(
@@ -80,9 +95,10 @@ impl MenuBackground {
         );
         cmd.camera = CameraId(1);
         cmd.layer = RenderLayer::Background;
-        cmd.z = -10;
+        cmd.z = z;
         cmd.pivot = glam::Vec2::ZERO;
         cmd.filter = FilterMode::Linear;
+        cmd.color = color;
         cmd
     }
 }
@@ -284,6 +300,60 @@ fn animation_frame_index(cursor: Samples, sample_rate: u32, frame_count: usize) 
     )
 }
 
+fn main_menu_confirm_item_visible(
+    cursor: Samples,
+    sample_rate: u32,
+    confirm_started_at: Option<Samples>,
+) -> bool {
+    confirm_flicker_visible(
+        cursor,
+        sample_rate,
+        confirm_started_at,
+        ACCEPT_ITEM_FLICKER_SECONDS,
+        ACCEPT_ITEM_FLICKER_INTERVAL_SECONDS,
+        true,
+    )
+}
+
+fn main_menu_confirm_bg_visible(
+    cursor: Samples,
+    sample_rate: u32,
+    confirm_started_at: Option<Samples>,
+) -> bool {
+    confirm_flicker_visible(
+        cursor,
+        sample_rate,
+        confirm_started_at,
+        ACCEPT_BG_FLICKER_SECONDS,
+        ACCEPT_BG_FLICKER_INTERVAL_SECONDS,
+        false,
+    )
+}
+
+fn confirm_flicker_visible(
+    cursor: Samples,
+    sample_rate: u32,
+    confirm_started_at: Option<Samples>,
+    duration_seconds: f32,
+    interval_seconds: f32,
+    default_visible: bool,
+) -> bool {
+    let Some(started_at) = confirm_started_at else {
+        return default_visible;
+    };
+    let elapsed = cursor.0.saturating_sub(started_at.0).max(0);
+    let duration = seconds_to_samples(duration_seconds, sample_rate);
+    if elapsed >= duration {
+        return default_visible;
+    }
+    let interval = seconds_to_samples(interval_seconds, sample_rate).max(1);
+    elapsed.div_euclid(interval) % 2 == 0
+}
+
+fn seconds_to_samples(seconds: f32, sample_rate: u32) -> i64 {
+    (seconds.max(0.0) * sample_rate.max(1) as f32).round() as i64
+}
+
 fn frame_draw_size(frame: &SparrowFrame) -> glam::Vec2 {
     if frame.rotated {
         glam::vec2(frame.height as f32, frame.width as f32)
@@ -332,5 +402,43 @@ mod tests {
         assert_eq!(animation_frame_index(Samples(2_001), 48_000, 3), 1);
         assert_eq!(animation_frame_index(Samples(6_000), 48_000, 3), 2);
         assert_eq!(animation_frame_index(Samples(6_001), 48_000, 3), 0);
+    }
+
+    #[test]
+    fn confirm_flicker_hides_selected_item_on_interval() {
+        assert!(main_menu_confirm_item_visible(
+            Samples(0),
+            48_000,
+            Some(Samples(0))
+        ));
+        assert!(!main_menu_confirm_item_visible(
+            Samples(2_881),
+            48_000,
+            Some(Samples(0))
+        ));
+        assert!(main_menu_confirm_item_visible(
+            Samples(48_000),
+            48_000,
+            Some(Samples(0))
+        ));
+    }
+
+    #[test]
+    fn confirm_flicker_flashes_magenta_background() {
+        assert!(main_menu_confirm_bg_visible(
+            Samples(0),
+            48_000,
+            Some(Samples(0))
+        ));
+        assert!(!main_menu_confirm_bg_visible(
+            Samples(7_201),
+            48_000,
+            Some(Samples(0))
+        ));
+        assert!(!main_menu_confirm_bg_visible(
+            Samples(53_000),
+            48_000,
+            Some(Samples(0))
+        ));
     }
 }
