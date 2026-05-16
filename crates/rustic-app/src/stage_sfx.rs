@@ -3,6 +3,7 @@
 use crate::asset_roots::baked_assets_root;
 use crate::preview_song::PreviewSong;
 use crate::sserafim_stage::{sserafim_intro_event_cursor, SserafimStageState};
+use crate::stage_object_asset_helpers::halloween_lightning_start;
 use crate::stage_scripted_motion::{
     limo_fast_car_position, limo_fast_car_start, philly_blazin_lightning_start, philly_train_start,
 };
@@ -18,6 +19,8 @@ const CAR_PASS_1_PATH: &str = "sounds/carPass1.ogg";
 const LIGHTNING_1_PATH: &str = "sounds/Lightning1.ogg";
 const LIGHTNING_2_PATH: &str = "sounds/Lightning2.ogg";
 const LIGHTNING_3_PATH: &str = "sounds/Lightning3.ogg";
+const THUNDER_1_PATH: &str = "sounds/thunder_1.ogg";
+const THUNDER_2_PATH: &str = "sounds/thunder_2.ogg";
 const SSERAFIM_DOOR_KICK_1_PATH: &str = "sounds/sserafim/doorKick1.ogg";
 const SSERAFIM_DOOR_KICK_2_PATH: &str = "sounds/sserafim/doorKick2.ogg";
 const SSERAFIM_START_CUTSCENE_PATH: &str = "sounds/sserafim/cutscene/startCutscene.ogg";
@@ -32,6 +35,8 @@ static CAR_PASS_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LIGHTNING_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LIGHTNING_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LIGHTNING_3_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static THUNDER_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static THUNDER_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_DOOR_KICK_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_DOOR_KICK_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_START_CUTSCENE_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
@@ -45,6 +50,7 @@ pub(crate) struct StageSfx {
     last_train_start: Option<Samples>,
     last_limo_car_start: Option<Samples>,
     last_lightning_start: Option<Samples>,
+    last_halloween_thunder_start: Option<Samples>,
     last_sserafim_intro_start: Option<Samples>,
     last_sserafim_end1_start: Option<Samples>,
     last_sserafim_end2_start: Option<Samples>,
@@ -105,6 +111,17 @@ impl StageSfx {
                 )?;
             }
         }
+        if is_spooky_mansion_song(song) {
+            if let Some(start) = halloween_thunder_start(cursor, sample_rate, bpm) {
+                self.play_once_near_start(
+                    mixer,
+                    cursor,
+                    sample_rate,
+                    start,
+                    StageSound::Thunder((start.0 / i64::from(sample_rate.max(1))) as u8 % 2),
+                )?;
+            }
+        }
         if song == PreviewSong::SPAGHETTI {
             self.play_once_near_start(
                 mixer,
@@ -155,6 +172,7 @@ impl StageSfx {
             StageSound::Train => self.last_train_start,
             StageSound::CarPass(_) => self.last_limo_car_start,
             StageSound::Lightning(_) => self.last_lightning_start,
+            StageSound::Thunder(_) => self.last_halloween_thunder_start,
             StageSound::SserafimStartCutscene => self.last_sserafim_intro_start,
             StageSound::SserafimEnd1 => self.last_sserafim_end1_start,
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start,
@@ -169,6 +187,7 @@ impl StageSfx {
             StageSound::Train => self.last_train_start = Some(start),
             StageSound::CarPass(_) => self.last_limo_car_start = Some(start),
             StageSound::Lightning(_) => self.last_lightning_start = Some(start),
+            StageSound::Thunder(_) => self.last_halloween_thunder_start = Some(start),
             StageSound::SserafimStartCutscene => self.last_sserafim_intro_start = Some(start),
             StageSound::SserafimEnd1 => self.last_sserafim_end1_start = Some(start),
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start = Some(start),
@@ -184,6 +203,7 @@ enum StageSound {
     Train,
     CarPass(u8),
     Lightning(u8),
+    Thunder(u8),
     SserafimDoorKick1,
     SserafimDoorKick2,
     SserafimStartCutscene,
@@ -245,6 +265,8 @@ fn cached_stage_sound(sound: StageSound) -> Option<&'static Arc<[u8]>> {
         StageSound::Lightning(0) => (&LIGHTNING_1_BYTES, LIGHTNING_1_PATH),
         StageSound::Lightning(1) => (&LIGHTNING_2_BYTES, LIGHTNING_2_PATH),
         StageSound::Lightning(_) => (&LIGHTNING_3_BYTES, LIGHTNING_3_PATH),
+        StageSound::Thunder(0) => (&THUNDER_1_BYTES, THUNDER_1_PATH),
+        StageSound::Thunder(_) => (&THUNDER_2_BYTES, THUNDER_2_PATH),
         StageSound::SserafimDoorKick1 => (&SSERAFIM_DOOR_KICK_1_BYTES, SSERAFIM_DOOR_KICK_1_PATH),
         StageSound::SserafimDoorKick2 => (&SSERAFIM_DOOR_KICK_2_BYTES, SSERAFIM_DOOR_KICK_2_PATH),
         StageSound::SserafimStartCutscene => {
@@ -297,6 +319,24 @@ fn is_limo_song(song: PreviewSong) -> bool {
     )
 }
 
+fn is_spooky_mansion_song(song: PreviewSong) -> bool {
+    matches!(
+        song,
+        PreviewSong::SPOOKEEZ | PreviewSong::SOUTH | PreviewSong::MONSTER
+    )
+}
+
+fn halloween_thunder_start(cursor: Samples, sample_rate: u32, bpm: f64) -> Option<Samples> {
+    let start = halloween_lightning_start(cursor, sample_rate, bpm)?;
+    let beat = stage_sound_beat(start, sample_rate, bpm);
+    (beat > 4).then_some(start)
+}
+
+fn stage_sound_beat(start: Samples, sample_rate: u32, bpm: f64) -> i64 {
+    let beat_samples = (f64::from(sample_rate.max(1)) * 60.0 / bpm.max(1.0)).round() as i64;
+    start.0.max(0).div_euclid(beat_samples.max(1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +346,8 @@ mod tests {
         assert_eq!(TRAIN_SOUND_PATH, "sounds/train_passes.ogg");
         assert_eq!(CAR_PASS_0_PATH, "sounds/carPass0.ogg");
         assert_eq!(LIGHTNING_3_PATH, "sounds/Lightning3.ogg");
+        assert_eq!(THUNDER_1_PATH, "sounds/thunder_1.ogg");
+        assert_eq!(THUNDER_2_PATH, "sounds/thunder_2.ogg");
         assert_eq!(SSERAFIM_DOOR_KICK_1_PATH, "sounds/sserafim/doorKick1.ogg");
         assert_eq!(
             SSERAFIM_START_CUTSCENE_PATH,
@@ -323,8 +365,23 @@ mod tests {
     fn stage_sound_trigger_windows_are_stage_specific() {
         assert!(is_philly_train_song(PreviewSong::PHILLY_NICE));
         assert!(is_limo_song(PreviewSong::MILF));
+        assert!(is_spooky_mansion_song(PreviewSong::SPOOKEEZ));
         assert!(within_trigger_window(Samples(10), Samples(0), 48_000));
         assert!(!within_trigger_window(Samples(13_000), Samples(0), 48_000));
+    }
+
+    #[test]
+    fn halloween_thunder_skips_silent_opening_lightning() {
+        let sample_rate = 48_000;
+        let bpm = 120.0;
+        assert_eq!(
+            halloween_thunder_start(Samples(96_000), sample_rate, bpm),
+            None
+        );
+        assert_eq!(
+            halloween_thunder_start(Samples(480_000), sample_rate, bpm),
+            Some(Samples(480_000))
+        );
     }
 
     #[test]
