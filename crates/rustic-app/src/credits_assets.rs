@@ -1,8 +1,7 @@
 //! Credits screen shell based on Funkin' v0.8.5 `CreditsState`.
 //!
-//! The full game builds the list incrementally from `credits.json`; this
-//! first pass renders the opening credits entries and scrolls them at the
-//! source base speed.
+//! The full game builds the list incrementally from `credits.json`; Rustic
+//! renders the loaded entries and drives the same held-input scroll speeds.
 //!
 //! ref: bdedc0aa:source/funkin/ui/credits/CreditsState.hx:16-294
 
@@ -19,6 +18,8 @@ use std::collections::HashMap;
 
 const WHITE_TEXTURE_ID: AssetId = AssetId::new(0x6372_6564_6974_0001);
 const CREDITS_SCROLL_BASE_SPEED: f32 = 100.0;
+const CREDITS_SCROLL_FAST_SPEED: f32 = CREDITS_SCROLL_BASE_SPEED * 4.0;
+const CREDITS_SCROLL_PAUSE_SPEED: f32 = 0.0;
 const CREDITS_X: f32 = 24.0;
 const CREDITS_WIDTH: f32 = 1280.0 - 48.0;
 const HEADER_SIZE: f32 = 32.0;
@@ -49,9 +50,12 @@ impl CreditsAssets {
     }
 
     pub fn text_commands(&self, cursor: Samples, sample_rate: u32) -> TextCommandList {
+        self.text_commands_for_scroll(credits_scroll_pixels(cursor, sample_rate))
+    }
+
+    pub fn text_commands_for_scroll(&self, scroll_pixels: f32) -> TextCommandList {
         let mut commands = TextCommandList::new();
-        let scroll_y =
-            720.0 - cursor.0.max(0) as f32 * CREDITS_SCROLL_BASE_SPEED / sample_rate.max(1) as f32;
+        let scroll_y = 720.0 - scroll_pixels.max(0.0);
         let mut y = scroll_y;
         for entry in &self.entries {
             if let Some(header) = entry.header.as_deref() {
@@ -66,6 +70,52 @@ impl CreditsAssets {
         }
         commands
     }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct CreditsScrollState {
+    pixels: f32,
+    last_cursor: Option<Samples>,
+    fast_held: bool,
+    pause_held: bool,
+}
+
+impl CreditsScrollState {
+    pub(crate) fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    pub(crate) fn set_fast_held(&mut self, held: bool) {
+        self.fast_held = held;
+    }
+
+    pub(crate) fn set_pause_held(&mut self, held: bool) {
+        self.pause_held = held;
+    }
+
+    pub(crate) fn advance(&mut self, cursor: Samples, sample_rate: u32) -> f32 {
+        if let Some(last_cursor) = self.last_cursor {
+            let delta = cursor.0.saturating_sub(last_cursor.0);
+            self.pixels += delta as f32 * self.speed() / sample_rate.max(1) as f32;
+        }
+        self.last_cursor = Some(cursor);
+        self.pixels
+    }
+
+    fn speed(self) -> f32 {
+        // ref: bdedc0aa:source/funkin/ui/credits/CreditsState.hx:267-283
+        if self.fast_held {
+            CREDITS_SCROLL_FAST_SPEED
+        } else if self.pause_held {
+            CREDITS_SCROLL_PAUSE_SPEED
+        } else {
+            CREDITS_SCROLL_BASE_SPEED
+        }
+    }
+}
+
+fn credits_scroll_pixels(cursor: Samples, sample_rate: u32) -> f32 {
+    cursor.0.max(0) as f32 * CREDITS_SCROLL_BASE_SPEED / sample_rate.max(1) as f32
 }
 
 pub fn load_credits_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> CreditsAssets {
@@ -209,6 +259,45 @@ mod tests {
 
         assert_eq!(start.as_slice()[0].position.y, 720.0);
         assert_eq!(later.as_slice()[0].position.y, 620.0);
+    }
+
+    #[test]
+    fn credits_scroll_state_matches_held_input_speeds() {
+        let mut scroll = CreditsScrollState::default();
+
+        assert_eq!(scroll.advance(Samples(0), 48_000), 0.0);
+        assert_eq!(scroll.advance(Samples(48_000), 48_000), 100.0);
+
+        scroll.set_fast_held(true);
+        assert_eq!(scroll.advance(Samples(96_000), 48_000), 500.0);
+
+        scroll.set_fast_held(false);
+        scroll.set_pause_held(true);
+        assert_eq!(scroll.advance(Samples(144_000), 48_000), 500.0);
+
+        scroll.set_pause_held(false);
+        assert_eq!(scroll.advance(Samples(192_000), 48_000), 600.0);
+    }
+
+    #[test]
+    fn credits_fast_scroll_takes_priority_over_pause_scroll() {
+        let mut scroll = CreditsScrollState::default();
+        scroll.advance(Samples(0), 48_000);
+        scroll.set_fast_held(true);
+        scroll.set_pause_held(true);
+
+        assert_eq!(scroll.advance(Samples(48_000), 48_000), 400.0);
+    }
+
+    #[test]
+    fn credits_text_can_render_accumulated_scroll_pixels() {
+        let assets = CreditsAssets {
+            entries: fallback_credits(),
+            textures: HashMap::new(),
+        };
+        let scrolled = assets.text_commands_for_scroll(250.0);
+
+        assert_eq!(scrolled.as_slice()[0].position.y, 470.0);
     }
 
     #[test]

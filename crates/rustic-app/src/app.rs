@@ -12,7 +12,7 @@ use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::countdown_audio::CountdownAudio;
-use crate::credits_assets::CreditsAssets;
+use crate::credits_assets::{CreditsAssets, CreditsScrollState};
 use crate::dialogue_state::DialogueState;
 use crate::freeplay_assets::FreeplayAssets;
 use crate::freeplay_preview_audio::FreeplayPreviewMusic;
@@ -120,6 +120,7 @@ struct App {
     main_menu_index: usize,
     main_menu_confirm_started_at: Option<Samples>,
     credits_assets: Option<CreditsAssets>,
+    credits_scroll: CreditsScrollState,
     options_menu_assets: Option<OptionsMenuAssets>,
     options_menu_page: OptionsMenuPage,
     options_menu_index: usize,
@@ -209,6 +210,7 @@ impl App {
             main_menu_index: 0,
             main_menu_confirm_started_at: None,
             credits_assets: None,
+            credits_scroll: CreditsScrollState::default(),
             options_menu_assets: None,
             options_menu_page: OptionsMenuPage::Root,
             options_menu_index: 0,

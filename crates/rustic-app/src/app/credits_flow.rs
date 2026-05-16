@@ -13,6 +13,7 @@ impl App {
         self.title_assets = None;
         self.main_menu_assets = None;
         self.credits_assets = None;
+        self.credits_scroll.reset();
         self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
@@ -32,8 +33,9 @@ impl App {
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = self.title_cursor(sample_rate);
         if let Some(assets) = self.credits_assets.as_ref() {
+            let scroll_pixels = self.credits_scroll.advance(cursor, sample_rate);
             self.cmds = assets.commands();
-            self.text_cmds = assets.text_commands(cursor, sample_rate);
+            self.text_cmds = assets.text_commands_for_scroll(scroll_pixels);
         } else {
             self.cmds = RenderCommandList::new();
             self.text_cmds = TextCommandList::new();
@@ -46,11 +48,16 @@ impl App {
         action: InputAction,
         state: ElementState,
     ) -> bool {
-        if state != ElementState::Pressed {
-            return true;
-        }
         match action {
-            InputAction::Confirm | InputAction::Back => {
+            InputAction::Confirm => {
+                self.credits_scroll
+                    .set_fast_held(state == ElementState::Pressed);
+            }
+            InputAction::Pause | InputAction::UiPauseScroll => {
+                self.credits_scroll
+                    .set_pause_held(state == ElementState::Pressed);
+            }
+            InputAction::Back if state == ElementState::Pressed => {
                 self.play_menu_sound(MenuSound::Cancel);
                 self.load_main_menu();
             }

@@ -24,6 +24,7 @@ pub fn map_key(key: PhysicalKey) -> Option<InputAction> {
         KeyCode::Enter | KeyCode::Space => InputAction::Confirm,
         KeyCode::Escape => InputAction::Back,
         KeyCode::KeyP => InputAction::Pause,
+        KeyCode::ShiftLeft | KeyCode::ShiftRight => InputAction::UiPauseScroll,
         KeyCode::F3 => InputAction::Debug,
         KeyCode::F5 => InputAction::Reset,
         KeyCode::F6 => InputAction::UiLeft,
@@ -77,6 +78,18 @@ mod tests {
         assert_eq!(
             map_key(PhysicalKey::Code(KeyCode::Tab)),
             Some(InputAction::UiSelect)
+        );
+    }
+
+    #[test]
+    fn shift_drives_menu_pause_scroll_action() {
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::ShiftLeft)),
+            Some(InputAction::UiPauseScroll)
+        );
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::ShiftRight)),
+            Some(InputAction::UiPauseScroll)
         );
     }
 }

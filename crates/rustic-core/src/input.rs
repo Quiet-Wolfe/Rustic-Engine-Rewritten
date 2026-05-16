@@ -20,6 +20,7 @@ pub enum InputAction {
     Confirm,
     Back,
     Pause,
+    UiPauseScroll,
     Reset,
     Debug,
 }
