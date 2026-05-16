@@ -43,12 +43,7 @@ impl App {
             &self.cameras,
             &self.atlases,
             self.cmds.as_slice(),
-            wgpu::Color {
-                r: 0.07,
-                g: 0.07,
-                b: 0.10,
-                a: 1.0,
-            },
+            wgpu::Color::BLACK,
             rt.text.as_ref(),
         ) {
             tracing::warn!(target: "rustic.render", "sprite/text pass failed: {e}");
