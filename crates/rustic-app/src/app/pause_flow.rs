@@ -50,6 +50,9 @@ impl App {
         }
 
         if state != ElementState::Pressed {
+            if let Some(menu) = self.pause_menu.as_mut() {
+                menu.release(action);
+            }
             return true;
         }
 
@@ -69,6 +72,9 @@ impl App {
             }
             PauseMenuAction::ChangeDifficulty(difficulty) => {
                 self.change_difficulty_from_pause(difficulty);
+            }
+            PauseMenuAction::AdjustGlobalOffset(delta) => {
+                self.adjust_global_offset_from_pause(delta);
             }
             PauseMenuAction::ExitToMenu => {
                 self.pause_menu = None;
@@ -123,6 +129,7 @@ impl App {
             self.preview_selection,
             self.practice_mode,
             self.death_counter,
+            self.options_preferences.global_offset_ms,
         );
         self.cmds = sprites;
         self.text_cmds = text;
@@ -181,6 +188,15 @@ impl App {
             InputAction::Back | InputAction::Pause => self.play_menu_sound(MenuSound::Cancel),
             _ => {}
         }
+    }
+
+    fn adjust_global_offset_from_pause(&mut self, delta: i16) {
+        if self.options_preferences.adjust_global_offset_ms(delta)
+            == crate::options_preferences::PreferenceChange::Changed
+        {
+            self.persist_options_preferences();
+        }
+        self.rebuild_pause_commands();
     }
 }
 

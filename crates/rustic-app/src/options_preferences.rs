@@ -134,6 +134,18 @@ impl OptionsPreferences {
         }
     }
 
+    pub(crate) fn adjust_global_offset_ms(&mut self, delta: i16) -> PreferenceChange {
+        let next = self
+            .global_offset_ms
+            .saturating_add(delta)
+            .clamp(GLOBAL_OFFSET_MIN_MS, GLOBAL_OFFSET_MAX_MS);
+        if next == self.global_offset_ms {
+            return PreferenceChange::None;
+        }
+        self.global_offset_ms = next;
+        PreferenceChange::Changed
+    }
+
     fn adjust_strumline_background(&mut self, input: PreferenceInput) -> PreferenceChange {
         let delta = match input {
             PreferenceInput::Left => -10,
@@ -152,15 +164,7 @@ impl OptionsPreferences {
             PreferenceInput::Left => -1,
             PreferenceInput::Right | PreferenceInput::Confirm => 1,
         };
-        let next = self
-            .global_offset_ms
-            .saturating_add(delta)
-            .clamp(GLOBAL_OFFSET_MIN_MS, GLOBAL_OFFSET_MAX_MS);
-        if next == self.global_offset_ms {
-            return PreferenceChange::None;
-        }
-        self.global_offset_ms = next;
-        PreferenceChange::Changed
+        self.adjust_global_offset_ms(delta)
     }
 
     fn adjust_fps(&mut self, input: PreferenceInput) -> PreferenceChange {

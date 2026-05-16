@@ -178,7 +178,7 @@ impl App {
             .unwrap_or(0)
     }
 
-    fn persist_options_preferences(&mut self) {
+    pub(super) fn persist_options_preferences(&mut self) {
         self.options_preferences
             .write_to_settings(&mut self.settings.preferences);
         let Some(path) = self.settings_path.as_deref() else {

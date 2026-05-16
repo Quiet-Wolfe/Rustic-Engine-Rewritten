@@ -30,6 +30,7 @@ pub struct PauseMenuState {
     cursor: Samples,
     mode: PauseMenuMode,
     selected: usize,
+    offset_modifier_held: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +45,7 @@ pub enum PauseMenuAction {
     RestartSong,
     EnablePracticeMode,
     ChangeDifficulty(PreviewDifficulty),
+    AdjustGlobalOffset(i16),
     ExitToMenu,
     None,
 }
@@ -54,6 +56,7 @@ impl PauseMenuState {
             cursor,
             mode: PauseMenuMode::Standard,
             selected: 0,
+            offset_modifier_held: false,
         }
     }
 
@@ -69,11 +72,21 @@ impl PauseMenuState {
     ) -> PauseMenuAction {
         match action {
             InputAction::LaneUp | InputAction::UiUp => {
+                if self.offset_modifier_held {
+                    return PauseMenuAction::AdjustGlobalOffset(1);
+                }
                 self.change_selection(-1, selection, practice_mode);
                 PauseMenuAction::None
             }
             InputAction::LaneDown | InputAction::UiDown => {
+                if self.offset_modifier_held {
+                    return PauseMenuAction::AdjustGlobalOffset(-1);
+                }
                 self.change_selection(1, selection, practice_mode);
+                PauseMenuAction::None
+            }
+            InputAction::UiPauseScroll => {
+                self.offset_modifier_held = true;
                 PauseMenuAction::None
             }
             InputAction::Confirm => self.confirm(selection, practice_mode),
@@ -90,6 +103,12 @@ impl PauseMenuState {
         }
     }
 
+    pub fn release(&mut self, action: InputAction) {
+        if action == InputAction::UiPauseScroll {
+            self.offset_modifier_held = false;
+        }
+    }
+
     pub fn append_commands(
         &self,
         sprites: &mut RenderCommandList,
@@ -97,9 +116,16 @@ impl PauseMenuState {
         selection: PreviewSelection,
         practice_mode: bool,
         death_counter: u32,
+        global_offset_ms: i16,
     ) {
         sprites.push(overlay_command());
-        push_metadata_text(text, selection, practice_mode, death_counter);
+        push_metadata_text(
+            text,
+            selection,
+            practice_mode,
+            death_counter,
+            global_offset_ms,
+        );
         push_menu_text(text, self.entries(selection, practice_mode), self.selected);
     }
 
@@ -225,12 +251,14 @@ fn push_metadata_text(
     selection: PreviewSelection,
     practice_mode: bool,
     death_counter: u32,
+    global_offset_ms: i16,
 ) {
     let mut rows = vec![
         selection.song.display_name().to_string(),
         "Artist: Kawai Sprite".to_string(),
         format!("Difficulty: {}", difficulty_title(selection.difficulty)),
         format!("{death_counter} Blue Balls"),
+        format!("Global Offset: {global_offset_ms}ms"),
     ];
     if practice_mode {
         rows.push("PRACTICE MODE".to_string());
@@ -348,6 +376,40 @@ mod tests {
             ]
         );
         assert_eq!(menu.confirm(selection, true), PauseMenuAction::ExitToMenu);
+    }
+
+    #[test]
+    fn held_offset_modifier_adjusts_global_offset_instead_of_selection() {
+        let selection = PreviewSelection::new(PreviewSong::BOPEEBO, PreviewDifficulty::Normal);
+        let mut menu = PauseMenuState::new(Samples(0));
+
+        assert_eq!(
+            menu.input(InputAction::UiPauseScroll, selection, false),
+            PauseMenuAction::None
+        );
+        assert_eq!(
+            menu.input(InputAction::UiUp, selection, false),
+            PauseMenuAction::AdjustGlobalOffset(1)
+        );
+        assert_eq!(menu.selected, 0);
+        menu.release(InputAction::UiPauseScroll);
+        assert_eq!(
+            menu.input(InputAction::UiDown, selection, false),
+            PauseMenuAction::None
+        );
+        assert_eq!(menu.selected, 1);
+    }
+
+    #[test]
+    fn metadata_lists_global_offset() {
+        let selection = PreviewSelection::new(PreviewSong::BOPEEBO, PreviewDifficulty::Normal);
+        let menu = PauseMenuState::new(Samples(0));
+        let mut sprites = RenderCommandList::new();
+        let mut text = TextCommandList::new();
+
+        menu.append_commands(&mut sprites, &mut text, selection, false, 0, -24);
+
+        assert!(text.iter().any(|cmd| cmd.text == "Global Offset: -24ms"));
     }
 
     #[test]
