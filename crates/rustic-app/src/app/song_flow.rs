@@ -2,6 +2,10 @@ use super::App;
 use crate::audio_clock::AudioClockDecision;
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
 use crate::song_audio::play_sample_rate;
+use crate::stage_sfx::play_stress_pico_end_cutscene_sound_or_warn;
+use crate::stress_pico_cutscene::{
+    should_play_stress_pico_end_cutscene, StressPicoEndCutsceneState,
+};
 use rustic_core::time::Samples;
 use std::time::Instant;
 
@@ -31,6 +35,7 @@ impl App {
     pub(super) fn return_to_play_menu(&mut self) {
         // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:552
         // ref: bdedc0aa:source/funkin/play/PauseSubState.hx:1152-1157
+        self.stress_pico_end_cutscene = None;
         self.death_counter = 0;
         self.practice_mode = false;
         if self.story_playlist.is_empty() {
@@ -47,6 +52,14 @@ impl App {
         let Some(play_state) = self.play_state.as_ref() else {
             return false;
         };
+        if let Some(cutscene) = self.stress_pico_end_cutscene.as_ref() {
+            if cutscene.finished(cursor, sample_rate) {
+                self.stress_pico_end_cutscene = None;
+                self.finish_current_song();
+                return true;
+            }
+            return false;
+        }
         let tail = i64::from(sample_rate.max(1)) * SONG_END_TAIL_SECONDS;
         let mut finish_at = play_state.chart_end_cursor().0.saturating_add(tail);
         if let Some(sserafim_finish_at) = self.sserafim_stage.finish_cursor_override() {
@@ -55,12 +68,26 @@ impl App {
         if cursor.0 < finish_at {
             return false;
         }
+        if should_play_stress_pico_end_cutscene(self.preview_selection) {
+            self.start_stress_pico_end_cutscene(cursor, sample_rate);
+            return false;
+        }
         self.finish_current_song();
         true
     }
 
+    fn start_stress_pico_end_cutscene(&mut self, cursor: Samples, sample_rate: u32) {
+        let cutscene = StressPicoEndCutsceneState::load_or_warn(cursor);
+        cutscene.apply_character_poses(&mut self.character_anim, cursor, sample_rate);
+        self.stress_pico_end_cutscene = Some(cutscene);
+        if self.audio_output.is_some() {
+            play_stress_pico_end_cutscene_sound_or_warn(&self.mixer);
+        }
+    }
+
     fn finish_current_song(&mut self) {
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:3435
+        self.stress_pico_end_cutscene = None;
         self.death_counter = 0;
         self.practice_mode = false;
         if self.story_playlist.is_empty() {

@@ -23,6 +23,7 @@ const SSERAFIM_DOOR_KICK_2_PATH: &str = "sounds/sserafim/doorKick2.ogg";
 const SSERAFIM_START_CUTSCENE_PATH: &str = "sounds/sserafim/cutscene/startCutscene.ogg";
 const SSERAFIM_END_1_PATH: &str = "sounds/sserafim/cutscene/end1.ogg";
 const SSERAFIM_END_2_PATH: &str = "sounds/sserafim/cutscene/end2.ogg";
+const STRESS_PICO_END_CUTSCENE_PATH: &str = "sounds/erect/endCutscene.ogg";
 
 static TRAIN_SOUND_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static CAR_PASS_0_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
@@ -35,6 +36,7 @@ static SSERAFIM_DOOR_KICK_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new()
 static SSERAFIM_START_CUTSCENE_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_END_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_END_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static STRESS_PICO_END_CUTSCENE_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 
 #[derive(Debug, Default)]
 pub(crate) struct StageSfx {
@@ -154,6 +156,7 @@ impl StageSfx {
             StageSound::SserafimStartCutscene => self.last_sserafim_intro_start,
             StageSound::SserafimEnd1 => self.last_sserafim_end1_start,
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start,
+            StageSound::StressPicoEndCutscene => None,
             StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => None,
         }
     }
@@ -166,6 +169,7 @@ impl StageSfx {
             StageSound::SserafimStartCutscene => self.last_sserafim_intro_start = Some(start),
             StageSound::SserafimEnd1 => self.last_sserafim_end1_start = Some(start),
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start = Some(start),
+            StageSound::StressPicoEndCutscene => {}
             StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => {}
         }
     }
@@ -181,6 +185,7 @@ enum StageSound {
     SserafimStartCutscene,
     SserafimEnd1,
     SserafimEnd2,
+    StressPicoEndCutscene,
 }
 
 pub(crate) fn play_sserafim_event_sound_or_warn(mixer: &SharedMixer, kind: &ChartEventKind) {
@@ -189,6 +194,12 @@ pub(crate) fn play_sserafim_event_sound_or_warn(mixer: &SharedMixer, kind: &Char
     };
     if let Err(e) = play_stage_sound(mixer, sound) {
         tracing::warn!(target: "rustic.audio", "play Sserafim event sound: {e:#}");
+    }
+}
+
+pub(crate) fn play_stress_pico_end_cutscene_sound_or_warn(mixer: &SharedMixer) {
+    if let Err(e) = play_stage_sound(mixer, StageSound::StressPicoEndCutscene) {
+        tracing::warn!(target: "rustic.audio", "play Stress Pico end cutscene sound: {e:#}");
     }
 }
 
@@ -230,6 +241,10 @@ fn cached_stage_sound(sound: StageSound) -> Option<&'static Arc<[u8]>> {
         }
         StageSound::SserafimEnd1 => (&SSERAFIM_END_1_BYTES, SSERAFIM_END_1_PATH),
         StageSound::SserafimEnd2 => (&SSERAFIM_END_2_BYTES, SSERAFIM_END_2_PATH),
+        StageSound::StressPicoEndCutscene => (
+            &STRESS_PICO_END_CUTSCENE_BYTES,
+            STRESS_PICO_END_CUTSCENE_PATH,
+        ),
     };
     cache
         .get_or_init(|| match load_stage_sound(path) {
@@ -282,6 +297,10 @@ mod tests {
             "sounds/sserafim/cutscene/startCutscene.ogg"
         );
         assert_eq!(SSERAFIM_END_2_PATH, "sounds/sserafim/cutscene/end2.ogg");
+        assert_eq!(
+            STRESS_PICO_END_CUTSCENE_PATH,
+            "sounds/erect/endCutscene.ogg"
+        );
     }
 
     #[test]

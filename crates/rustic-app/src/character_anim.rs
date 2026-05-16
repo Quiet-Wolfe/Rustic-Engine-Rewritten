@@ -142,17 +142,20 @@ impl CharacterAnimState {
                 self.dance_girlfriend(cursor);
             }
         } else if is_chart_special_pose(self.girlfriend_pose)
+            && !is_stress_pico_end_pose(self.girlfriend_pose)
             && cursor.0.saturating_sub(self.girlfriend_started.0) >= hold
         {
             self.dance_girlfriend(cursor);
         }
         if is_chart_special_pose(self.opponent_pose)
+            && !is_stress_pico_end_pose(self.opponent_pose)
             && cursor.0.saturating_sub(self.opponent_started.0) >= hold
         {
             self.opponent_pose = "idle";
             self.opponent_started = cursor;
         }
         if is_chart_special_pose(self.player_pose)
+            && !is_stress_pico_end_pose(self.player_pose)
             && cursor.0.saturating_sub(self.player_started.0) >= hold
         {
             self.player_pose = "idle";
@@ -478,6 +481,10 @@ fn is_chart_special_pose(pose: &str) -> bool {
         && !pose.starts_with("idle")
         && !pose.starts_with("sing")
         && !pose.starts_with("death")
+}
+
+fn is_stress_pico_end_pose(pose: &str) -> bool {
+    matches!(pose, "stressPicoEnding" | "laughEnd" | "laughEnd-loop")
 }
 
 fn is_girlfriend_count_pose(pose: &str) -> bool {

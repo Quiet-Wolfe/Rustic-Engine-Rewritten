@@ -28,11 +28,19 @@ impl SubtitleTrack {
         let Some(path) = subtitle_path_for_selection(selection) else {
             return Ok(None);
         };
+        Ok(Some(Self::load_path(&path)?))
+    }
+
+    pub(crate) fn load_stress_pico_end_cutscene() -> Result<Self> {
+        Self::load_path(stress_pico_end_cutscene_subtitle_path())
+    }
+
+    fn load_path(path: &str) -> Result<Self> {
         let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
         let path = AssetPath::new(path)?;
         let bytes = load_bytes(&resolver, &path).with_context(|| format!("load {path}"))?;
         let cues = parse_srt(&bytes).with_context(|| format!("parse {path}"))?;
-        Ok(Some(Self { cues }))
+        Ok(Self { cues })
     }
 
     pub(crate) fn append_commands(
@@ -68,6 +76,10 @@ fn subtitle_path_for_selection(selection: PreviewSelection) -> Option<String> {
         "data/songs/{}/subtitles/{file}",
         selection.song.folder
     ))
+}
+
+fn stress_pico_end_cutscene_subtitle_path() -> &'static str {
+    "data/songs/stress/subtitles/end-cutscene-pico.srt"
 }
 
 fn parse_srt(bytes: &[u8]) -> Result<Vec<SubtitleCue>> {
@@ -202,6 +214,14 @@ mod tests {
                 PreviewDifficulty::Normal
             )),
             None
+        );
+    }
+
+    #[test]
+    fn stress_pico_end_cutscene_uses_upstream_srt_path() {
+        assert_eq!(
+            stress_pico_end_cutscene_subtitle_path(),
+            "data/songs/stress/subtitles/end-cutscene-pico.srt"
         );
     }
 

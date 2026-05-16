@@ -206,6 +206,18 @@ fn stress_pico_end_cutscene_poses_are_allowed() {
 }
 
 #[test]
+fn stress_pico_end_cutscene_poses_hold_until_cutscene_finishes() {
+    let mut state = CharacterAnimState::default();
+
+    assert!(state.play_chart_animation("dad", "stressPicoEnding", Samples(0), true));
+    assert!(state.play_chart_animation("boyfriend", "laughEnd", Samples(0), true));
+    state.update(Samples(96_000), 48_000, 100.0, false);
+
+    assert_eq!(state.poses().opponent.name, "stressPicoEnding");
+    assert_eq!(state.poses().player.name, "laughEnd");
+}
+
+#[test]
 fn girlfriend_chart_animation_returns_to_dance_after_hold_time() {
     let mut state = CharacterAnimState::default();
     state.play_chart_animation("girlfriend", "cheer", Samples(0), true);

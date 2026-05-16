@@ -62,6 +62,7 @@ pub(crate) mod stage_scripted_motion;
 pub(crate) mod stage_sfx;
 pub(crate) mod stage_static_prop;
 pub mod story_menu_assets;
+pub(crate) mod stress_pico_cutscene;
 pub(crate) mod subtitle_track;
 pub mod title_assets;
 

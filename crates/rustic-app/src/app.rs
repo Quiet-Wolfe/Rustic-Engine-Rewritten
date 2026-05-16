@@ -48,6 +48,7 @@ use crate::sserafim_stage::sserafim_intro_start_cursor;
 use crate::stage_object_assets::StagePropSet;
 use crate::stage_sfx::StageSfx;
 use crate::story_menu_assets::StoryMenuAssets;
+use crate::stress_pico_cutscene::StressPicoEndCutsceneState;
 use crate::subtitle_track::SubtitleTrack;
 use crate::title_assets::TitleScreenAssets;
 use anyhow::Result;
@@ -94,6 +95,7 @@ struct App {
     stage_props: StagePropSet,
     stage_sfx: StageSfx,
     sserafim_stage: crate::sserafim_stage::SserafimStageState,
+    stress_pico_end_cutscene: Option<StressPicoEndCutsceneState>,
     cmds: RenderCommandList,
     text_cmds: TextCommandList,
     atlases: HashMap<AssetId, Texture>,
@@ -185,6 +187,7 @@ impl App {
             stage_props: StagePropSet::default(),
             stage_sfx: StageSfx::default(),
             sserafim_stage: crate::sserafim_stage::SserafimStageState::default(),
+            stress_pico_end_cutscene: None,
             cmds: RenderCommandList::new(),
             text_cmds: TextCommandList::new(),
             atlases: HashMap::new(),
@@ -386,6 +389,7 @@ impl App {
         self.audio_clock.reset(self.song_start);
         self.game_over = None;
         self.dialogue = None;
+        self.stress_pico_end_cutscene = None;
         self.countdown_audio.reset();
         self.character_anim.reset_song();
         (
@@ -543,6 +547,9 @@ impl App {
                 bpm,
                 self.held_lanes.active_lanes().next().is_some(),
             );
+            if let Some(cutscene) = self.stress_pico_end_cutscene.as_ref() {
+                cutscene.apply_character_poses(&mut self.character_anim, cursor, sample_rate);
+            }
             if !self.song_started {
                 self.countdown_audio
                     .tick_or_warn(&self.mixer, cursor, sample_rate, bpm);
@@ -701,7 +708,16 @@ impl App {
         }
         self.sserafim_stage
             .apply_commands(self.cmds.iter_mut(), cursor, sample_rate, stage_bpm);
-        if self.options_preferences.subtitles {
+        if let Some(cutscene) = self.stress_pico_end_cutscene.as_ref() {
+            cutscene.apply_commands(self.cmds.iter_mut());
+            cutscene.append_commands(
+                &mut self.cmds,
+                &mut self.text_cmds,
+                cursor,
+                sample_rate,
+                self.options_preferences.subtitles,
+            );
+        } else if self.options_preferences.subtitles {
             if let Some(track) = self.subtitle_track.as_ref() {
                 track.append_commands(&mut self.text_cmds, cursor, sample_rate);
             }

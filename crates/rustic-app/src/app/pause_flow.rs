@@ -39,6 +39,7 @@ impl App {
             if state == ElementState::Pressed
                 && self.mode == super::title_flow::AppMode::Play
                 && self.game_over.is_none()
+                && self.stress_pico_end_cutscene.is_none()
                 // ref: bdedc0aa:source/funkin/input/Controls.hx:792-793
                 && is_gameplay_pause_action(action)
             {
