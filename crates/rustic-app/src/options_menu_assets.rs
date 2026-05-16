@@ -148,11 +148,18 @@ const ROOT_ACTIONS: [OptionsMenuAction; 4] = [
     OptionsMenuAction::ClearSaveData,
     OptionsMenuAction::Exit,
 ];
-const CONTROL_ITEMS: [&str; 5] = [
-    "LEFT        A / LEFT",
-    "DOWN        S / DOWN",
-    "UP          W / UP",
-    "RIGHT       D / RIGHT",
+const CONTROL_ITEMS: [&str; 12] = [
+    "NOTE LEFT        A / LEFT",
+    "NOTE DOWN        S / DOWN",
+    "NOTE UP          W / UP",
+    "NOTE RIGHT       D / RIGHT",
+    "ACCEPT           Z / SPACE / ENTER",
+    "BACK             X / BACKSPACE / ESCAPE",
+    "PAUSE            P / PAUSE",
+    "RESET            R / F5",
+    "FREEPLAY LEFT    Q / F6",
+    "FREEPLAY RIGHT   E / F7",
+    "CHAR SELECT      TAB",
     "BACK",
 ];
 const CLEAR_SAVE_CONFIRM_ITEMS: [&str; 2] = ["DELETE", "CANCEL"];
@@ -309,6 +316,36 @@ mod tests {
         );
         assert_eq!(
             item_label(OptionsMenuPage::Preferences, 10, preferences).as_deref(),
+            Some("BACK")
+        );
+    }
+
+    #[test]
+    fn controls_page_lists_supported_desktop_binds() {
+        let assets = OptionsMenuAssets {
+            background: OptionsBackground {
+                texture_id: AssetId::new(1),
+                size: glam::vec2(1280.0, 720.0),
+            },
+            textures: HashMap::new(),
+        };
+
+        assert_eq!(assets.item_count(OptionsMenuPage::Controls), 12);
+        assert_eq!(
+            item_label(OptionsMenuPage::Controls, 4, OptionsPreferences::default()).as_deref(),
+            Some("ACCEPT           Z / SPACE / ENTER")
+        );
+        assert_eq!(
+            item_label(OptionsMenuPage::Controls, 8, OptionsPreferences::default()).as_deref(),
+            Some("FREEPLAY LEFT    Q / F6")
+        );
+        assert_eq!(
+            item_label(
+                OptionsMenuPage::Controls,
+                assets.item_count(OptionsMenuPage::Controls) - 1,
+                OptionsPreferences::default()
+            )
+            .as_deref(),
             Some("BACK")
         );
     }

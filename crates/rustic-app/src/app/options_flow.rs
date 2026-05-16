@@ -91,6 +91,12 @@ impl App {
             self.confirm_clear_save_data();
             return;
         }
+        if self.options_menu_page == OptionsMenuPage::Controls {
+            if self.options_menu_index + 1 == self.options_item_count() {
+                self.back_from_options_menu();
+            }
+            return;
+        }
         if self.options_menu_page != OptionsMenuPage::Root {
             self.back_from_options_menu();
             return;

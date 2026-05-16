@@ -21,14 +21,14 @@ pub fn map_key(key: PhysicalKey) -> Option<InputAction> {
         KeyCode::ArrowDown | KeyCode::KeyS => InputAction::LaneDown,
         KeyCode::ArrowUp | KeyCode::KeyW => InputAction::LaneUp,
         KeyCode::ArrowRight | KeyCode::KeyD => InputAction::LaneRight,
-        KeyCode::Enter | KeyCode::Space => InputAction::Confirm,
-        KeyCode::Escape => InputAction::Back,
+        KeyCode::KeyZ | KeyCode::Enter | KeyCode::Space => InputAction::Confirm,
+        KeyCode::KeyX | KeyCode::Backspace | KeyCode::Escape => InputAction::Back,
         KeyCode::KeyP => InputAction::Pause,
         KeyCode::ShiftLeft | KeyCode::ShiftRight => InputAction::UiPauseScroll,
         KeyCode::F3 => InputAction::Debug,
-        KeyCode::F5 => InputAction::Reset,
-        KeyCode::F6 => InputAction::UiLeft,
-        KeyCode::F7 => InputAction::UiRight,
+        KeyCode::KeyR | KeyCode::F5 => InputAction::Reset,
+        KeyCode::KeyQ | KeyCode::F6 => InputAction::UiLeft,
+        KeyCode::KeyE | KeyCode::F7 => InputAction::UiRight,
         KeyCode::Tab => InputAction::UiSelect,
         KeyCode::Pause => InputAction::Pause,
         _ => return None,
@@ -56,8 +56,16 @@ mod tests {
     #[test]
     fn function_keys_drive_preview_selection_actions() {
         assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::KeyQ)),
+            Some(InputAction::UiLeft)
+        );
+        assert_eq!(
             map_key(PhysicalKey::Code(KeyCode::F6)),
             Some(InputAction::UiLeft)
+        );
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::KeyE)),
+            Some(InputAction::UiRight)
         );
         assert_eq!(
             map_key(PhysicalKey::Code(KeyCode::F7)),
@@ -90,6 +98,26 @@ mod tests {
         assert_eq!(
             map_key(PhysicalKey::Code(KeyCode::ShiftRight)),
             Some(InputAction::UiPauseScroll)
+        );
+    }
+
+    #[test]
+    fn desktop_default_action_keys_match_supported_funkin_binds() {
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::KeyZ)),
+            Some(InputAction::Confirm)
+        );
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::KeyX)),
+            Some(InputAction::Back)
+        );
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::Backspace)),
+            Some(InputAction::Back)
+        );
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::KeyR)),
+            Some(InputAction::Reset)
         );
     }
 }
