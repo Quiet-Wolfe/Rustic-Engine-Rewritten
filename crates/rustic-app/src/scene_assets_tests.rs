@@ -163,6 +163,42 @@ fn all_imported_story_stages_parse() {
 }
 
 #[test]
+fn sserafim_source_stage_registers_cutscene_and_dust_props() {
+    let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root")
+        .to_path_buf();
+    let resolver = OverlayResolver::new().with_baked_root(workspace.join("assets/source"));
+    let stage = load_stage(
+        &resolver,
+        &AssetPath::new("data/stages/sserafim.json").unwrap(),
+    )
+    .unwrap();
+    let ids = stage
+        .objects
+        .iter()
+        .map(|object| object.id.as_str())
+        .collect::<Vec<_>>();
+
+    for id in [
+        "cutsceneFloor",
+        "sserafimCutsceneMain",
+        "sserafimGfGetUp",
+        "sserafimBfGetUp",
+        "sserafimDust1",
+        "sserafimDust2",
+        "sserafimDust3",
+        "sserafimDust4",
+        "sserafimEnd1",
+        "sserafimEnd2",
+        "solidFlash",
+    ] {
+        assert!(ids.contains(&id), "missing sserafim prop {id}");
+    }
+}
+
+#[test]
 fn all_registered_story_scenes_load_available_assets() {
     let render_state =
         pollster::block_on(rustic_render::RenderState::headless()).expect("headless render state");

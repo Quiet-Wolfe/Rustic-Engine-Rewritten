@@ -789,7 +789,6 @@ fn apply_dust_clear(cmd: &mut DrawCommand, started_at: Samples, cursor: Samples)
 
 fn is_flash_overlay(cmd: &DrawCommand) -> bool {
     cmd.texture == sserafim_texture_id("generated/stage/solid-FFFFFF.png")
-        && cmd.layer == RenderLayer::Overlay
         && cmd.z == FLASH_OVERLAY_Z
 }
 

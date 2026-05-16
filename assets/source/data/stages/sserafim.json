@@ -17,6 +17,15 @@
       "scroll": [0, 0]
     },
     {
+      "name": "solidFlash",
+      "zIndex": 10001,
+      "alpha": 0.0,
+      "assetPath": "#FFFFFF",
+      "position": [-5000, -3000],
+      "scale": [10000, 10000],
+      "scroll": [0, 0]
+    },
+    {
       "danceEvery": 0,
       "zIndex": 10,
       "position": [-1853, -815],
@@ -30,7 +39,6 @@
     },
     {
       "danceEvery": 0,
-      "alpha": 0.0,
       "zIndex": 10,
       "position": [790, 625],
       "scale": [1, 1],
@@ -39,6 +47,18 @@
       "isPixel": false,
       "assetPath": "sserafim/floor",
       "scroll": [0.85, 0.85],
+      "animations": []
+    },
+    {
+      "danceEvery": 0,
+      "zIndex": 11,
+      "position": [790, 625],
+      "scale": [1, 1],
+      "animType": "sparrow",
+      "name": "cutsceneFloor",
+      "isPixel": false,
+      "assetPath": "sserafim/cutscene/floor-cutscene",
+      "scroll": [0.93, 0.93],
       "animations": []
     },
     {
@@ -76,6 +96,35 @@
       "assetPath": "sserafim/cutscene/burger-cutscene",
       "scroll": [0.93, 0.93],
       "animations": []
+    },
+    {
+      "danceEvery": 0,
+      "zIndex": 25,
+      "position": [-395, 10],
+      "scale": [1, 1],
+      "animType": "animateatlas",
+      "name": "sserafimCutsceneMain",
+      "isPixel": false,
+      "assetPath": "sserafim/cutscene/cutsceneMain",
+      "scroll": [0.94, 0.94],
+      "startingAnimation": "intro",
+      "animations": [
+        { "name": "intro", "prefix": "cutsceneMain", "animType": "symbol" }
+      ]
+    },
+    {
+      "danceEvery": 0,
+      "alpha": 0.5,
+      "zIndex": 25,
+      "position": [655, -104],
+      "scale": [1, 1],
+      "animType": "animateatlas",
+      "name": "sserafimGfGetUp",
+      "isPixel": false,
+      "assetPath": "sserafim/cutscene/gfGetUp",
+      "scroll": [0.95, 0.95],
+      "startingAnimation": "getup",
+      "animations": [{ "name": "getup", "prefix": "getup" }]
     },
     {
       "danceEvery": 0,
@@ -141,6 +190,19 @@
     },
     {
       "danceEvery": 0,
+      "zIndex": 305,
+      "position": [1220, 531],
+      "scale": [1, 1],
+      "animType": "animateatlas",
+      "name": "sserafimBfGetUp",
+      "isPixel": false,
+      "assetPath": "sserafim/cutscene/bfGetUp",
+      "scroll": [0.99, 0.99],
+      "startingAnimation": "getup",
+      "animations": [{ "name": "getup", "prefix": "getup" }]
+    },
+    {
+      "danceEvery": 0,
       "alpha": 0.0,
       "zIndex": 23,
       "position": [-962, -607],
@@ -176,6 +238,60 @@
       "assetPath": "sserafim/front-stool",
       "scroll": [1.0, 1.0],
       "animations": []
+    },
+    {
+      "name": "sserafimDust1",
+      "zIndex": 2000,
+      "assetPath": "sserafim/dust/dustMid",
+      "position": [-650, -400],
+      "scale": [1.5, 1.5],
+      "scroll": [1.1, 1.1],
+      "alpha": 1.0
+    },
+    {
+      "name": "sserafimDust2",
+      "zIndex": 2000,
+      "assetPath": "sserafim/dust/dustBack",
+      "position": [-650, -450],
+      "scale": [1.5, 1.5],
+      "scroll": [1.15, 1.15],
+      "alpha": 1.0
+    },
+    {
+      "name": "sserafimDust3",
+      "zIndex": 2000,
+      "assetPath": "sserafim/dust/dustMid",
+      "position": [-650, -600],
+      "scale": [2, 2],
+      "scroll": [1.2, 1.2],
+      "alpha": 1.0
+    },
+    {
+      "name": "sserafimDust4",
+      "zIndex": 2000,
+      "assetPath": "sserafim/dust/dustBack",
+      "position": [-650, -1500],
+      "scale": [3.5, 3.5],
+      "scroll": [1.25, 1.25],
+      "alpha": 1.0
+    },
+    {
+      "name": "sserafimEnd1",
+      "zIndex": 10000,
+      "alpha": 0.0,
+      "assetPath": "sserafim/end/end1",
+      "position": [387.75, 108.08],
+      "scale": [0.67, 0.67],
+      "scroll": [0, 0]
+    },
+    {
+      "name": "sserafimEnd2",
+      "zIndex": 10000,
+      "alpha": 0.0,
+      "assetPath": "sserafim/end/end2",
+      "position": [516.4, 629.75],
+      "scale": [0.67, 0.67],
+      "scroll": [0, 0]
     }
   ],
   "cameraZoom": 0.5,
