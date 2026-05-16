@@ -779,6 +779,7 @@ impl App {
 
     pub(super) fn clear_play_state_for_menu(&mut self) {
         self.play_state = None;
+        self.subtitle_track = None;
         self.game_over = None;
         self.game_over_restart = None;
         self.pause_menu = None;

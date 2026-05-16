@@ -48,6 +48,7 @@ use crate::sserafim_stage::sserafim_intro_start_cursor;
 use crate::stage_object_assets::StagePropSet;
 use crate::stage_sfx::StageSfx;
 use crate::story_menu_assets::StoryMenuAssets;
+use crate::subtitle_track::SubtitleTrack;
 use crate::title_assets::TitleScreenAssets;
 use anyhow::Result;
 use rustic_audio::{AudioOutput, SharedMixer};
@@ -107,6 +108,7 @@ struct App {
     countdown_skin: Option<CountdownSkin>,
     countdown_audio: CountdownAudio,
     dialogue: Option<DialogueState>,
+    subtitle_track: Option<SubtitleTrack>,
     score_popups: ScorePopups,
     note_splashes: NoteSplashes,
     hold_covers: HoldCovers,
@@ -197,6 +199,7 @@ impl App {
             countdown_skin: None,
             countdown_audio: CountdownAudio::default(),
             dialogue: None,
+            subtitle_track: None,
             score_popups: ScorePopups::default(),
             note_splashes: NoteSplashes::default(),
             hold_covers: HoldCovers::default(),
@@ -328,6 +331,14 @@ impl App {
                         None
                     }
                 };
+                self.subtitle_track =
+                    match SubtitleTrack::load_for_selection(self.preview_selection) {
+                        Ok(track) => track,
+                        Err(e) => {
+                            tracing::warn!(target: "rustic.asset", "subtitles unavailable: {e:#}");
+                            None
+                        }
+                    };
                 self.load_selected_stems();
                 self.rebuild_frame_commands();
             }
@@ -690,6 +701,11 @@ impl App {
         }
         self.sserafim_stage
             .apply_commands(self.cmds.iter_mut(), cursor, sample_rate, stage_bpm);
+        if self.options_preferences.subtitles {
+            if let Some(track) = self.subtitle_track.as_ref() {
+                track.append_commands(&mut self.text_cmds, cursor, sample_rate);
+            }
+        }
     }
 }
 
