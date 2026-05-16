@@ -24,6 +24,7 @@ pub use freeplay_loader::{load_freeplay_assets, load_freeplay_assets_for_style, 
 
 #[path = "freeplay_backing_text.rs"]
 mod backing_text;
+use backing_text::FreeplayBackingText;
 
 #[path = "freeplay_difficulty_stars.rs"]
 mod difficulty_stars;
@@ -127,6 +128,7 @@ pub struct FreeplayAssets {
     sparkle_frames: Vec<SparrowFrame>,
     clear_box: Option<StaticTexture>,
     icons: FreeplayIconAssets,
+    backing_text: FreeplayBackingText,
     backing_text_skin: Option<BitmapTextSkin>,
     enter_started_at: Option<Samples>,
     pub start_delay_secs: f64,

@@ -1,3 +1,4 @@
+use super::backing_text::FreeplayBackingText;
 use super::capsule_metadata::load_capsule_metadata_assets;
 // LINT-ALLOW: long-file Freeplay asset bootstrap covers vanilla screen dependencies.
 use super::difficulty_stars::load_freeplay_difficulty_stars;
@@ -37,6 +38,13 @@ impl FreeplayStyle {
         match self {
             Self::Bf => "images/freeplay/freeplay-boyfriend",
             Self::Pico => "images/freeplay/freeplay-pico",
+        }
+    }
+
+    fn player_data_path(self) -> &'static str {
+        match self {
+            Self::Bf => "data/players/bf.json",
+            Self::Pico => "data/players/pico.json",
         }
     }
 }
@@ -320,6 +328,7 @@ pub fn load_freeplay_assets_for_style(
         sparkle_frames,
         clear_box,
         icons,
+        backing_text: style_config.backing_text,
         backing_text_skin,
         enter_started_at: None,
         start_delay_secs: style_config.start_delay,
@@ -336,7 +345,29 @@ fn load_freeplay_style_config(
     let bytes = load_bytes(resolver, &path).with_context(|| format!("load {}", path.as_str()))?;
     let raw: RawFreeplayStyle =
         serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.as_str()))?;
-    Ok(raw.into_config())
+    let backing_text = load_player_backing_text(resolver, style).unwrap_or_else(|error| {
+        tracing::warn!(
+            target: "rustic.asset",
+            "freeplay player backing text unavailable for {:?}: {error:#}",
+            style
+        );
+        FreeplayBackingText::boyfriend()
+    });
+    Ok(raw.into_config(backing_text))
+}
+
+fn load_player_backing_text(
+    resolver: &OverlayResolver,
+    style: FreeplayStyle,
+) -> Result<FreeplayBackingText> {
+    let path = AssetPath::new(style.player_data_path())?;
+    let bytes = load_bytes(resolver, &path).with_context(|| format!("load {}", path.as_str()))?;
+    let raw: RawFreeplayPlayer =
+        serde_json::from_slice(&bytes).with_context(|| format!("parse {}", path.as_str()))?;
+    let dj = raw
+        .freeplay_dj
+        .ok_or_else(|| anyhow::anyhow!("missing freeplayDJ text block"))?;
+    Ok(FreeplayBackingText::new(dj.text1, dj.text2, dj.text3))
 }
 
 fn load_song_metadata_map(resolver: &OverlayResolver) -> HashMap<u32, FreeplaySongMetadata> {
@@ -546,6 +577,21 @@ struct RawFreeplayStyle {
     start_delay: f64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawFreeplayPlayer {
+    #[serde(rename = "freeplayDJ")]
+    freeplay_dj: Option<RawFreeplayDjText>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawFreeplayDjText {
+    text1: String,
+    text2: String,
+    text3: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct FreeplayStyleConfig {
     bg_asset: String,
@@ -553,16 +599,18 @@ struct FreeplayStyleConfig {
     capsule_asset: String,
     capsule_text_colors: [glam::Vec4; 2],
     start_delay: f64,
+    backing_text: FreeplayBackingText,
 }
 
 impl RawFreeplayStyle {
-    fn into_config(self) -> FreeplayStyleConfig {
+    fn into_config(self, backing_text: FreeplayBackingText) -> FreeplayStyleConfig {
         FreeplayStyleConfig {
             bg_asset: self.bg_asset,
             selector_asset: self.selector_asset,
             capsule_asset: self.capsule_asset,
             capsule_text_colors: parse_capsule_text_colors(self.capsule_text_colors),
             start_delay: self.start_delay,
+            backing_text,
         }
     }
 }

@@ -179,4 +179,8 @@ fn freeplay_style_data_drives_pico_paths_and_confirm_delay() {
             glam::vec4(0xCC as f32 / 255.0, 0x99 as f32 / 255.0, 0.0, 1.0)
         ]
     );
+    assert_eq!(
+        style.backing_text.texts(),
+        ("PICO", "GOD DAMN HE DOWN ON THE NUT", "ZEBOIM DAMN IMA NUT")
+    );
 }
