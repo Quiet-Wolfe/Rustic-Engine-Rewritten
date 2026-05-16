@@ -303,7 +303,7 @@ mod tests {
         };
         let preferences = OptionsPreferences::default();
 
-        assert_eq!(assets.item_count(OptionsMenuPage::Preferences), 11);
+        assert_eq!(assets.item_count(OptionsMenuPage::Preferences), 12);
         assert_eq!(
             item_label(OptionsMenuPage::Preferences, 0, preferences).as_deref(),
             Some("DOWNSCROLL             OFF")
@@ -313,11 +313,15 @@ mod tests {
             Some("STRUMLINE BACKGROUND   0%")
         );
         assert_eq!(
-            item_label(OptionsMenuPage::Preferences, 7, preferences).as_deref(),
+            item_label(OptionsMenuPage::Preferences, 5, preferences).as_deref(),
+            Some("GLOBAL OFFSET          0ms")
+        );
+        assert_eq!(
+            item_label(OptionsMenuPage::Preferences, 8, preferences).as_deref(),
             Some("VSYNC                  ON")
         );
         assert_eq!(
-            item_label(OptionsMenuPage::Preferences, 10, preferences).as_deref(),
+            item_label(OptionsMenuPage::Preferences, 11, preferences).as_deref(),
             Some("BACK")
         );
     }

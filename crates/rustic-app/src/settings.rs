@@ -120,6 +120,7 @@ pub struct PreferenceSettings {
     pub flashing_lights: bool,
     pub camera_zooms: bool,
     pub subtitles: bool,
+    pub global_offset_ms: i16,
     pub pause_on_unfocus: bool,
     pub launch_fullscreen: bool,
     pub vsync: bool,
@@ -135,6 +136,7 @@ impl Default for PreferenceSettings {
             flashing_lights: true,
             camera_zooms: true,
             subtitles: true,
+            global_offset_ms: 0,
             pause_on_unfocus: true,
             launch_fullscreen: false,
             vsync: true,
@@ -215,6 +217,7 @@ mod tests {
         assert_eq!(settings.input.touch_lane_height_px, 240);
         assert_eq!(settings.input.touch_opacity, 0.45);
         assert!(settings.preferences.camera_zooms);
+        assert_eq!(settings.preferences.global_offset_ms, 0);
         assert_eq!(settings.preferences.fps, 60);
     }
 

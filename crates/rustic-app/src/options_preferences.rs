@@ -3,8 +3,10 @@
 use crate::settings::PreferenceSettings;
 
 const FPS_CHOICES: [u16; 6] = [60, 120, 144, 165, 240, 360];
+const GLOBAL_OFFSET_MIN_MS: i16 = -1500;
+const GLOBAL_OFFSET_MAX_MS: i16 = 1500;
 
-pub(crate) const PREFERENCE_ITEM_COUNT: usize = 11;
+pub(crate) const PREFERENCE_ITEM_COUNT: usize = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OptionsPreferences {
@@ -13,6 +15,7 @@ pub(crate) struct OptionsPreferences {
     pub(crate) flashing_lights: bool,
     pub(crate) camera_zooms: bool,
     pub(crate) subtitles: bool,
+    pub(crate) global_offset_ms: i16,
     pub(crate) pause_on_unfocus: bool,
     pub(crate) launch_fullscreen: bool,
     pub(crate) vsync: bool,
@@ -42,6 +45,7 @@ impl Default for OptionsPreferences {
             flashing_lights: true,
             camera_zooms: true,
             subtitles: true,
+            global_offset_ms: 0,
             pause_on_unfocus: true,
             launch_fullscreen: false,
             vsync: true,
@@ -59,6 +63,9 @@ impl OptionsPreferences {
             flashing_lights: settings.flashing_lights,
             camera_zooms: settings.camera_zooms,
             subtitles: settings.subtitles,
+            global_offset_ms: settings
+                .global_offset_ms
+                .clamp(GLOBAL_OFFSET_MIN_MS, GLOBAL_OFFSET_MAX_MS),
             pause_on_unfocus: settings.pause_on_unfocus,
             launch_fullscreen: settings.launch_fullscreen,
             vsync: settings.vsync,
@@ -77,6 +84,9 @@ impl OptionsPreferences {
         settings.flashing_lights = self.flashing_lights;
         settings.camera_zooms = self.camera_zooms;
         settings.subtitles = self.subtitles;
+        settings.global_offset_ms = self
+            .global_offset_ms
+            .clamp(GLOBAL_OFFSET_MIN_MS, GLOBAL_OFFSET_MAX_MS);
         settings.pause_on_unfocus = self.pause_on_unfocus;
         settings.launch_fullscreen = self.launch_fullscreen;
         settings.vsync = self.vsync;
@@ -94,12 +104,13 @@ impl OptionsPreferences {
             2 => row("FLASHING LIGHTS", on_off(self.flashing_lights)),
             3 => row("CAMERA ZOOMS", on_off(self.camera_zooms)),
             4 => row("SUBTITLES", on_off(self.subtitles)),
-            5 => row("PAUSE ON UNFOCUS", on_off(self.pause_on_unfocus)),
-            6 => row("LAUNCH IN FULLSCREEN", on_off(self.launch_fullscreen)),
-            7 => row("VSYNC", on_off(self.vsync)),
-            8 => row("UNLOCKED FRAMERATE", on_off(self.unlocked_framerate)),
-            9 => row("FPS", self.fps.to_string()),
-            10 => "BACK".to_string(),
+            5 => row("GLOBAL OFFSET", format!("{}ms", self.global_offset_ms)),
+            6 => row("PAUSE ON UNFOCUS", on_off(self.pause_on_unfocus)),
+            7 => row("LAUNCH IN FULLSCREEN", on_off(self.launch_fullscreen)),
+            8 => row("VSYNC", on_off(self.vsync)),
+            9 => row("UNLOCKED FRAMERATE", on_off(self.unlocked_framerate)),
+            10 => row("FPS", self.fps.to_string()),
+            11 => "BACK".to_string(),
             _ => return None,
         };
         Some(label)
@@ -112,12 +123,13 @@ impl OptionsPreferences {
             2 => toggle(&mut self.flashing_lights),
             3 => toggle(&mut self.camera_zooms),
             4 => toggle(&mut self.subtitles),
-            5 => toggle(&mut self.pause_on_unfocus),
-            6 => toggle(&mut self.launch_fullscreen),
-            7 => toggle(&mut self.vsync),
-            8 => toggle(&mut self.unlocked_framerate),
-            9 => self.adjust_fps(input),
-            10 => PreferenceChange::Back,
+            5 => self.adjust_global_offset(input),
+            6 => toggle(&mut self.pause_on_unfocus),
+            7 => toggle(&mut self.launch_fullscreen),
+            8 => toggle(&mut self.vsync),
+            9 => toggle(&mut self.unlocked_framerate),
+            10 => self.adjust_fps(input),
+            11 => PreferenceChange::Back,
             _ => PreferenceChange::None,
         }
     }
@@ -132,6 +144,22 @@ impl OptionsPreferences {
             return PreferenceChange::None;
         }
         self.strumline_background = next as u8;
+        PreferenceChange::Changed
+    }
+
+    fn adjust_global_offset(&mut self, input: PreferenceInput) -> PreferenceChange {
+        let delta = match input {
+            PreferenceInput::Left => -1,
+            PreferenceInput::Right | PreferenceInput::Confirm => 1,
+        };
+        let next = self
+            .global_offset_ms
+            .saturating_add(delta)
+            .clamp(GLOBAL_OFFSET_MIN_MS, GLOBAL_OFFSET_MAX_MS);
+        if next == self.global_offset_ms {
+            return PreferenceChange::None;
+        }
+        self.global_offset_ms = next;
         PreferenceChange::Changed
     }
 
@@ -189,7 +217,15 @@ mod tests {
         );
         assert_eq!(
             prefs.label_for(7).as_deref(),
+            Some("LAUNCH IN FULLSCREEN   OFF")
+        );
+        assert_eq!(
+            prefs.label_for(8).as_deref(),
             Some("VSYNC                  ON")
+        );
+        assert_eq!(
+            prefs.label_for(5).as_deref(),
+            Some("GLOBAL OFFSET          0ms")
         );
     }
 
@@ -208,12 +244,17 @@ mod tests {
         );
         assert_eq!(prefs.strumline_background, 10);
         assert_eq!(
-            prefs.apply_input(9, PreferenceInput::Confirm),
+            prefs.apply_input(5, PreferenceInput::Left),
+            PreferenceChange::Changed
+        );
+        assert_eq!(prefs.global_offset_ms, -1);
+        assert_eq!(
+            prefs.apply_input(10, PreferenceInput::Confirm),
             PreferenceChange::Changed
         );
         assert_eq!(prefs.fps, 120);
         assert_eq!(
-            prefs.apply_input(10, PreferenceInput::Confirm),
+            prefs.apply_input(11, PreferenceInput::Confirm),
             PreferenceChange::Back
         );
     }
@@ -224,17 +265,21 @@ mod tests {
             camera_zooms: false,
             fps: 144,
             strumline_background: 110,
+            global_offset_ms: 2000,
             ..PreferenceSettings::default()
         };
         let mut prefs = OptionsPreferences::from_settings(&settings);
         assert!(!prefs.camera_zooms);
         assert_eq!(prefs.fps, 144);
         assert_eq!(prefs.strumline_background, 100);
+        assert_eq!(prefs.global_offset_ms, 1500);
 
         prefs.camera_zooms = true;
         prefs.fps = 240;
+        prefs.global_offset_ms = -24;
         prefs.write_to_settings(&mut settings);
         assert!(settings.camera_zooms);
         assert_eq!(settings.fps, 240);
+        assert_eq!(settings.global_offset_ms, -24);
     }
 }
