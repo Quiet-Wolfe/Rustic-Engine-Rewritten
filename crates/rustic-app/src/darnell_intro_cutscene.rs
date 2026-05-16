@@ -2,7 +2,7 @@
 //!
 //! ref: bdedc0aa:assets/preload/scripts/songs/darnell.hxc:79-237
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::camera_fx::CameraFx;
 use crate::character_anim::CharacterAnimState;
 use crate::pause_menu::PAUSE_OVERLAY_TEXTURE_ID;
@@ -10,7 +10,7 @@ use crate::preview_song::{PreviewSelection, PreviewSong};
 use crate::scene_assets::CameraFocusPoints;
 use crate::stage_object_asset_helpers::asset_id_for_path;
 use anyhow::{Context, Result};
-use rustic_asset::{load_bytes, load_png, load_sparrow, AssetPath, OverlayResolver, SparrowFrame};
+use rustic_asset::{load_bytes, load_png, load_sparrow, AssetPath, SparrowFrame};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem};
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
@@ -259,7 +259,7 @@ impl DarnellIntroCutsceneAssets {
         queue: &wgpu::Queue,
         textures: &mut HashMap<AssetId, Texture>,
     ) -> Result<Self> {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         let atlas_path = AssetPath::new(CAN_ATLAS_PATH)?;
         let atlas = load_sparrow(&resolver, &atlas_path).context("load Darnell can atlas")?;
         let texture_path = atlas_path.sibling(&atlas.image_path)?;
@@ -440,7 +440,7 @@ fn cached_audio(sound: DarnellCutsceneAudio) -> Option<&'static Arc<[u8]>> {
 }
 
 fn load_audio_bytes(path: &str) -> Result<Arc<[u8]>> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let path = AssetPath::new(path)?;
     load_bytes(&resolver, &path).with_context(|| format!("load {}", path.as_str()))
 }
@@ -635,7 +635,7 @@ mod tests {
 
     #[test]
     fn source_can_atlas_has_cutscene_animations() {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         let atlas = load_sparrow(&resolver, &AssetPath::new(CAN_ATLAS_PATH).unwrap()).unwrap();
 
         assert!(!animation_frames(&atlas, "can kicked up0")

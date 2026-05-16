@@ -5,7 +5,7 @@
 //!
 //! ref: bdedc0aa:source/funkin/ui/credits/CreditsState.hx:16-294
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
@@ -119,7 +119,7 @@ fn credits_scroll_pixels(cursor: Samples, sample_rate: u32) -> f32 {
 }
 
 pub fn load_credits_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> CreditsAssets {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let entries = match load_credits_entries(&resolver) {
         Ok(entries) => entries,
         Err(e) => {

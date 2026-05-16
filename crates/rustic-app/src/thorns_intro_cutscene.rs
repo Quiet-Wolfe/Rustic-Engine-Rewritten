@@ -2,13 +2,13 @@
 //!
 //! ref: bdedc0aa:assets/preload/scripts/songs/thorns.hxc:25-126
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::pause_menu::PAUSE_OVERLAY_TEXTURE_ID;
 use crate::preview_song::{PreviewSelection, PreviewSong};
 use crate::stage_object_asset_helpers::asset_id_for_path;
 use crate::stage_sfx::play_thorns_senpai_death_sound_or_warn;
 use anyhow::{Context, Result};
-use rustic_asset::{load_png, load_sparrow, AssetPath, OverlayResolver, SparrowFrame};
+use rustic_asset::{load_png, load_sparrow, AssetPath, SparrowFrame};
 use rustic_audio::SharedMixer;
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
@@ -125,7 +125,7 @@ impl ThornsIntroCutsceneAssets {
         queue: &wgpu::Queue,
         textures: &mut HashMap<AssetId, Texture>,
     ) -> Result<Self> {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         let xml_path = AssetPath::new(SENPAI_CRAZY_XML_PATH)?;
         let atlas = load_sparrow(&resolver, &xml_path).context("load Thorns Senpai atlas")?;
         let texture_path = xml_path.sibling(&atlas.image_path)?;
@@ -317,6 +317,7 @@ fn samples_to_seconds(samples: Samples, sample_rate: u32) -> f64 {
 mod tests {
     use super::*;
     use crate::preview_song::PreviewDifficulty;
+    use rustic_asset::OverlayResolver;
     use std::path::Path;
 
     #[test]

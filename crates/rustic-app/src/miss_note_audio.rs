@@ -4,7 +4,7 @@
 //! ref: bdedc0aa:source/funkin/play/PlayState.hx:3156
 //! ref: bdedc0aa:source/funkin/play/PlayState.hx:3197
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
 use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, SoundSource, Stem};
@@ -72,7 +72,7 @@ struct MissNoteSounds {
 
 impl MissNoteSounds {
     fn load_default() -> Result<Self> {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         Ok(Self {
             variants: [
                 load_sound(&resolver, 0)?,

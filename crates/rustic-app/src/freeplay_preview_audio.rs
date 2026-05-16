@@ -2,10 +2,10 @@
 //!
 //! ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:2966-3038
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::preview_song::PreviewSelection;
 use anyhow::{anyhow, Context, Result};
-use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
+use rustic_asset::{load_bytes, AssetPath};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem, VoiceId};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -112,7 +112,7 @@ struct QueuedPreview {
 }
 
 fn load_first_preview_bytes(target: PreviewTarget) -> Result<Arc<[u8]>> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let mut errors = Vec::new();
     for path in preview_paths(target) {
         let asset = AssetPath::new(path.clone())?;

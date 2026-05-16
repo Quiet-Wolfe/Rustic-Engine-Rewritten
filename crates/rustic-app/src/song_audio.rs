@@ -1,7 +1,7 @@
 //! App-owned loading of vanilla song stems into the shared mixer.
 
 use crate::scene_assets::load_preview_song_for;
-use crate::{asset_roots::baked_assets_root, preview_song::PreviewSelection};
+use crate::{asset_roots::app_asset_resolver, preview_song::PreviewSelection};
 use anyhow::{anyhow, Context, Result};
 use rustic_asset::{load_bytes, AssetPath, OverlayResolver, ParsedSong};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, SoundSource, Stem};
@@ -16,7 +16,7 @@ pub fn load_preview_stems_for(
     selection: PreviewSelection,
     start_cursor: Samples,
 ) -> Result<()> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let song = selection.song;
     let parsed = load_preview_song_for(selection).ok();
     let inst = load_first_stem(&resolver, &inst_paths(selection))?;

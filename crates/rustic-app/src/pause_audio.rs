@@ -2,9 +2,9 @@
 //!
 //! ref: bdedc0aa:source/funkin/play/PauseSubState.hx:105-112,351-363
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
-use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
+use rustic_asset::{load_bytes, AssetPath};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem, VoiceId};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -91,7 +91,7 @@ fn pause_music_bytes() -> Option<&'static Arc<[u8]>> {
 }
 
 fn load_pause_music_bytes() -> Result<Arc<[u8]>> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let path = AssetPath::new(PAUSE_MUSIC_PATH)?;
     load_bytes(&resolver, &path).with_context(|| format!("load {}", path.as_str()))
 }

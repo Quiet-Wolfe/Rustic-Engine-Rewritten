@@ -7,11 +7,11 @@
 //! ref: bdedc0aa:source/funkin/ui/freeplay/dj/AnimateAtlasFreeplayDJ.hx
 //! ref: bdedc0aa:assets/preload/data/players/bf.json
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_animate_animation, load_animate_spritemap, load_png, AnimateAnimation, AnimateAtlas,
-    AnimateDrawPart, AssetPath, OverlayResolver,
+    AnimateDrawPart, AssetPath,
 };
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
@@ -204,7 +204,7 @@ pub fn load_freeplay_dj_for_asset(
     queue: &wgpu::Queue,
     asset_path: &str,
 ) -> Result<FreeplayDJ> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let animation_path = AssetPath::new(format!("{asset_path}/Animation.json"))?;
     let spritemap_path = AssetPath::new(format!("{asset_path}/spritemap1.json"))?;
     let texture_path = AssetPath::new(format!("{asset_path}/spritemap1.png"))?;
@@ -451,7 +451,7 @@ mod tests {
     }
 
     fn load_test_dj(asset_path: &str) -> FreeplayDJ {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         let animation_path = AssetPath::new(format!("{asset_path}/Animation.json")).unwrap();
         let spritemap_path = AssetPath::new(format!("{asset_path}/spritemap1.json")).unwrap();
         let animation = load_animate_animation(&resolver, &animation_path).unwrap();

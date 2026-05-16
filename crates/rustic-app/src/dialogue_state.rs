@@ -1,10 +1,10 @@
 //! Minimal v-slice dialogue conversation playback for pre-song cutscenes.
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::pause_menu::PAUSE_OVERLAY_TEXTURE_ID;
 use crate::preview_song::{PreviewSelection, PreviewSong, VARIATION_PICO};
 use anyhow::{Context, Result};
-use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
+use rustic_asset::{load_bytes, AssetPath};
 use rustic_core::ids::CameraId;
 use rustic_core::render::RenderLayer;
 use rustic_render::{DrawCommand, FilterMode, RenderCommandList, TextCommand, TextCommandList};
@@ -53,7 +53,7 @@ impl DialogueState {
     }
 
     fn load(id: &'static str) -> Result<Self> {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         let path = AssetPath::new(format!("data/dialogue/conversations/{id}.json"))?;
         let bytes = load_bytes(&resolver, &path).with_context(|| format!("load {path}"))?;
         let raw: RawConversation = serde_json::from_slice(&bytes)

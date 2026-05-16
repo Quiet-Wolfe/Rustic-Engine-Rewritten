@@ -1,4 +1,5 @@
 use super::*;
+use crate::asset_roots::baked_assets_root;
 use crate::preview_song::{PreviewDifficulty, PreviewSong};
 
 #[test]

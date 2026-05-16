@@ -4,10 +4,10 @@
 //! ref: bdedc0aa:source/funkin/play/components/Subtitles.hx:25-125
 //! ref: bdedc0aa:source/funkin/util/SRTUtil.hx:38-93
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::preview_song::{PreviewSelection, PreviewSong, VARIATION_PICO};
 use anyhow::{anyhow, Context, Result};
-use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
+use rustic_asset::{load_bytes, AssetPath};
 use rustic_core::time::Samples;
 use rustic_render::{TextCommand, TextCommandList};
 
@@ -36,7 +36,7 @@ impl SubtitleTrack {
     }
 
     fn load_path(path: &str) -> Result<Self> {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         let path = AssetPath::new(path)?;
         let bytes = load_bytes(&resolver, &path).with_context(|| format!("load {path}"))?;
         let cues = parse_srt(&bytes).with_context(|| format!("parse {path}"))?;

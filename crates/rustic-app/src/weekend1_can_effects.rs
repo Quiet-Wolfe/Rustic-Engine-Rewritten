@@ -3,7 +3,7 @@
 //! ref: bdedc0aa:assets/preload/scripts/songs/2hot.hxc:onNoteHit
 //! ref: bdedc0aa:assets/preload/scripts/stages/props/SpraycanAtlasSprite.hxc
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::preview_song::PreviewSong;
 use crate::stage_object_asset_helpers::asset_id_for_path;
 use anyhow::{Context, Result};
@@ -281,7 +281,7 @@ impl Weekend1CanAssets {
         queue: &wgpu::Queue,
         textures: &mut HashMap<AssetId, Texture>,
     ) -> Result<Self> {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         let can_animation_path = AssetPath::new("images/spraycanAtlas/Animation.json")?;
         let can_spritemap_path = AssetPath::new("images/spraycanAtlas/spritemap1.json")?;
         let can_texture_path = AssetPath::new("images/spraycanAtlas/spritemap1.png")?;
@@ -724,7 +724,7 @@ mod tests {
 
     #[test]
     fn source_spraycan_atlas_has_script_labels() {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         let path = AssetPath::new("images/spraycanAtlas/Animation.json").unwrap();
         let animation = load_animate_animation(&resolver, &path).unwrap();
 

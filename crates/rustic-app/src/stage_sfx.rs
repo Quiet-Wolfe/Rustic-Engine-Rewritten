@@ -1,6 +1,6 @@
 //! Scripted stage sound effects for vanilla stage props.
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::preview_song::PreviewSong;
 use crate::sserafim_stage::{sserafim_intro_event_cursor, SserafimStageState};
 use crate::stage_object_asset_helpers::halloween_lightning_start;
@@ -8,7 +8,7 @@ use crate::stage_scripted_motion::{
     limo_fast_car_position, limo_fast_car_start, philly_blazin_lightning_start, philly_train_start,
 };
 use anyhow::{Context, Result};
-use rustic_asset::{load_bytes, AssetPath, ChartEventKind, OverlayResolver, SserafimEvent};
+use rustic_asset::{load_bytes, AssetPath, ChartEventKind, SserafimEvent};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem};
 use rustic_core::time::Samples;
 use std::sync::{Arc, OnceLock};
@@ -307,7 +307,7 @@ fn cached_stage_sound(sound: StageSound) -> Option<&'static Arc<[u8]>> {
 }
 
 fn load_stage_sound(path: &str) -> Result<Arc<[u8]>> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let path = AssetPath::new(path)?;
     load_bytes(&resolver, &path).with_context(|| format!("load {}", path.as_str()))
 }

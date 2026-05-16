@@ -6,7 +6,7 @@ use super::freeplay_icons::load_freeplay_icons;
 use super::helpers::{clone_frames, load_sparrow_atlas, load_static_texture};
 use super::song_metadata::{FreeplayDifficultyRatings, FreeplaySongMetadata};
 use super::{CapsuleKind, FreeplayAlbum, FreeplayAssets, FreeplayCapsule, WHITE_TEXTURE_ID};
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::bitmap_text_assets::load_bitmap_text_assets;
 use crate::freeplay_dj::load_freeplay_dj_for_asset;
 use crate::preview_song::{PreviewDifficulty, PreviewSong, VARIATION_BF, VARIATION_PICO};
@@ -58,7 +58,7 @@ pub fn load_freeplay_assets_for_style(
     queue: &wgpu::Queue,
     style: FreeplayStyle,
 ) -> Result<FreeplayAssets> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let style_config = load_freeplay_style_config(&resolver, style)?;
     let mut textures = HashMap::new();
     textures.insert(

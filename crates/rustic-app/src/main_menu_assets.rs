@@ -3,7 +3,7 @@
 //! ref: bdedc0aa:source/funkin/ui/mainmenu/MainMenuState.hx:115-232
 
 use crate::animation_timing::flixel_frame_index;
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
 use rustic_asset::{load_png, load_sparrow, AssetPath, OverlayResolver, SparrowFrame};
 use rustic_core::ids::{AssetId, CameraId};
@@ -146,7 +146,7 @@ impl MenuItemClip {
 }
 
 pub fn load_main_menu_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Result<MainMenuAssets> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let mut textures = HashMap::new();
     let background = load_background(device, queue, &resolver, &mut textures)?;
     let items = MAIN_MENU_ITEMS

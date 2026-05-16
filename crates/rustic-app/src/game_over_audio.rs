@@ -2,9 +2,9 @@
 //!
 //! ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:248-263,311-315,476-540,600-614
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
-use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
+use rustic_asset::{load_bytes, AssetPath};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem, VoiceId};
 use std::sync::{Arc, OnceLock};
 
@@ -203,7 +203,7 @@ fn optional_cached_bytes(
 }
 
 fn load_audio_bytes(path: &str) -> Result<Arc<[u8]>> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let path = AssetPath::new(path)?;
     load_bytes(&resolver, &path).with_context(|| format!("load {}", path.as_str()))
 }

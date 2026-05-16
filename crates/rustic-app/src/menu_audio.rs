@@ -3,9 +3,9 @@
 //! ref: bdedc0aa:source/funkin/ui/MenuList.hx:145,172,208,214,290
 //! ref: bdedc0aa:source/funkin/ui/title/TitleState.hx:256-260
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
-use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
+use rustic_asset::{load_bytes, AssetPath};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem};
 use std::sync::{Arc, OnceLock};
 
@@ -87,7 +87,7 @@ fn menu_sound_bytes(sound: MenuSound) -> Option<&'static Arc<[u8]>> {
 }
 
 fn load_menu_sound_bytes(path: &str) -> Result<Arc<[u8]>> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let path = AssetPath::new(path)?;
     load_bytes(&resolver, &path).with_context(|| format!("load {}", path.as_str()))
 }

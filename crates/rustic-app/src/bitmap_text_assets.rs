@@ -3,7 +3,7 @@
 //! ref: bdedc0aa:source/funkin/play/PlayState.hx:815,2015-2024,2702-2713
 // LINT-ALLOW: long-file bitmap text rendering helpers and tests stay together.
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_bitmap_font, load_png, AssetPath, AssetResolver, BitmapFont, BitmapGlyph, OverlayResolver,
@@ -223,7 +223,7 @@ impl BitmapTextSkin {
 /// Resolve the VCR TTF font through the asset resolver and return its
 /// bytes for glyphon registration. Keeps font I/O out of `rustic-render`.
 pub fn load_vcr_ttf_bytes() -> Result<Vec<u8>> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let path = AssetPath::new("fonts/vcr.ttf")?;
     let source = resolver
         .resolve(&path)

@@ -1,8 +1,8 @@
 //! Scripted note-kind sound effects from vanilla Weekend 1 character scripts.
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
-use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
+use rustic_asset::{load_bytes, AssetPath};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem};
 use rustic_core::time::Samples;
 use rustic_game::NoteKind;
@@ -125,7 +125,7 @@ fn sound_bytes(sound: GameplayNoteSfx) -> Option<&'static Arc<[u8]>> {
 }
 
 fn load_sound_bytes(path: &str) -> Result<Arc<[u8]>> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let path = AssetPath::new(path)?;
     load_bytes(&resolver, &path).with_context(|| format!("load {}", path.as_str()))
 }

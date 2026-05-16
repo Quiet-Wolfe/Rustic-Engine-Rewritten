@@ -4,7 +4,7 @@
 //!
 //! ref: bdedc0aa:source/funkin/ui/options/OptionsState.hx:46-101,150-332
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::options_preferences::{OptionsPreferences, PREFERENCE_ITEM_COUNT};
 use anyhow::{Context, Result};
 use rustic_asset::{load_png, AssetPath, OverlayResolver};
@@ -112,7 +112,7 @@ pub fn load_options_menu_assets(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> Result<OptionsMenuAssets> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let mut textures = HashMap::new();
     let background = load_background(device, queue, &resolver, &mut textures)?;
     Ok(OptionsMenuAssets {

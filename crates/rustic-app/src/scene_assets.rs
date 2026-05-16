@@ -5,7 +5,7 @@
 //! crates remain free of filesystem and wgpu wiring.
 // LINT-ALLOW: long-file startup scene plus current NOTE_assets skin wiring
 use crate::animate_character_assets::{load_animate_character_sprite, AnimateCharacterSprite};
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::bitmap_text_assets::{load_bitmap_text_assets, BitmapTextSkin};
 use crate::character_anim::CountAnimationTiming;
 use crate::character_anim::COUNT_ANIM_SLOTS;
@@ -331,7 +331,7 @@ pub fn load_preview_scene_for(
     queue: &wgpu::Queue,
     selection: PreviewSelection,
 ) -> Result<LoadedScene> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let chart = load_preview_song_for(selection)?;
     load_scene_for_chart(device, queue, &resolver, &chart)
 }
@@ -499,7 +499,7 @@ pub fn load_preview_play_state(sample_rate: u32) -> Result<PlayState> {
 }
 
 pub(crate) fn load_preview_song_for(selection: PreviewSelection) -> Result<ParsedSong> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let difficulty = selection.difficulty.as_str();
     let chart_path = AssetPath::new(selection.chart_path())?;
     let metadata_path = AssetPath::new(selection.metadata_path())?;

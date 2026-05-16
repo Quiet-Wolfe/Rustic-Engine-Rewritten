@@ -1,6 +1,6 @@
 //! OG countdown sound scheduling.
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
 use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, SoundSource, Stem};
@@ -50,7 +50,7 @@ impl CountdownAudio {
     }
 
     fn load_for_style(style: &str) -> Result<Self> {
-        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let resolver = app_asset_resolver();
         Ok(Self {
             sounds: Some(CountdownSounds::load(&resolver, style)?),
             last_step: None,

@@ -4,7 +4,7 @@
 // LINT-ALLOW: long-file title screen Sparrow and Animate wiring stay together.
 
 use crate::animation_timing::flixel_frame_index;
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use anyhow::{Context, Result};
 use rustic_asset::{
     load_animate_animation, load_animate_spritemap, load_png, load_sparrow, AnimateAnimation,
@@ -173,7 +173,7 @@ pub fn load_title_screen_assets(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> Result<TitleScreenAssets> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let mut textures = HashMap::new();
     let logo = load_sparrow_clip(
         device,

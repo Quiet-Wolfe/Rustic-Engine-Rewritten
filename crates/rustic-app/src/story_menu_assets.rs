@@ -3,7 +3,7 @@
 //! ref: bdedc0aa:source/funkin/ui/story/StoryMenuState.hx:129-579
 // LINT-ALLOW: long-file story menu asset loading and layout stay co-located for fidelity.
 
-use crate::asset_roots::baked_assets_root;
+use crate::asset_roots::app_asset_resolver;
 use crate::preview_song::{PreviewDifficulty, PreviewSelection, PreviewSong};
 use anyhow::{bail, Context, Result};
 use rustic_asset::{
@@ -453,7 +453,7 @@ pub fn load_story_menu_assets(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> Result<StoryMenuAssets> {
-    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let resolver = app_asset_resolver();
     let mut textures = HashMap::new();
     textures.insert(
         WHITE_TEXTURE_ID,
