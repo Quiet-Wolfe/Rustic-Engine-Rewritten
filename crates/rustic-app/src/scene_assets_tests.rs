@@ -226,6 +226,22 @@ fn sserafim_source_stage_art_uses_full_reference_images() {
 }
 
 #[test]
+fn sserafim_lip_sync_follows_actual_sing_pose() {
+    assert!(sserafim_lip_sync_active(CharacterPoseRequest {
+        name: "singLEFT",
+        started_at: Samples(0),
+    }));
+    assert!(sserafim_lip_sync_active(CharacterPoseRequest {
+        name: "singRIGHT-beautiful",
+        started_at: Samples(0),
+    }));
+    assert!(!sserafim_lip_sync_active(CharacterPoseRequest {
+        name: "idle",
+        started_at: Samples(0),
+    }));
+}
+
+#[test]
 fn tankman_bloody_source_character_aliases_heh_pretty_good() {
     let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

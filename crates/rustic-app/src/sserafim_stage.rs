@@ -72,10 +72,6 @@ impl SserafimStageState {
         self.active
     }
 
-    pub(crate) fn member_sings(&self, member: SserafimMember) -> bool {
-        self.member_sings_player(member)
-    }
-
     pub(crate) fn opponent_strumline_visible(&self) -> bool {
         !self.active
     }

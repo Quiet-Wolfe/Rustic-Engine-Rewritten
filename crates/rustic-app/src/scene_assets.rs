@@ -114,7 +114,7 @@ impl CharacterSet {
                     request,
                     cursor,
                     sample_rate,
-                    state.member_sings(extra.member),
+                    sserafim_lip_sync_active(request),
                 );
                 state.apply_member_command_effects(
                     extra.member,
@@ -132,7 +132,7 @@ impl CharacterSet {
                     request,
                     cursor,
                     sample_rate,
-                    state.member_sings(SserafimMember::Girlfriend),
+                    sserafim_lip_sync_active(request),
                 );
                 state.apply_member_command_effects(
                     SserafimMember::Girlfriend,
@@ -148,7 +148,7 @@ impl CharacterSet {
                 request,
                 cursor,
                 sample_rate,
-                state.member_sings(SserafimMember::Kazuha),
+                sserafim_lip_sync_active(request),
             );
             state.apply_member_command_effects(
                 SserafimMember::Kazuha,
@@ -163,7 +163,7 @@ impl CharacterSet {
                 request,
                 cursor,
                 sample_rate,
-                state.member_sings(SserafimMember::Sakura),
+                sserafim_lip_sync_active(request),
             );
             state.apply_member_command_effects(
                 SserafimMember::Sakura,
@@ -232,6 +232,10 @@ impl CharacterSet {
     pub fn player_icon_id(&self) -> &str {
         &self.player_icon_id
     }
+}
+
+fn sserafim_lip_sync_active(request: CharacterPoseRequest) -> bool {
+    request.name.starts_with("sing")
 }
 
 #[derive(Debug, Clone)]
