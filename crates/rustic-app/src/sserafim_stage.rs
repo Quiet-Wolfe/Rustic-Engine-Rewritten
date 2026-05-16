@@ -19,6 +19,7 @@ pub(crate) struct SserafimStageState {
     active: bool,
     visible: [bool; 5],
     singing: [bool; 6],
+    girlfriend_visible: bool,
     cover_visible: bool,
     beautiful: bool,
     dark: TweenValue,
@@ -36,6 +37,7 @@ impl Default for SserafimStageState {
             active: false,
             visible: BASE_VISIBLE,
             singing: BASE_SINGING,
+            girlfriend_visible: false,
             cover_visible: false,
             beautiful: false,
             dark: TweenValue::default(),
@@ -108,6 +110,7 @@ impl SserafimStageState {
             SserafimEvent::Kick { final_kick } => {
                 self.yunjin_intro = YunjinIntro::kick(*final_kick, cursor);
                 if *final_kick {
+                    self.girlfriend_visible = true;
                     self.dust_clear = Some(cursor);
                 }
             }
@@ -214,7 +217,7 @@ impl SserafimStageState {
     fn member_visible(&self, member: SserafimMember) -> bool {
         match member.visible_index() {
             Some(index) => self.visible[index],
-            None => true,
+            None => self.girlfriend_visible,
         }
     }
 
@@ -644,6 +647,10 @@ mod tests {
         let mut state = SserafimStageState::default();
         state.reset_for_song(PreviewSong::SPAGHETTI);
         state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::Kick { final_kick: true }),
+            Samples(0),
+        );
+        state.apply_event(
             &ChartEventKind::Sserafim(SserafimEvent::Beautiful { beautiful: true }),
             Samples(0),
         );
@@ -655,6 +662,25 @@ mod tests {
                 .name,
             "singRIGHT-beautiful"
         );
+    }
+
+    #[test]
+    fn girlfriend_stays_hidden_until_final_kick() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+
+        assert!(state
+            .pose_for_member(SserafimMember::Girlfriend, poses(), Samples(0))
+            .is_none());
+
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::Kick { final_kick: true }),
+            Samples(10),
+        );
+
+        assert!(state
+            .pose_for_member(SserafimMember::Girlfriend, poses(), Samples(10))
+            .is_some());
     }
 
     #[test]
