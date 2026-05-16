@@ -146,6 +146,23 @@ impl CameraFx {
         self.write_zooms(cameras);
     }
 
+    pub(crate) fn force_game_camera(
+        &mut self,
+        cameras: &mut CameraRegistry,
+        target: glam::Vec2,
+        target_zoom: f32,
+    ) {
+        self.follow_target = target;
+        self.follow_initialized = true;
+        self.follow_tween = None;
+        self.current_game_zoom = target_zoom;
+        self.zoom_tween = None;
+        if let Some(camera) = cameras.get_mut(CameraId(0)) {
+            camera.position = target;
+        }
+        self.write_zooms(cameras);
+    }
+
     pub(crate) fn tween_focus_camera(
         &mut self,
         cameras: &mut CameraRegistry,
@@ -641,5 +658,18 @@ mod tests {
                 .abs()
                 < 1e-6
         );
+    }
+
+    #[test]
+    fn force_game_camera_overrides_follow_and_zoom() {
+        let mut cameras = CameraRegistry::with_default_fnf();
+        let mut fx = CameraFx::default();
+        fx.reset(&mut cameras, 1.0);
+
+        fx.force_game_camera(&mut cameras, glam::vec2(400.0, -2050.0), 2.5);
+
+        let camera = cameras.get(CameraId(0)).unwrap();
+        assert_eq!(camera.position, glam::vec2(400.0, -2050.0));
+        assert_eq!(camera.zoom, 2.5);
     }
 }

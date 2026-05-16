@@ -36,6 +36,7 @@ impl App {
         // ref: bdedc0aa:source/funkin/play/GameOverSubState.hx:552
         // ref: bdedc0aa:source/funkin/play/PauseSubState.hx:1152-1157
         self.stress_pico_end_cutscene = None;
+        self.winter_horrorland_cutscene = None;
         self.death_counter = 0;
         self.practice_mode = false;
         if self.story_playlist.is_empty() {
@@ -88,6 +89,7 @@ impl App {
     fn finish_current_song(&mut self) {
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:3435
         self.stress_pico_end_cutscene = None;
+        self.winter_horrorland_cutscene = None;
         self.death_counter = 0;
         self.practice_mode = false;
         if self.story_playlist.is_empty() {

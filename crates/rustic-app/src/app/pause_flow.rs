@@ -18,6 +18,9 @@ impl App {
             self.pause_menu.is_some(),
             self.game_over.is_some(),
             self.dialogue.is_some(),
+            self.winter_horrorland_cutscene
+                .as_ref()
+                .is_some_and(|cutscene| cutscene.blocks_input(cursor)),
         ) {
             return false;
         }
@@ -40,6 +43,10 @@ impl App {
                 && self.mode == super::title_flow::AppMode::Play
                 && self.game_over.is_none()
                 && self.stress_pico_end_cutscene.is_none()
+                && !self
+                    .winter_horrorland_cutscene
+                    .as_ref()
+                    .is_some_and(|cutscene| cutscene.blocks_input(cursor))
                 // ref: bdedc0aa:source/funkin/input/Controls.hx:792-793
                 && is_gameplay_pause_action(action)
             {
@@ -206,12 +213,14 @@ fn should_pause_on_unfocus(
     pause_menu_active: bool,
     game_over_active: bool,
     dialogue_active: bool,
+    cutscene_active: bool,
 ) -> bool {
     enabled
         && mode == super::title_flow::AppMode::Play
         && !pause_menu_active
         && !game_over_active
         && !dialogue_active
+        && !cutscene_active
 }
 
 fn is_gameplay_pause_action(action: InputAction) -> bool {
@@ -230,11 +239,13 @@ mod tests {
             AppMode::Play,
             false,
             false,
+            false,
             false
         ));
         assert!(!should_pause_on_unfocus(
             false,
             AppMode::Play,
+            false,
             false,
             false,
             false
@@ -244,12 +255,14 @@ mod tests {
             AppMode::SongSelect,
             false,
             false,
+            false,
             false
         ));
         assert!(!should_pause_on_unfocus(
             true,
             AppMode::Play,
             true,
+            false,
             false,
             false
         ));
@@ -258,11 +271,21 @@ mod tests {
             AppMode::Play,
             false,
             true,
+            false,
             false
         ));
         assert!(!should_pause_on_unfocus(
             true,
             AppMode::Play,
+            false,
+            false,
+            true,
+            false
+        ));
+        assert!(!should_pause_on_unfocus(
+            true,
+            AppMode::Play,
+            false,
             false,
             false,
             true

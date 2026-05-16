@@ -65,6 +65,7 @@ pub mod story_menu_assets;
 pub(crate) mod stress_pico_cutscene;
 pub(crate) mod subtitle_track;
 pub mod title_assets;
+pub(crate) mod winter_horrorland_cutscene;
 
 pub use app::run;
 pub use app_types::AppOptions;

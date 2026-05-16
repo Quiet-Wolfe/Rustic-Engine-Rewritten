@@ -24,6 +24,7 @@ const SSERAFIM_START_CUTSCENE_PATH: &str = "sounds/sserafim/cutscene/startCutsce
 const SSERAFIM_END_1_PATH: &str = "sounds/sserafim/cutscene/end1.ogg";
 const SSERAFIM_END_2_PATH: &str = "sounds/sserafim/cutscene/end2.ogg";
 const STRESS_PICO_END_CUTSCENE_PATH: &str = "sounds/erect/endCutscene.ogg";
+const WINTER_HORRORLAND_LIGHTS_PATH: &str = "sounds/Lights_Turn_On.ogg";
 
 static TRAIN_SOUND_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static CAR_PASS_0_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
@@ -37,6 +38,7 @@ static SSERAFIM_START_CUTSCENE_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::ne
 static SSERAFIM_END_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_END_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static STRESS_PICO_END_CUTSCENE_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static WINTER_HORRORLAND_LIGHTS_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 
 #[derive(Debug, Default)]
 pub(crate) struct StageSfx {
@@ -157,6 +159,7 @@ impl StageSfx {
             StageSound::SserafimEnd1 => self.last_sserafim_end1_start,
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start,
             StageSound::StressPicoEndCutscene => None,
+            StageSound::WinterHorrorlandLights => None,
             StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => None,
         }
     }
@@ -170,6 +173,7 @@ impl StageSfx {
             StageSound::SserafimEnd1 => self.last_sserafim_end1_start = Some(start),
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start = Some(start),
             StageSound::StressPicoEndCutscene => {}
+            StageSound::WinterHorrorlandLights => {}
             StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => {}
         }
     }
@@ -186,6 +190,7 @@ enum StageSound {
     SserafimEnd1,
     SserafimEnd2,
     StressPicoEndCutscene,
+    WinterHorrorlandLights,
 }
 
 pub(crate) fn play_sserafim_event_sound_or_warn(mixer: &SharedMixer, kind: &ChartEventKind) {
@@ -200,6 +205,12 @@ pub(crate) fn play_sserafim_event_sound_or_warn(mixer: &SharedMixer, kind: &Char
 pub(crate) fn play_stress_pico_end_cutscene_sound_or_warn(mixer: &SharedMixer) {
     if let Err(e) = play_stage_sound(mixer, StageSound::StressPicoEndCutscene) {
         tracing::warn!(target: "rustic.audio", "play Stress Pico end cutscene sound: {e:#}");
+    }
+}
+
+pub(crate) fn play_winter_horrorland_lights_sound_or_warn(mixer: &SharedMixer) {
+    if let Err(e) = play_stage_sound(mixer, StageSound::WinterHorrorlandLights) {
+        tracing::warn!(target: "rustic.audio", "play Winter Horrorland lights sound: {e:#}");
     }
 }
 
@@ -244,6 +255,10 @@ fn cached_stage_sound(sound: StageSound) -> Option<&'static Arc<[u8]>> {
         StageSound::StressPicoEndCutscene => (
             &STRESS_PICO_END_CUTSCENE_BYTES,
             STRESS_PICO_END_CUTSCENE_PATH,
+        ),
+        StageSound::WinterHorrorlandLights => (
+            &WINTER_HORRORLAND_LIGHTS_BYTES,
+            WINTER_HORRORLAND_LIGHTS_PATH,
         ),
     };
     cache
@@ -301,6 +316,7 @@ mod tests {
             STRESS_PICO_END_CUTSCENE_PATH,
             "sounds/erect/endCutscene.ogg"
         );
+        assert_eq!(WINTER_HORRORLAND_LIGHTS_PATH, "sounds/Lights_Turn_On.ogg");
     }
 
     #[test]

@@ -87,7 +87,13 @@ impl App {
             return;
         }
         let cursor = event.audio_sample_cursor_at_receive;
-        if self.game_over.is_some() || self.stress_pico_end_cutscene.is_some() {
+        if self.game_over.is_some()
+            || self.stress_pico_end_cutscene.is_some()
+            || self
+                .winter_horrorland_cutscene
+                .as_ref()
+                .is_some_and(|cutscene| cutscene.blocks_input(cursor))
+        {
             return;
         }
         let sample_rate = play_sample_rate(&self.mixer);

@@ -51,6 +51,9 @@ use crate::story_menu_assets::StoryMenuAssets;
 use crate::stress_pico_cutscene::StressPicoEndCutsceneState;
 use crate::subtitle_track::SubtitleTrack;
 use crate::title_assets::TitleScreenAssets;
+use crate::winter_horrorland_cutscene::{
+    should_play_winter_horrorland_cutscene, WinterHorrorlandCutsceneState,
+};
 use anyhow::Result;
 use rustic_audio::{AudioOutput, SharedMixer};
 use rustic_core::ids::AssetId;
@@ -96,6 +99,7 @@ struct App {
     stage_sfx: StageSfx,
     sserafim_stage: crate::sserafim_stage::SserafimStageState,
     stress_pico_end_cutscene: Option<StressPicoEndCutsceneState>,
+    winter_horrorland_cutscene: Option<WinterHorrorlandCutsceneState>,
     cmds: RenderCommandList,
     text_cmds: TextCommandList,
     atlases: HashMap<AssetId, Texture>,
@@ -188,6 +192,7 @@ impl App {
             stage_sfx: StageSfx::default(),
             sserafim_stage: crate::sserafim_stage::SserafimStageState::default(),
             stress_pico_end_cutscene: None,
+            winter_horrorland_cutscene: None,
             cmds: RenderCommandList::new(),
             text_cmds: TextCommandList::new(),
             atlases: HashMap::new(),
@@ -379,10 +384,17 @@ impl App {
     }
     fn reset_song_runtime(&mut self, bpm: f64) {
         let sample_rate = play_sample_rate(&self.mixer);
+        let countdown_cursor = countdown_start_cursor(sample_rate, bpm);
+        self.winter_horrorland_cutscene = None;
         self.song_start_cursor = if self.preview_selection.song == PreviewSong::SPAGHETTI {
             sserafim_intro_start_cursor(sample_rate, bpm)
+        } else if should_play_winter_horrorland_cutscene(self.preview_selection) {
+            let cutscene = WinterHorrorlandCutsceneState::new(countdown_cursor, sample_rate);
+            let start_cursor = cutscene.song_start_cursor();
+            self.winter_horrorland_cutscene = Some(cutscene);
+            start_cursor
         } else {
-            countdown_start_cursor(sample_rate, bpm)
+            countdown_cursor
         };
         self.song_start = Instant::now();
         self.song_started = false;
@@ -464,6 +476,11 @@ impl App {
         } else {
             self.advance_song_clock()
         };
+        if self.audio_output.is_some() {
+            if let Some(cutscene) = self.winter_horrorland_cutscene.as_mut() {
+                cutscene.tick_audio_or_warn(&self.mixer, cursor, sample_rate);
+            }
+        }
         self.append_debug_overlay_commands(cursor, sample_rate);
         if self.game_over.is_some() {
             self.rebuild_game_over_commands(cursor, sample_rate);
@@ -556,6 +573,9 @@ impl App {
             }
             self.camera_fx
                 .update(&mut self.cameras, cursor, sample_rate, bpm);
+            if let Some(cutscene) = self.winter_horrorland_cutscene.as_ref() {
+                cutscene.apply_camera(&mut self.cameras, &mut self.camera_fx, cursor, sample_rate);
+            }
         }
         self.cmds = self.static_cmds.clone();
         let stage_bpm = bpm.unwrap_or(100.0);
@@ -708,6 +728,10 @@ impl App {
         }
         self.sserafim_stage
             .apply_commands(self.cmds.iter_mut(), cursor, sample_rate, stage_bpm);
+        if let Some(cutscene) = self.winter_horrorland_cutscene.as_ref() {
+            cutscene.apply_commands(self.cmds.iter_mut(), cursor, sample_rate);
+            cutscene.append_commands(&mut self.cmds, cursor, sample_rate);
+        }
         if let Some(cutscene) = self.stress_pico_end_cutscene.as_ref() {
             cutscene.apply_commands(self.cmds.iter_mut());
             cutscene.append_commands(
