@@ -6,6 +6,7 @@ use crate::lane_state::lane_for_action;
 use crate::miss_note_audio::{play_miss_note_or_warn as play_miss_sfx, MissNoteKind};
 use crate::note_assets::confirm_duration_or_default;
 use crate::song_audio::{play_sample_rate, set_vocals_gain};
+use crate::stage_sfx::play_sserafim_event_sound_or_warn;
 use rustic_asset::ChartEventKind;
 use rustic_core::input::{InputAction, InputState, NormalizedInputEvent};
 use rustic_core::time::Samples;
@@ -37,6 +38,9 @@ impl App {
             bpm,
         ) {
             return;
+        }
+        if self.sserafim_stage.active() {
+            play_sserafim_event_sound_or_warn(&self.mixer, kind);
         }
         if self.sserafim_stage.apply_event(kind, cursor) {
             return;

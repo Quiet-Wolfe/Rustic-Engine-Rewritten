@@ -2,11 +2,12 @@
 
 use crate::asset_roots::baked_assets_root;
 use crate::preview_song::PreviewSong;
+use crate::sserafim_stage::SserafimStageState;
 use crate::stage_scripted_motion::{
     limo_fast_car_position, limo_fast_car_start, philly_blazin_lightning_start, philly_train_start,
 };
 use anyhow::{Context, Result};
-use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
+use rustic_asset::{load_bytes, AssetPath, ChartEventKind, OverlayResolver, SserafimEvent};
 use rustic_audio::{streaming_vorbis_source, SharedMixer, Stem};
 use rustic_core::time::Samples;
 use std::sync::{Arc, OnceLock};
@@ -17,6 +18,10 @@ const CAR_PASS_1_PATH: &str = "sounds/carPass1.ogg";
 const LIGHTNING_1_PATH: &str = "sounds/Lightning1.ogg";
 const LIGHTNING_2_PATH: &str = "sounds/Lightning2.ogg";
 const LIGHTNING_3_PATH: &str = "sounds/Lightning3.ogg";
+const SSERAFIM_DOOR_KICK_1_PATH: &str = "sounds/sserafim/doorKick1.ogg";
+const SSERAFIM_DOOR_KICK_2_PATH: &str = "sounds/sserafim/doorKick2.ogg";
+const SSERAFIM_END_1_PATH: &str = "sounds/sserafim/cutscene/end1.ogg";
+const SSERAFIM_END_2_PATH: &str = "sounds/sserafim/cutscene/end2.ogg";
 
 static TRAIN_SOUND_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static CAR_PASS_0_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
@@ -24,12 +29,18 @@ static CAR_PASS_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LIGHTNING_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LIGHTNING_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LIGHTNING_3_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static SSERAFIM_DOOR_KICK_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static SSERAFIM_DOOR_KICK_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static SSERAFIM_END_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static SSERAFIM_END_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 
 #[derive(Debug, Default)]
 pub(crate) struct StageSfx {
     last_train_start: Option<Samples>,
     last_limo_car_start: Option<Samples>,
     last_lightning_start: Option<Samples>,
+    last_sserafim_end1_start: Option<Samples>,
+    last_sserafim_end2_start: Option<Samples>,
 }
 
 impl StageSfx {
@@ -44,8 +55,9 @@ impl StageSfx {
         cursor: Samples,
         sample_rate: u32,
         bpm: f64,
+        sserafim: &SserafimStageState,
     ) {
-        if let Err(e) = self.tick(song, mixer, cursor, sample_rate, bpm) {
+        if let Err(e) = self.tick(song, mixer, cursor, sample_rate, bpm, sserafim) {
             tracing::warn!(target: "rustic.audio", "play stage sound: {e:#}");
         }
     }
@@ -57,6 +69,7 @@ impl StageSfx {
         cursor: Samples,
         sample_rate: u32,
         bpm: f64,
+        sserafim: &SserafimStageState,
     ) -> Result<()> {
         if is_philly_train_song(song) {
             if let Some(start) = philly_train_start(cursor, sample_rate, bpm) {
@@ -85,6 +98,24 @@ impl StageSfx {
                 )?;
             }
         }
+        if song == PreviewSong::SPAGHETTI {
+            if let Some(start) = sserafim.end_started_at() {
+                self.play_once_near_start(
+                    mixer,
+                    cursor,
+                    sample_rate,
+                    start,
+                    StageSound::SserafimEnd1,
+                )?;
+                self.play_once_near_start(
+                    mixer,
+                    cursor,
+                    sample_rate,
+                    Samples(start.0.saturating_add(i64::from(sample_rate.max(1)) * 4)),
+                    StageSound::SserafimEnd2,
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -110,6 +141,9 @@ impl StageSfx {
             StageSound::Train => self.last_train_start,
             StageSound::CarPass(_) => self.last_limo_car_start,
             StageSound::Lightning(_) => self.last_lightning_start,
+            StageSound::SserafimEnd1 => self.last_sserafim_end1_start,
+            StageSound::SserafimEnd2 => self.last_sserafim_end2_start,
+            StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => None,
         }
     }
 
@@ -118,15 +152,43 @@ impl StageSfx {
             StageSound::Train => self.last_train_start = Some(start),
             StageSound::CarPass(_) => self.last_limo_car_start = Some(start),
             StageSound::Lightning(_) => self.last_lightning_start = Some(start),
+            StageSound::SserafimEnd1 => self.last_sserafim_end1_start = Some(start),
+            StageSound::SserafimEnd2 => self.last_sserafim_end2_start = Some(start),
+            StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => {}
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StageSound {
     Train,
     CarPass(u8),
     Lightning(u8),
+    SserafimDoorKick1,
+    SserafimDoorKick2,
+    SserafimEnd1,
+    SserafimEnd2,
+}
+
+pub(crate) fn play_sserafim_event_sound_or_warn(mixer: &SharedMixer, kind: &ChartEventKind) {
+    let Some(sound) = sserafim_event_sound(kind) else {
+        return;
+    };
+    if let Err(e) = play_stage_sound(mixer, sound) {
+        tracing::warn!(target: "rustic.audio", "play Sserafim event sound: {e:#}");
+    }
+}
+
+fn sserafim_event_sound(kind: &ChartEventKind) -> Option<StageSound> {
+    match kind {
+        ChartEventKind::Sserafim(SserafimEvent::Kick { final_kick: false }) => {
+            Some(StageSound::SserafimDoorKick1)
+        }
+        ChartEventKind::Sserafim(SserafimEvent::Kick { final_kick: true }) => {
+            Some(StageSound::SserafimDoorKick2)
+        }
+        _ => None,
+    }
 }
 
 fn play_stage_sound(mixer: &SharedMixer, sound: StageSound) -> Result<()> {
@@ -148,6 +210,10 @@ fn cached_stage_sound(sound: StageSound) -> Option<&'static Arc<[u8]>> {
         StageSound::Lightning(0) => (&LIGHTNING_1_BYTES, LIGHTNING_1_PATH),
         StageSound::Lightning(1) => (&LIGHTNING_2_BYTES, LIGHTNING_2_PATH),
         StageSound::Lightning(_) => (&LIGHTNING_3_BYTES, LIGHTNING_3_PATH),
+        StageSound::SserafimDoorKick1 => (&SSERAFIM_DOOR_KICK_1_BYTES, SSERAFIM_DOOR_KICK_1_PATH),
+        StageSound::SserafimDoorKick2 => (&SSERAFIM_DOOR_KICK_2_BYTES, SSERAFIM_DOOR_KICK_2_PATH),
+        StageSound::SserafimEnd1 => (&SSERAFIM_END_1_BYTES, SSERAFIM_END_1_PATH),
+        StageSound::SserafimEnd2 => (&SSERAFIM_END_2_BYTES, SSERAFIM_END_2_PATH),
     };
     cache
         .get_or_init(|| match load_stage_sound(path) {
@@ -194,6 +260,8 @@ mod tests {
         assert_eq!(TRAIN_SOUND_PATH, "sounds/train_passes.ogg");
         assert_eq!(CAR_PASS_0_PATH, "sounds/carPass0.ogg");
         assert_eq!(LIGHTNING_3_PATH, "sounds/Lightning3.ogg");
+        assert_eq!(SSERAFIM_DOOR_KICK_1_PATH, "sounds/sserafim/doorKick1.ogg");
+        assert_eq!(SSERAFIM_END_2_PATH, "sounds/sserafim/cutscene/end2.ogg");
     }
 
     #[test]
@@ -202,5 +270,25 @@ mod tests {
         assert!(is_limo_song(PreviewSong::MILF));
         assert!(within_trigger_window(Samples(10), Samples(0), 48_000));
         assert!(!within_trigger_window(Samples(13_000), Samples(0), 48_000));
+    }
+
+    #[test]
+    fn sserafim_events_map_to_script_sound_assets() {
+        assert_eq!(
+            sserafim_event_sound(&ChartEventKind::Sserafim(SserafimEvent::Kick {
+                final_kick: false
+            })),
+            Some(StageSound::SserafimDoorKick1)
+        );
+        assert_eq!(
+            sserafim_event_sound(&ChartEventKind::Sserafim(SserafimEvent::Kick {
+                final_kick: true
+            })),
+            Some(StageSound::SserafimDoorKick2)
+        );
+        assert_eq!(
+            sserafim_event_sound(&ChartEventKind::Sserafim(SserafimEvent::End)),
+            None
+        );
     }
 }

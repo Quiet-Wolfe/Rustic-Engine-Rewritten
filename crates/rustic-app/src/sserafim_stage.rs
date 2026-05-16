@@ -70,6 +70,10 @@ impl SserafimStageState {
         ))
     }
 
+    pub(crate) fn end_started_at(&self) -> Option<Samples> {
+        self.end_started_at
+    }
+
     pub(crate) fn apply_event(&mut self, kind: &ChartEventKind, cursor: Samples) -> bool {
         let ChartEventKind::Sserafim(event) = kind else {
             return false;

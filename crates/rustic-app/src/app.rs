@@ -537,6 +537,7 @@ impl App {
             cursor,
             sample_rate,
             stage_bpm,
+            &self.sserafim_stage,
         );
         for cmd in self.stage_props.commands(
             cursor,
