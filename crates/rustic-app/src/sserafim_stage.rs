@@ -27,6 +27,7 @@ pub(crate) struct SserafimStageState {
     pulse: PulseLights,
     yunjin_intro: YunjinIntro,
     dust_clear: Option<Samples>,
+    truck_door_visible_at: Option<Samples>,
     flash: TimedFlash,
     end_started_at: Option<Samples>,
 }
@@ -45,6 +46,7 @@ impl Default for SserafimStageState {
             pulse: PulseLights::default(),
             yunjin_intro: YunjinIntro::default(),
             dust_clear: None,
+            truck_door_visible_at: None,
             flash: TimedFlash::default(),
             end_started_at: None,
         }
@@ -112,6 +114,9 @@ impl SserafimStageState {
                 if *final_kick {
                     self.girlfriend_visible = true;
                     self.dust_clear = Some(cursor);
+                    self.truck_door_visible_at = Some(Samples(
+                        cursor.0.saturating_add(seconds_to_samples(23.0 / 24.0)),
+                    ));
                 }
             }
             SserafimEvent::Flash { duration } => {
@@ -192,6 +197,15 @@ impl SserafimStageState {
                 || cmd.texture == sserafim_texture_id("images/sserafim/lights/truck-light2.png")
             {
                 cmd.color.w = truck_alpha;
+            } else if cmd.texture == sserafim_texture_id("images/sserafim/truck-door.png") {
+                cmd.color.w = if self
+                    .truck_door_visible_at
+                    .is_some_and(|visible_at| cursor >= visible_at)
+                {
+                    1.0
+                } else {
+                    0.0
+                };
             } else if cmd.texture
                 == sserafim_texture_id("images/sserafim/lights/back-light-color.png")
             {
@@ -681,6 +695,40 @@ mod tests {
         assert!(state
             .pose_for_member(SserafimMember::Girlfriend, poses(), Samples(10))
             .is_some());
+    }
+
+    #[test]
+    fn truck_door_reveals_on_final_kick_frame() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        let mut door = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/truck-door.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+
+        state.apply_commands(std::iter::once(&mut door), Samples(0), 48_000, 100.0);
+        assert_eq!(door.color.w, 0.0);
+
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::Kick { final_kick: true }),
+            Samples(1_000),
+        );
+        state.apply_commands(
+            std::iter::once(&mut door),
+            Samples(1_000 + 45_999),
+            48_000,
+            100.0,
+        );
+        assert_eq!(door.color.w, 0.0);
+
+        state.apply_commands(
+            std::iter::once(&mut door),
+            Samples(1_000 + 46_000),
+            48_000,
+            100.0,
+        );
+        assert_eq!(door.color.w, 1.0);
     }
 
     #[test]
