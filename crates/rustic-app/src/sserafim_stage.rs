@@ -23,6 +23,7 @@ pub(crate) struct SserafimStageState {
     truck_lights: TimedFlash,
     pulse: PulseLights,
     yunjin_intro: YunjinIntro,
+    dust_clear: Option<Samples>,
 }
 
 impl Default for SserafimStageState {
@@ -37,6 +38,7 @@ impl Default for SserafimStageState {
             truck_lights: TimedFlash::default(),
             pulse: PulseLights::default(),
             yunjin_intro: YunjinIntro::default(),
+            dust_clear: None,
         }
     }
 }
@@ -88,6 +90,9 @@ impl SserafimStageState {
             SserafimEvent::Beautiful { beautiful } => self.beautiful = *beautiful,
             SserafimEvent::Kick { final_kick } => {
                 self.yunjin_intro = YunjinIntro::kick(*final_kick, cursor);
+                if *final_kick {
+                    self.dust_clear = Some(cursor);
+                }
             }
             SserafimEvent::Flash { .. }
             | SserafimEvent::GuitarVibration { .. }
@@ -160,6 +165,9 @@ impl SserafimStageState {
                 == sserafim_texture_id("images/sserafim/lights/back-light-white.png")
             {
                 cmd.color.w = pulse.alpha * 0.8;
+            }
+            if let Some(started_at) = self.dust_clear {
+                apply_dust_clear(cmd, started_at, cursor);
             }
         }
     }
@@ -447,6 +455,52 @@ fn parse_sserafim_color(value: &str) -> glam::Vec4 {
     )
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DustClearSpec {
+    duration_samples: i64,
+    y_offset: f32,
+}
+
+fn apply_dust_clear(cmd: &mut DrawCommand, started_at: Samples, cursor: Samples) {
+    let Some(spec) = dust_clear_spec(cmd) else {
+        return;
+    };
+    let elapsed = cursor.0.saturating_sub(started_at.0).max(0);
+    let progress = (elapsed as f32 / spec.duration_samples as f32).clamp(0.0, 1.0);
+    cmd.color.w *= 1.0 - progress;
+    cmd.world_pos.y += spec.y_offset * progress;
+}
+
+fn dust_clear_spec(cmd: &DrawCommand) -> Option<DustClearSpec> {
+    if cmd.texture == sserafim_texture_id("images/sserafim/dust/dustMid.png") {
+        return Some(if cmd.world_pos.y > -300.0 {
+            DustClearSpec {
+                duration_samples: seconds_to_samples(20.0),
+                y_offset: 100.0,
+            }
+        } else {
+            DustClearSpec {
+                duration_samples: seconds_to_samples(24.0),
+                y_offset: 150.0,
+            }
+        });
+    }
+    if cmd.texture == sserafim_texture_id("images/sserafim/dust/dustBack.png") {
+        return Some(if cmd.world_pos.y > -800.0 {
+            DustClearSpec {
+                duration_samples: seconds_to_samples(16.0),
+                y_offset: 200.0,
+            }
+        } else {
+            DustClearSpec {
+                duration_samples: seconds_to_samples(16.0),
+                y_offset: 100.0,
+            }
+        });
+    }
+    None
+}
+
 fn sserafim_texture_id(path: &str) -> rustic_core::ids::AssetId {
     asset_id_for_path(&AssetPath::new(path).expect("valid built-in Sserafim asset path"))
 }
@@ -517,5 +571,33 @@ mod tests {
                 .name,
             "singRIGHT-beautiful"
         );
+    }
+
+    #[test]
+    fn final_kick_clears_sserafim_dust() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::Kick { final_kick: true }),
+            Samples(0),
+        );
+
+        let mut dust = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/dust/dustMid.png"),
+            glam::vec2(-650.0, -200.0),
+            glam::vec2(100.0, 100.0),
+        );
+        dust.layer = RenderLayer::Stage;
+        dust.color.w = 0.8;
+
+        state.apply_commands(
+            std::iter::once(&mut dust),
+            Samples(10 * 48_000),
+            48_000,
+            100.0,
+        );
+
+        assert!(dust.color.w < 0.8);
+        assert!(dust.world_pos.y > -200.0);
     }
 }

@@ -146,6 +146,7 @@ fn limo_erect_objects() -> Result<Vec<StageObject>> {
 
 fn sserafim_objects() -> Result<Vec<StageObject>> {
     Ok(vec![
+        sserafim_floor_object()?,
         sserafim_dust_object(
             "sserafimDust1",
             "dustMid",
@@ -224,6 +225,18 @@ fn limo_mist_object(
     )
 }
 
+fn sserafim_floor_object() -> Result<StageObject> {
+    png_object(
+        "sserafimFloor",
+        "images/sserafim/floor.png",
+        glam::vec2(790.0, 625.0),
+        glam::Vec2::ONE,
+        glam::vec2(0.93, 0.93),
+        11,
+        1.0,
+    )
+}
+
 fn sserafim_dust_object(
     id: &str,
     image: &str,
@@ -283,9 +296,12 @@ mod tests {
         assert_eq!(tank[0].id, "tankCloudsScrolling");
 
         let sserafim = scripted_stage_objects("sserafim").unwrap();
-        assert_eq!(sserafim.len(), 4);
+        assert_eq!(sserafim.len(), 5);
+        assert_eq!(sserafim[0].id, "sserafimFloor");
+        assert_eq!(sserafim[0].image.as_str(), "images/sserafim/floor.png");
+        assert_eq!(sserafim[0].position.x, 790.0);
         assert_eq!(
-            sserafim[0].image.as_str(),
+            sserafim[1].image.as_str(),
             "images/sserafim/dust/dustMid.png"
         );
 
