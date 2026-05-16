@@ -40,10 +40,7 @@ impl App {
                 && self.mode == super::title_flow::AppMode::Play
                 && self.game_over.is_none()
                 // ref: bdedc0aa:source/funkin/input/Controls.hx:792-793
-                && matches!(
-                    action,
-                    InputAction::Pause | InputAction::Back | InputAction::Confirm
-                )
+                && is_gameplay_pause_action(action)
             {
                 self.enter_pause_menu(cursor);
                 return true;
@@ -200,6 +197,10 @@ fn should_pause_on_unfocus(
         && !dialogue_active
 }
 
+fn is_gameplay_pause_action(action: InputAction) -> bool {
+    matches!(action, InputAction::Pause | InputAction::Back)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::title_flow::AppMode;
@@ -249,5 +250,12 @@ mod tests {
             false,
             true
         ));
+    }
+
+    #[test]
+    fn gameplay_pause_hotkeys_exclude_confirm_action() {
+        assert!(is_gameplay_pause_action(InputAction::Pause));
+        assert!(is_gameplay_pause_action(InputAction::Back));
+        assert!(!is_gameplay_pause_action(InputAction::Confirm));
     }
 }
