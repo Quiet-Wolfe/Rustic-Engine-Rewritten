@@ -46,10 +46,7 @@ impl MainMenuAssets {
         let mut commands = RenderCommandList::new();
         commands.push(self.background.command());
         if main_menu_confirm_bg_visible(cursor, sample_rate, confirm_started_at) {
-            commands.push(
-                self.background
-                    .command_with_color(glam::vec4(1.0, 0.0, 0.73, 1.0), -9),
-            );
+            commands.push(self.background.magenta_command());
         }
         for (index, item) in self.items.iter().enumerate() {
             let selected = index == selected_index;
@@ -77,19 +74,24 @@ impl MainMenuAssets {
 #[derive(Debug)]
 struct MenuBackground {
     texture_id: AssetId,
+    magenta_texture_id: AssetId,
     size: glam::Vec2,
 }
 
 impl MenuBackground {
     fn command(&self) -> DrawCommand {
-        self.command_with_color(glam::Vec4::ONE, -10)
+        self.command_with_texture(self.texture_id, -10)
     }
 
-    fn command_with_color(&self, color: glam::Vec4, z: i32) -> DrawCommand {
+    fn magenta_command(&self) -> DrawCommand {
+        self.command_with_texture(self.magenta_texture_id, -9)
+    }
+
+    fn command_with_texture(&self, texture_id: AssetId, z: i32) -> DrawCommand {
         let scale = 1280.0 * 1.2 / self.size.x.max(1.0);
         let draw_size = self.size * scale;
         let mut cmd = DrawCommand::sprite(
-            self.texture_id,
+            texture_id,
             glam::vec2((1280.0 - draw_size.x) * 0.5, (720.0 - draw_size.y) * 0.5),
             draw_size,
         );
@@ -98,7 +100,6 @@ impl MenuBackground {
         cmd.z = z;
         cmd.pivot = glam::Vec2::ZERO;
         cmd.filter = FilterMode::Linear;
-        cmd.color = color;
         cmd
     }
 }
@@ -212,7 +213,25 @@ fn load_background(
             Some(path.as_str()),
         ),
     );
-    Ok(MenuBackground { texture_id, size })
+    let magenta_path = AssetPath::new("images/menuBGMagenta.png")?;
+    let magenta_image =
+        load_png(resolver, &magenta_path).with_context(|| format!("load {magenta_path}"))?;
+    let magenta_texture_id = asset_id_for_path(&magenta_path);
+    textures.insert(
+        magenta_texture_id,
+        Texture::from_png_image(
+            device,
+            queue,
+            &magenta_image,
+            FilterMode::Linear,
+            Some(magenta_path.as_str()),
+        ),
+    );
+    Ok(MenuBackground {
+        texture_id,
+        magenta_texture_id,
+        size,
+    })
 }
 
 fn load_menu_item(
