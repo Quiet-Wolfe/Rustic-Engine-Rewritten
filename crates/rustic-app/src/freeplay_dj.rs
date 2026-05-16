@@ -1,7 +1,7 @@
 //! Freeplay DJ sprite from Funkin' v0.8.5.
 //!
-//! Drives BF's `Intro → Idle` and `Confirm` frame labels. FistPump, FistPumpLoss,
-//! NewUnlock, and CharSelect states are deferred.
+//! Drives BF/Pico's core Freeplay DJ frame labels.
+//! FistPump, FistPumpLoss, NewUnlock, and CharSelect states are deferred.
 //!
 //! ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx
 //! ref: bdedc0aa:source/funkin/ui/freeplay/dj/AnimateAtlasFreeplayDJ.hx
@@ -25,7 +25,9 @@ const DJ_INTRO_LABEL: &str = "Intro";
 const DJ_IDLE_LABEL: &str = "Idle";
 const DJ_CONFIRM_LABEL: &str = "Confirm";
 const DJ_AFK_LABEL: &str = "AFK";
+const DJ_CARTOON_LABEL: &str = "Watching TV";
 const DJ_IDLE_EGG_SECONDS: f64 = 60.0;
+const DJ_IDLE_CARTOON_SECONDS: f64 = 120.0;
 
 /// Logical paths to assets the BF DJ depends on.
 pub const REQUIRED_DJ_ASSETS: &[&str] = &[
@@ -41,6 +43,7 @@ pub enum DjState {
     Intro,
     Idle,
     IdleEasterEgg,
+    Cartoon,
     Confirm,
 }
 
@@ -53,8 +56,11 @@ pub struct FreeplayDJ {
     idle_frame_count: u32,
     confirm_frame_count: u32,
     afk_frame_count: u32,
+    cartoon_frame_count: u32,
     state: DjState,
     state_started_at: Samples,
+    idle_started_at: Samples,
+    seen_idle_easter_egg: bool,
     pub texture: Option<Texture>,
 }
 
@@ -64,6 +70,7 @@ impl FreeplayDJ {
             DjState::Intro => (DJ_INTRO_LABEL, self.intro_frame_count, false),
             DjState::Idle => (DJ_IDLE_LABEL, self.idle_frame_count, true),
             DjState::IdleEasterEgg => (DJ_AFK_LABEL, self.afk_frame_count, false),
+            DjState::Cartoon => (DJ_CARTOON_LABEL, self.cartoon_frame_count, true),
             DjState::Confirm => (DJ_CONFIRM_LABEL, self.confirm_frame_count, false),
         };
         let frame_offset = label_frame_offset(
@@ -89,6 +96,8 @@ impl FreeplayDJ {
     pub fn reset_intro(&mut self, cursor: Samples) {
         self.state = DjState::Intro;
         self.state_started_at = cursor;
+        self.idle_started_at = cursor;
+        self.seen_idle_easter_egg = false;
     }
 
     /// Trigger the Confirm animation (plays once and holds last frame).
@@ -101,9 +110,14 @@ impl FreeplayDJ {
     /// Reset the AFK timer after any Freeplay player action.
     /// ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx:117-128
     pub fn on_player_action(&mut self, cursor: Samples) {
-        if matches!(self.state, DjState::Idle | DjState::IdleEasterEgg) {
+        if matches!(
+            self.state,
+            DjState::Idle | DjState::IdleEasterEgg | DjState::Cartoon
+        ) {
             self.state = DjState::Idle;
             self.state_started_at = cursor;
+            self.idle_started_at = cursor;
+            self.seen_idle_easter_egg = false;
         }
     }
 
@@ -118,15 +132,24 @@ impl FreeplayDJ {
                         animation_duration_samples(self.intro_frame_count, sample_rate, DJ_FPS);
                     self.state = DjState::Idle;
                     self.state_started_at = Samples(self.state_started_at.0 + intro_samples);
+                    self.idle_started_at = self.state_started_at;
+                    self.seen_idle_easter_egg = false;
                 }
             }
             DjState::Idle => {
-                if self.afk_frame_count > 0
-                    && cursor.0.saturating_sub(self.state_started_at.0)
-                        >= seconds_to_samples(DJ_IDLE_EGG_SECONDS, sample_rate)
+                let idle_elapsed = cursor.0.saturating_sub(self.idle_started_at.0);
+                if self.cartoon_frame_count > 0
+                    && idle_elapsed >= seconds_to_samples(DJ_IDLE_CARTOON_SECONDS, sample_rate)
+                {
+                    self.state = DjState::Cartoon;
+                    self.state_started_at = cursor;
+                } else if self.afk_frame_count > 0
+                    && !self.seen_idle_easter_egg
+                    && idle_elapsed >= seconds_to_samples(DJ_IDLE_EGG_SECONDS, sample_rate)
                 {
                     self.state = DjState::IdleEasterEgg;
                     self.state_started_at = cursor;
+                    self.seen_idle_easter_egg = true;
                 }
             }
             DjState::IdleEasterEgg => {
@@ -137,6 +160,7 @@ impl FreeplayDJ {
                     self.state_started_at = Samples(self.state_started_at.0 + afk_samples);
                 }
             }
+            DjState::Cartoon => {}
             DjState::Confirm => {}
         }
     }
@@ -214,6 +238,10 @@ pub fn load_freeplay_dj_for_asset(
         .label(DJ_AFK_LABEL)
         .map(|label| label.duration.max(1))
         .unwrap_or(0);
+    let cartoon_frame_count = animation
+        .label(DJ_CARTOON_LABEL)
+        .map(|label| label.duration.max(1))
+        .unwrap_or(0);
     Ok(FreeplayDJ {
         texture_id,
         animation,
@@ -222,11 +250,14 @@ pub fn load_freeplay_dj_for_asset(
         idle_frame_count,
         confirm_frame_count,
         afk_frame_count,
+        cartoon_frame_count,
         // Caller calls `reset_intro(cursor)` from `enter_song_select` so the
         // intro plays from the moment the screen mounts. Default to Idle so a
         // stale/uninitialized DJ never gets stuck on a frozen first intro frame.
         state: DjState::Idle,
         state_started_at: Samples(0),
+        idle_started_at: Samples(0),
+        seen_idle_easter_egg: false,
         texture: Some(texture),
     })
 }
@@ -341,6 +372,60 @@ mod tests {
         assert_eq!(seconds_to_samples(DJ_IDLE_EGG_SECONDS, 48_000), 2_880_000);
     }
 
+    #[test]
+    fn bf_idle_egg_only_plays_once_before_cartoon_state() {
+        let mut dj = load_test_dj("images/freeplay/freeplay-boyfriend");
+
+        dj.tick(
+            Samples(seconds_to_samples(DJ_IDLE_EGG_SECONDS, 48_000)),
+            48_000,
+        );
+        assert_eq!(dj.state, DjState::IdleEasterEgg);
+
+        let afk_end = Samples(
+            seconds_to_samples(DJ_IDLE_EGG_SECONDS, 48_000)
+                + animation_duration_samples(dj.afk_frame_count, 48_000, DJ_FPS),
+        );
+        dj.tick(afk_end, 48_000);
+        assert_eq!(dj.state, DjState::Idle);
+        assert!(dj.seen_idle_easter_egg);
+
+        dj.tick(
+            Samples(seconds_to_samples(DJ_IDLE_CARTOON_SECONDS, 48_000)),
+            48_000,
+        );
+        assert_eq!(dj.state, DjState::Cartoon);
+    }
+
+    #[test]
+    fn pico_without_cartoon_label_stays_on_idle_egg_path() {
+        let mut dj = load_test_dj("images/freeplay/freeplay-pico");
+        assert_eq!(dj.cartoon_frame_count, 0);
+
+        dj.tick(
+            Samples(seconds_to_samples(DJ_IDLE_CARTOON_SECONDS, 48_000)),
+            48_000,
+        );
+
+        assert_eq!(dj.state, DjState::IdleEasterEgg);
+    }
+
+    #[test]
+    fn player_action_leaves_cartoon_and_resets_idle_timer() {
+        let mut dj = load_test_dj("images/freeplay/freeplay-boyfriend");
+        dj.tick(
+            Samples(seconds_to_samples(DJ_IDLE_CARTOON_SECONDS, 48_000)),
+            48_000,
+        );
+        assert_eq!(dj.state, DjState::Cartoon);
+
+        dj.on_player_action(Samples(6_000_000));
+
+        assert_eq!(dj.state, DjState::Idle);
+        assert_eq!(dj.idle_started_at, Samples(6_000_000));
+        assert!(!dj.seen_idle_easter_egg);
+    }
+
     /// Locks the DJ source asset inventory.
     #[test]
     fn required_assets_present() {
@@ -363,5 +448,48 @@ mod tests {
             "freeplay DJ assets missing - DO NOT DELETE these files, they are required for the OG-fidelity DJ:\n{}",
             missing.join("\n"),
         );
+    }
+
+    fn load_test_dj(asset_path: &str) -> FreeplayDJ {
+        let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+        let animation_path = AssetPath::new(format!("{asset_path}/Animation.json")).unwrap();
+        let spritemap_path = AssetPath::new(format!("{asset_path}/spritemap1.json")).unwrap();
+        let animation = load_animate_animation(&resolver, &animation_path).unwrap();
+        let atlas = load_animate_spritemap(&resolver, &spritemap_path).unwrap();
+        let intro_frame_count = animation
+            .label(DJ_INTRO_LABEL)
+            .map(|label| label.duration.max(1))
+            .unwrap_or(1);
+        let idle_frame_count = animation
+            .label(DJ_IDLE_LABEL)
+            .map(|label| label.duration.max(1))
+            .unwrap_or(1);
+        let confirm_frame_count = animation
+            .label(DJ_CONFIRM_LABEL)
+            .map(|label| label.duration.max(1))
+            .unwrap_or(1);
+        let afk_frame_count = animation
+            .label(DJ_AFK_LABEL)
+            .map(|label| label.duration.max(1))
+            .unwrap_or(0);
+        let cartoon_frame_count = animation
+            .label(DJ_CARTOON_LABEL)
+            .map(|label| label.duration.max(1))
+            .unwrap_or(0);
+        FreeplayDJ {
+            texture_id: AssetId::new(1),
+            animation,
+            atlas,
+            intro_frame_count,
+            idle_frame_count,
+            confirm_frame_count,
+            afk_frame_count,
+            cartoon_frame_count,
+            state: DjState::Idle,
+            state_started_at: Samples(0),
+            idle_started_at: Samples(0),
+            seen_idle_easter_egg: false,
+            texture: None,
+        }
     }
 }
