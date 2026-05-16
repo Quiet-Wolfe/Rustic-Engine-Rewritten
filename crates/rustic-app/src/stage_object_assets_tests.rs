@@ -482,3 +482,122 @@ fn week7_tank_rolling_motion_follows_scripted_circle() {
     assert!(pose_later.position.x < pose_start.position.x);
     assert!(pose_later.rotation > pose_start.rotation);
 }
+
+#[test]
+fn animate_stage_props_restart_idle_on_dance_beats() {
+    let stage = StageDefinition::parse(
+        br##"{
+          "name": "test",
+          "props": [{
+            "name": "guy",
+            "assetPath": "erect/rando",
+            "animType": "animateatlas",
+            "position": [0, 0],
+            "scale": [1, 1],
+            "scroll": [1, 1],
+            "zIndex": 5,
+            "danceEvery": 2,
+            "startingAnimation": "idle",
+            "animations": [{ "name": "idle", "prefix": "rando" }]
+          }]
+        }"##,
+    )
+    .unwrap();
+    let object = &stage.objects[0];
+    let animations = vec![animate_stage_animation("idle", 24)];
+
+    let (_, first_start) = animate_stage_active_animation(
+        object,
+        &animations,
+        0,
+        Samples(36_000),
+        48_000,
+        120.0,
+        None,
+    )
+    .unwrap();
+    let (_, second_start) = animate_stage_active_animation(
+        object,
+        &animations,
+        0,
+        Samples(50_000),
+        48_000,
+        120.0,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(first_start, Samples(0));
+    assert_eq!(second_start, Samples(48_000));
+}
+
+#[test]
+fn week7_sniper_selects_sip_on_scripted_beats() {
+    let stage = StageDefinition::parse(
+        br##"{
+          "name": "test",
+          "props": [{
+            "name": "sniper",
+            "assetPath": "erect/sniper",
+            "animType": "animateatlas",
+            "position": [0, 0],
+            "scale": [1, 1],
+            "scroll": [1, 1],
+            "zIndex": 5,
+            "danceEvery": 2,
+            "startingAnimation": "idle",
+            "animations": [
+              { "name": "idle", "prefix": "Idle" },
+              { "name": "sip", "prefix": "Sip" }
+            ]
+          }]
+        }"##,
+    )
+    .unwrap();
+    let object = &stage.objects[0];
+    let animations = vec![
+        animate_stage_animation("idle", 24),
+        animate_stage_animation("sip", 10),
+    ];
+    let beat = (0..200)
+        .find(|beat| crate::stage_scripted_motion::tankman_sniper_should_sip(*beat))
+        .unwrap();
+    let start = Samples(beat * 24_000);
+
+    let (sip, sip_start) = animate_stage_active_animation(
+        object,
+        &animations,
+        0,
+        Samples(start.0 + 1),
+        48_000,
+        120.0,
+        Some(PreviewSong::STRESS),
+    )
+    .unwrap();
+    let (idle, _) = animate_stage_active_animation(
+        object,
+        &animations,
+        0,
+        Samples(start.0 + 20_000),
+        48_000,
+        120.0,
+        Some(PreviewSong::STRESS),
+    )
+    .unwrap();
+
+    assert_eq!(sip.name, "sip");
+    assert_eq!(sip_start, start);
+    assert_eq!(idle.name, "idle");
+}
+
+fn animate_stage_animation(name: &str, frame_count: usize) -> LoadedAnimateStageAnimation {
+    LoadedAnimateStageAnimation {
+        name: name.to_string(),
+        label: name.to_string(),
+        source: AnimateStagePoseSource::Root,
+        frame_count,
+        frame_rate: 24,
+        looped: false,
+        indices: Vec::new(),
+    }
+}

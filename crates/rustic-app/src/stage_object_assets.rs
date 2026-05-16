@@ -11,7 +11,7 @@ use crate::stage_object_asset_helpers::{
 };
 use crate::stage_scripted_motion::{
     limo_shooting_star_state, philly_blazin_lightning_state, philly_car_pose,
-    philly_traffic_light_state, tank_rolling_pose, PhillyCarLane,
+    philly_traffic_light_state, tank_rolling_pose, tankman_sniper_sip_start, PhillyCarLane,
 };
 use crate::stage_static_prop::{scripted_static_stage_object, StaticStagePropSprite};
 use anyhow::{Context, Result};
@@ -99,12 +99,20 @@ pub(crate) struct AnimateStagePropSprite {
     object: StageObject,
     animation: AnimateAnimation,
     atlas: AnimateAtlas,
+    animations: Vec<LoadedAnimateStageAnimation>,
+    starting_animation: usize,
+    filter: FilterMode,
+}
+
+#[derive(Debug, Clone)]
+struct LoadedAnimateStageAnimation {
+    name: String,
     label: String,
     source: AnimateStagePoseSource,
     frame_count: usize,
     frame_rate: u16,
     looped: bool,
-    filter: FilterMode,
+    indices: Vec<u16>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -323,8 +331,7 @@ impl AnimateStagePropSprite {
         bpm: f64,
         song: Option<PreviewSong>,
     ) -> Vec<DrawCommand> {
-        let Some(started_at) =
-            animate_stage_started_at(&self.object.id, cursor, sample_rate, bpm, song)
+        let Some((animation, started_at)) = self.active_animation(cursor, sample_rate, bpm, song)
         else {
             return Vec::new();
         };
@@ -332,25 +339,23 @@ impl AnimateStagePropSprite {
             cursor,
             sample_rate,
             started_at,
-            self.frame_rate,
-            self.frame_count,
-            self.looped,
+            animation.frame_rate,
+            animation.frame_count,
+            animation.looped,
         );
-        let frame_offset = self
-            .object
-            .animation
-            .as_ref()
-            .and_then(|animation| animation.indices.get(frame_index))
+        let frame_offset = animation
+            .indices
+            .get(frame_index)
             .map(|index| u32::from(*index))
             .unwrap_or(frame_index as u32);
-        let parts = match self.source {
+        let parts = match animation.source {
             AnimateStagePoseSource::Root => self.animation.flatten_root_frame(frame_offset),
             AnimateStagePoseSource::FrameLabel => self
                 .animation
-                .flatten_label_frame(&self.label, frame_offset),
+                .flatten_label_frame(&animation.label, frame_offset),
             AnimateStagePoseSource::Symbol => self
                 .animation
-                .flatten_symbol_frame(&self.label, frame_offset),
+                .flatten_symbol_frame(&animation.label, frame_offset),
         };
         parts
             .map(|parts| {
@@ -360,6 +365,24 @@ impl AnimateStagePropSprite {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn active_animation(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        song: Option<PreviewSong>,
+    ) -> Option<(&LoadedAnimateStageAnimation, Samples)> {
+        animate_stage_active_animation(
+            &self.object,
+            &self.animations,
+            self.starting_animation,
+            cursor,
+            sample_rate,
+            bpm,
+            song,
+        )
     }
 
     fn command_for_part(&self, part: &AnimateDrawPart) -> Option<DrawCommand> {
@@ -543,8 +566,8 @@ fn load_animate_stage_object(
     let texture_path = animate_asset_file(&object.image, "spritemap1.png")?;
     let animation = load_animate_animation(resolver, &animation_path)
         .with_context(|| format!("load {}", animation_path.as_str()))?;
-    let source = animate_stage_pose_source(&animation, animation_def);
-    let frame_count = animate_stage_frame_count(&animation, animation_def, source)?;
+    let animations = load_animate_stage_animations(object, animation_def, &animation)?;
+    let starting_animation = starting_animate_animation_index(&animations, &animation_def.name);
     let atlas = load_animate_spritemap(resolver, &spritemap_path)
         .with_context(|| format!("load {}", spritemap_path.as_str()))?;
     let image = load_png(resolver, &texture_path)
@@ -560,11 +583,8 @@ fn load_animate_stage_object(
         object: object.clone(),
         animation,
         atlas,
-        label: animation_def.prefix.clone(),
-        source,
-        frame_count,
-        frame_rate: animation_def.frame_rate,
-        looped: animation_def.looped,
+        animations,
+        starting_animation,
         filter,
     };
     if sprite.commands(Samples(0), 48_000, 100.0, None).is_empty()
@@ -577,6 +597,51 @@ fn load_animate_stage_object(
         );
     }
     Ok(Some(StagePropSprite::Animate(sprite)))
+}
+
+fn animate_stage_active_animation<'a>(
+    object: &StageObject,
+    animations: &'a [LoadedAnimateStageAnimation],
+    starting_animation: usize,
+    cursor: Samples,
+    sample_rate: u32,
+    bpm: f64,
+    song: Option<PreviewSong>,
+) -> Option<(&'a LoadedAnimateStageAnimation, Samples)> {
+    let started_at = animate_stage_started_at(&object.id, cursor, sample_rate, bpm, song)?;
+    if object.id == "sniper" {
+        if let Some(sip) = animate_animation_index(animations, "sip") {
+            let duration = animate_stage_animation_duration_samples(&animations[sip], sample_rate);
+            if let Some(started_at) = tankman_sniper_sip_start(cursor, sample_rate, bpm, duration) {
+                return Some((&animations[sip], started_at));
+            }
+        }
+    }
+    let animation = &animations[starting_animation.min(animations.len().saturating_sub(1))];
+    let started_at = if object.dance_every > 0.0 {
+        stage_dance_start(cursor, sample_rate, bpm, object.dance_every)
+    } else {
+        started_at
+    };
+    Some((animation, started_at))
+}
+
+fn stage_dance_start(cursor: Samples, sample_rate: u32, bpm: f64, dance_every: f64) -> Samples {
+    let beat = stage_beat(cursor, sample_rate, bpm);
+    let interval = (dance_every.max(1.0).round() as i64).max(1);
+    let beat_samples = (f64::from(sample_rate.max(1)) * 60.0 / bpm.max(1.0))
+        .round()
+        .max(1.0) as i64;
+    Samples(beat.div_euclid(interval) * interval * beat_samples)
+}
+
+fn animate_stage_animation_duration_samples(
+    animation: &LoadedAnimateStageAnimation,
+    sample_rate: u32,
+) -> i64 {
+    let frames = animation.frame_count.max(1) as f64;
+    let frame_rate = f64::from(animation.frame_rate.max(1));
+    (frames * f64::from(sample_rate.max(1)) / frame_rate).ceil() as i64
 }
 
 fn animate_stage_started_at(
@@ -802,6 +867,33 @@ fn load_sparrow_stage_animations(
         })
         .collect()
 }
+fn load_animate_stage_animations(
+    object: &StageObject,
+    starting_animation: &rustic_asset::StageObjectAnimation,
+    animation: &AnimateAnimation,
+) -> Result<Vec<LoadedAnimateStageAnimation>> {
+    let animation_defs = if object.animations.is_empty() {
+        vec![starting_animation.clone()]
+    } else {
+        object.animations.clone()
+    };
+    animation_defs
+        .into_iter()
+        .map(|animation_def| {
+            let source = animate_stage_pose_source(animation, &animation_def);
+            let frame_count = animate_stage_frame_count(animation, &animation_def, source)?;
+            Ok(LoadedAnimateStageAnimation {
+                name: animation_def.name,
+                label: animation_def.prefix,
+                source,
+                frame_count,
+                frame_rate: animation_def.frame_rate,
+                looped: animation_def.looped,
+                indices: animation_def.indices,
+            })
+        })
+        .collect()
+}
 fn starting_animation_index(
     animations: &[LoadedSparrowStageAnimation],
     starting_name: &str,
@@ -809,6 +901,20 @@ fn starting_animation_index(
     animation_index(animations, starting_name).unwrap_or(0)
 }
 fn animation_index(animations: &[LoadedSparrowStageAnimation], name: &str) -> Option<usize> {
+    animations
+        .iter()
+        .position(|animation| animation.name == name)
+}
+fn starting_animate_animation_index(
+    animations: &[LoadedAnimateStageAnimation],
+    starting_name: &str,
+) -> usize {
+    animate_animation_index(animations, starting_name).unwrap_or(0)
+}
+fn animate_animation_index(
+    animations: &[LoadedAnimateStageAnimation],
+    name: &str,
+) -> Option<usize> {
     animations
         .iter()
         .position(|animation| animation.name == name)

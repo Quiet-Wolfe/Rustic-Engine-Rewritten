@@ -118,6 +118,44 @@ pub(crate) fn tank_rolling_pose(cursor: Samples, sample_rate: u32) -> TankRollin
     }
 }
 
+pub(crate) fn tankman_sniper_sip_start(
+    cursor: Samples,
+    sample_rate: u32,
+    bpm: f64,
+    duration_samples: i64,
+) -> Option<Samples> {
+    // ref: bdedc0aa:assets/preload/scripts/stages/tankmanBattlefieldErect.hxc:107-112
+    let beat = stage_beat(cursor, sample_rate, bpm);
+    if beat < 0 {
+        return None;
+    }
+    let beat_samples = beat_samples(sample_rate, bpm);
+    let duration = duration_samples.max(1);
+    for candidate in (beat.saturating_sub(4)..=beat).rev() {
+        if !tankman_sniper_should_sip(candidate) {
+            continue;
+        }
+        let start = candidate * beat_samples;
+        if cursor.0 >= start && cursor.0 < start + duration {
+            return Some(Samples(start));
+        }
+    }
+    None
+}
+
+pub(crate) fn tankman_sniper_should_sip(beat: i64) -> bool {
+    if beat < 0 {
+        return false;
+    }
+    // Upstream uses FlxG.random.bool(2) on every beat. Rustic's stage scripts
+    // are deterministic, so this stable per-beat hash preserves the rare 2%
+    // trigger rate without introducing global RNG state into rendering.
+    let mut value = beat as u64 ^ 0x9e37_79b9_7f4a_7c15;
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    ((value ^ (value >> 31)) % 100) < 2
+}
+
 fn philly_forward_car_pose(
     cursor: Samples,
     sample_rate: u32,
@@ -497,5 +535,26 @@ mod tests {
         assert_eq!(state.started_at, Samples(192_000));
         assert_eq!(state.position, glam::vec2(50.0, -10.0));
         assert!(limo_shooting_star_state(Samples(260_000), 48_000, 120.0).is_none());
+    }
+
+    #[test]
+    fn tankman_sniper_sip_is_rare_and_duration_bounded() {
+        let beat = (0..200)
+            .find(|beat| tankman_sniper_should_sip(*beat))
+            .unwrap();
+        let start = Samples(beat * 24_000);
+
+        assert_eq!(
+            tankman_sniper_sip_start(start, 48_000, 120.0, 12_000),
+            Some(start)
+        );
+        assert_eq!(
+            tankman_sniper_sip_start(Samples(start.0 + 11_999), 48_000, 120.0, 12_000),
+            Some(start)
+        );
+        assert_eq!(
+            tankman_sniper_sip_start(Samples(start.0 + 12_000), 48_000, 120.0, 12_000),
+            None
+        );
     }
 }
