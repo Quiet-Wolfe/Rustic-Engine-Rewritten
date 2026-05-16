@@ -447,6 +447,11 @@ fn chart_animation_pose(animation: &str) -> Option<&'static str> {
     match animation {
         "hey" => Some("hey"),
         "cheer" => Some("cheer"),
+        "redheadsAnim" => Some("redheadsAnim"),
+        "knifeToss" => Some("knifeToss"),
+        "stressPicoEnding" => Some("stressPicoEnding"),
+        "laughEnd" => Some("laughEnd"),
+        "laughEnd-loop" => Some("laughEnd-loop"),
         _ => None,
     }
 }

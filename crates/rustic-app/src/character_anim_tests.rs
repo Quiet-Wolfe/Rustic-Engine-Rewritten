@@ -180,6 +180,32 @@ fn chart_event_triggers_known_girlfriend_animation() {
 }
 
 #[test]
+fn stress_pico_chart_events_trigger_scripted_poses() {
+    let mut state = CharacterAnimState::default();
+
+    assert!(state.play_chart_animation("dad", "redheadsAnim", Samples(1_000), true));
+    assert!(state.play_chart_animation("boyfriend", "knifeToss", Samples(2_000), true));
+
+    assert_eq!(state.poses().opponent.name, "redheadsAnim");
+    assert_eq!(state.poses().opponent.started_at, Samples(1_000));
+    assert_eq!(state.poses().player.name, "knifeToss");
+    assert_eq!(state.poses().player.started_at, Samples(2_000));
+}
+
+#[test]
+fn stress_pico_end_cutscene_poses_are_allowed() {
+    let mut state = CharacterAnimState::default();
+
+    assert!(state.play_chart_animation("dad", "stressPicoEnding", Samples(1_000), true));
+    assert!(state.play_chart_animation("boyfriend", "laughEnd", Samples(2_000), true));
+    assert!(state.play_chart_animation("boyfriend", "laughEnd-loop", Samples(3_000), true));
+
+    assert_eq!(state.poses().opponent.name, "stressPicoEnding");
+    assert_eq!(state.poses().player.name, "laughEnd-loop");
+    assert_eq!(state.poses().player.started_at, Samples(3_000));
+}
+
+#[test]
 fn girlfriend_chart_animation_returns_to_dance_after_hold_time() {
     let mut state = CharacterAnimState::default();
     state.play_chart_animation("girlfriend", "cheer", Samples(0), true);
