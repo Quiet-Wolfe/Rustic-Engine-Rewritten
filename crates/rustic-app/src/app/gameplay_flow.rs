@@ -92,8 +92,11 @@ impl App {
         }
         let sample_rate = play_sample_rate(&self.mixer);
         let confirm_duration = confirm_duration_or_default(self.note_skin.as_ref(), sample_rate);
-        let gameplay_event =
-            NormalizedInputEvent::new(event.action, event.state, event.wall_clock_ns, cursor);
+        let gameplay_event = input_event_with_global_offset(
+            event,
+            sample_rate,
+            self.options_preferences.global_offset_ms,
+        );
         let mut restore_vocals = false;
         let should_enter_game_over;
         {
@@ -195,5 +198,45 @@ impl App {
         if let Some(play_state) = self.play_state.as_mut() {
             play_state.register_hold_tick(elapsed_samples, sample_rate);
         }
+    }
+}
+
+fn input_event_with_global_offset(
+    event: &NormalizedInputEvent,
+    sample_rate: u32,
+    global_offset_ms: i16,
+) -> NormalizedInputEvent {
+    let offset_samples =
+        i64::from(global_offset_ms) * i64::from(sample_rate.max(1)) / i64::from(1_000);
+    NormalizedInputEvent::new(
+        event.action,
+        event.state,
+        event.wall_clock_ns,
+        Samples(
+            event
+                .audio_sample_cursor_at_receive
+                .0
+                .saturating_add(offset_samples),
+        ),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustic_core::input::InputState;
+
+    #[test]
+    fn global_offset_moves_input_cursor_by_milliseconds() {
+        let event =
+            NormalizedInputEvent::new(InputAction::LaneLeft, InputState::Pressed, 7, Samples(0));
+
+        let early = input_event_with_global_offset(&event, 48_000, -25);
+        let late = input_event_with_global_offset(&event, 48_000, 100);
+
+        assert_eq!(early.audio_sample_cursor_at_receive, Samples(-1_200));
+        assert_eq!(late.audio_sample_cursor_at_receive, Samples(4_800));
+        assert_eq!(late.wall_clock_ns, 7);
+        assert_eq!(late.action, InputAction::LaneLeft);
     }
 }
