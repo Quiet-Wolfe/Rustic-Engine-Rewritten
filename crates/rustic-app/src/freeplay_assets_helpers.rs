@@ -97,10 +97,7 @@ pub(super) const PINKBACK_LOGICAL_WIDTH: f32 = 900.0;
 
 pub(super) fn capsule_text_offset() -> glam::Vec2 {
     // ref: bdedc0aa:source/funkin/ui/freeplay/SongMenuItem.hx:200
-    glam::vec2(
-        CAPSULE_FRAME_WIDTH * 0.26 * CAPSULE_REAL_SCALED,
-        40.0 * CAPSULE_REAL_SCALED,
-    )
+    glam::vec2(CAPSULE_FRAME_WIDTH * 0.26, 45.0)
 }
 
 /// Compute the one-shot capsule jump-in scale. OG runs the xFrames
@@ -395,6 +392,14 @@ mod tests {
     #[test]
     fn frame_for_cursor_handles_empty() {
         assert!(frame_for_cursor(&[], Samples(0), 48_000, 24, true).is_none());
+    }
+
+    #[test]
+    fn capsule_text_offset_matches_og_unscaled_child_position() {
+        let offset = capsule_text_offset();
+
+        assert!((offset.x - 159.12).abs() < 0.01);
+        assert_eq!(offset.y, 45.0);
     }
 
     #[test]

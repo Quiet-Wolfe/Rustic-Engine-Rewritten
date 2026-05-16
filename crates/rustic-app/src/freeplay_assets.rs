@@ -43,6 +43,7 @@ const CAPSULE_SPACING_PAD: f32 = 10.0;
 const CAPSULE_FRAME_HEIGHT: f32 = 132.0;
 const CAPSULE_FRAME_WIDTH: f32 = 612.0;
 const CAPSULE_ANIM_FPS: u16 = 24;
+const FREEPLAY_TOP_BAR_HEIGHT: f32 = 164.0;
 // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:354-356
 const SELECTOR_LEFT_X: f32 = 20.0;
 const SELECTOR_RIGHT_X: f32 = 325.0;
@@ -150,7 +151,7 @@ impl FreeplayAssets {
 
         commands.push(solid_command(
             glam::vec2(0.0, overhang_y),
-            glam::vec2(1280.0, 164.0),
+            glam::vec2(1280.0, FREEPLAY_TOP_BAR_HEIGHT),
             glam::Vec4::new(0.0, 0.0, 0.0, 1.0),
             295,
         ));
@@ -417,9 +418,13 @@ impl FreeplayAssets {
             let offset = index as f32 - selected_index as f32;
             let pos = capsule_position(offset) + glam::vec2(capsule_enter_offset_x, 0.0);
             let is_selected = index == selected_index;
+            let text_pos = pos + capsule_text_offset();
+            if text_pos.y < FREEPLAY_TOP_BAR_HEIGHT {
+                continue;
+            }
             let mut text = TextCommand::new(
                 capsule.display_name.clone(),
-                pos + capsule_text_offset(),
+                text_pos,
                 36.0 * CAPSULE_REAL_SCALED,
             );
             let mut color = if is_selected {
