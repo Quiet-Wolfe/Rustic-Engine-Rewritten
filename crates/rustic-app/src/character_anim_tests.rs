@@ -231,6 +231,23 @@ fn stress_pico_end_cutscene_poses_are_allowed() {
 }
 
 #[test]
+fn darnell_intro_cutscene_poses_are_allowed() {
+    let mut state = CharacterAnimState::default();
+
+    assert!(state.play_chart_animation("dad", "lightCan", Samples(1_000), true));
+    assert!(state.play_chart_animation("dad", "kickCan", Samples(2_000), true));
+    assert!(state.play_chart_animation("dad", "kneeCan", Samples(3_000), true));
+    assert!(state.play_chart_animation("girlfriend", "laughCutscene", Samples(4_000), true));
+    assert!(state.play_chart_animation("boyfriend", "cock", Samples(5_000), true));
+    assert!(state.play_chart_animation("boyfriend", "intro1", Samples(6_000), true));
+    assert!(state.play_chart_animation("boyfriend", "intro2", Samples(7_000), true));
+
+    assert_eq!(state.poses().opponent.name, "kneeCan");
+    assert_eq!(state.poses().girlfriend.name, "laughCutscene");
+    assert_eq!(state.poses().player.name, "intro2");
+}
+
+#[test]
 fn stress_pico_end_cutscene_poses_hold_until_cutscene_finishes() {
     let mut state = CharacterAnimState::default();
 

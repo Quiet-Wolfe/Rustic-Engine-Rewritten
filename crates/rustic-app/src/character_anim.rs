@@ -464,6 +464,13 @@ fn chart_animation_pose(animation: &str) -> Option<&'static str> {
         "stressPicoEnding" => Some("stressPicoEnding"),
         "laughEnd" => Some("laughEnd"),
         "laughEnd-loop" => Some("laughEnd-loop"),
+        "lightCan" => Some("lightCan"),
+        "kickCan" => Some("kickCan"),
+        "kneeCan" => Some("kneeCan"),
+        "laughCutscene" => Some("laughCutscene"),
+        "cock" => Some("cock"),
+        "intro1" => Some("intro1"),
+        "intro2" => Some("intro2"),
         _ => None,
     }
 }

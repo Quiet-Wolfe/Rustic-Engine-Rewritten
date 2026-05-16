@@ -93,6 +93,10 @@ impl App {
         if self.game_over.is_some()
             || self.stress_pico_end_cutscene.is_some()
             || self
+                .darnell_intro_cutscene
+                .as_ref()
+                .is_some_and(|cutscene| cutscene.blocks_input(cursor))
+            || self
                 .winter_horrorland_cutscene
                 .as_ref()
                 .is_some_and(|cutscene| cutscene.blocks_input(cursor))

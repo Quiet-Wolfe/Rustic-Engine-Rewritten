@@ -13,6 +13,9 @@ use crate::character_anim::CharacterAnimState;
 use crate::countdown_assets::{countdown_start_cursor, CountdownSkin};
 use crate::countdown_audio::CountdownAudio;
 use crate::credits_assets::{CreditsAssets, CreditsScrollState};
+use crate::darnell_intro_cutscene::{
+    should_play_darnell_intro_cutscene, DarnellIntroCutsceneState,
+};
 use crate::dialogue_state::DialogueState;
 use crate::freeplay_assets::FreeplayAssets;
 use crate::freeplay_preview_audio::FreeplayPreviewMusic;
@@ -102,6 +105,7 @@ struct App {
     stage_sfx: StageSfx,
     sserafim_stage: crate::sserafim_stage::SserafimStageState,
     tankman_erect_stage: crate::tankman_erect_stage::TankmanErectStageState,
+    darnell_intro_cutscene: Option<DarnellIntroCutsceneState>,
     stress_pico_end_cutscene: Option<StressPicoEndCutsceneState>,
     winter_horrorland_cutscene: Option<WinterHorrorlandCutsceneState>,
     thorns_intro_cutscene: Option<ThornsIntroCutsceneState>,
@@ -197,6 +201,7 @@ impl App {
             stage_sfx: StageSfx::default(),
             sserafim_stage: crate::sserafim_stage::SserafimStageState::default(),
             tankman_erect_stage: crate::tankman_erect_stage::TankmanErectStageState::default(),
+            darnell_intro_cutscene: None,
             stress_pico_end_cutscene: None,
             winter_horrorland_cutscene: None,
             thorns_intro_cutscene: None,
@@ -418,8 +423,24 @@ impl App {
         let countdown_cursor = countdown_start_cursor(sample_rate, bpm);
         self.winter_horrorland_cutscene = None;
         self.thorns_intro_cutscene = None;
+        self.darnell_intro_cutscene = None;
         self.song_start_cursor = if self.preview_selection.song == PreviewSong::SPAGHETTI {
             sserafim_intro_start_cursor(sample_rate, bpm)
+        } else if should_play_darnell_intro_cutscene(
+            self.preview_selection,
+            !self.story_playlist.is_empty(),
+        ) {
+            let mut cutscene = DarnellIntroCutsceneState::new(countdown_cursor, sample_rate);
+            if let Some(runtime) = self.runtime.as_ref() {
+                cutscene.load_assets_or_warn(
+                    &runtime.rs.device,
+                    &runtime.rs.queue,
+                    &mut self.atlases,
+                );
+            }
+            let start_cursor = cutscene.song_start_cursor();
+            self.darnell_intro_cutscene = Some(cutscene);
+            start_cursor
         } else if should_play_winter_horrorland_cutscene(self.preview_selection) {
             let cutscene = WinterHorrorlandCutsceneState::new(countdown_cursor, sample_rate);
             let start_cursor = cutscene.song_start_cursor();
@@ -588,6 +609,11 @@ impl App {
             self.rebuild_game_over_commands(cursor, sample_rate);
             return;
         }
+        if self.audio_output.is_some() {
+            if let Some(cutscene) = self.darnell_intro_cutscene.as_mut() {
+                cutscene.tick_audio_or_warn(&self.mixer, cursor, sample_rate);
+            }
+        }
         let mut opponent_hits = Vec::new();
         let mut song_events = Vec::new();
         let mut bpm = None;
@@ -669,6 +695,9 @@ impl App {
             if let Some(cutscene) = self.stress_pico_end_cutscene.as_ref() {
                 cutscene.apply_character_poses(&mut self.character_anim, cursor, sample_rate);
             }
+            if let Some(cutscene) = self.darnell_intro_cutscene.as_ref() {
+                cutscene.apply_character_poses(&mut self.character_anim, cursor, sample_rate);
+            }
             if !self.song_started {
                 self.countdown_audio
                     .tick_or_warn(&self.mixer, cursor, sample_rate, bpm);
@@ -684,6 +713,15 @@ impl App {
             );
             if let Some(cutscene) = self.winter_horrorland_cutscene.as_ref() {
                 cutscene.apply_camera(&mut self.cameras, &mut self.camera_fx, cursor, sample_rate);
+            }
+            if let Some(cutscene) = self.darnell_intro_cutscene.as_ref() {
+                cutscene.apply_camera(
+                    &mut self.cameras,
+                    &mut self.camera_fx,
+                    self.camera_focus,
+                    cursor,
+                    sample_rate,
+                );
             }
         }
         self.cmds = self.static_cmds.clone();
@@ -854,6 +892,10 @@ impl App {
         self.sserafim_stage
             .apply_commands(self.cmds.iter_mut(), cursor, sample_rate, stage_bpm);
         if let Some(cutscene) = self.winter_horrorland_cutscene.as_ref() {
+            cutscene.apply_commands(self.cmds.iter_mut(), cursor, sample_rate);
+            cutscene.append_commands(&mut self.cmds, cursor, sample_rate);
+        }
+        if let Some(cutscene) = self.darnell_intro_cutscene.as_ref() {
             cutscene.apply_commands(self.cmds.iter_mut(), cursor, sample_rate);
             cutscene.append_commands(&mut self.cmds, cursor, sample_rate);
         }

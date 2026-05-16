@@ -18,9 +18,13 @@ impl App {
             self.pause_menu.is_some(),
             self.game_over.is_some(),
             self.dialogue.is_some(),
-            self.winter_horrorland_cutscene
+            self.darnell_intro_cutscene
                 .as_ref()
-                .is_some_and(|cutscene| cutscene.blocks_input(cursor)),
+                .is_some_and(|cutscene| cutscene.blocks_input(cursor))
+                || self
+                    .winter_horrorland_cutscene
+                    .as_ref()
+                    .is_some_and(|cutscene| cutscene.blocks_input(cursor)),
         ) {
             return false;
         }
@@ -43,6 +47,10 @@ impl App {
                 && self.mode == super::title_flow::AppMode::Play
                 && self.game_over.is_none()
                 && self.stress_pico_end_cutscene.is_none()
+                && !self
+                    .darnell_intro_cutscene
+                    .as_ref()
+                    .is_some_and(|cutscene| cutscene.blocks_input(cursor))
                 && !self
                     .winter_horrorland_cutscene
                     .as_ref()
