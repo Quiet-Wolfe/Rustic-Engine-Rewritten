@@ -17,6 +17,9 @@ const BASE_SINGING: [bool; 6] = [false, false, false, false, false, false];
 const FLASH_OVERLAY_Z: i32 = 10_001;
 const CUTSCENE_FPS: f32 = 24.0;
 const INTRO_DURATION_FRAMES: f32 = 730.0;
+const GUITAR_VIBRATION_HZ: f32 = 42.0;
+const GUITAR_VIBRATION_X: f32 = 6.0;
+const GUITAR_VIBRATION_Y: f32 = 2.0;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SserafimStageState {
@@ -33,6 +36,7 @@ pub(crate) struct SserafimStageState {
     dust_clear: Option<Samples>,
     truck_door_visible_at: Option<Samples>,
     flash: TimedFlash,
+    guitar_vibration: TimedVibration,
     end_started_at: Option<Samples>,
 }
 
@@ -52,6 +56,7 @@ impl Default for SserafimStageState {
             dust_clear: None,
             truck_door_visible_at: None,
             flash: TimedFlash::default(),
+            guitar_vibration: TimedVibration::default(),
             end_started_at: None,
         }
     }
@@ -141,7 +146,9 @@ impl SserafimStageState {
             SserafimEvent::End => {
                 self.end_started_at = Some(cursor);
             }
-            SserafimEvent::GuitarVibration { .. } => {}
+            SserafimEvent::GuitarVibration { duration } => {
+                self.guitar_vibration = TimedVibration::new(*duration, cursor);
+            }
             _ => {}
         }
         true
@@ -249,6 +256,25 @@ impl SserafimStageState {
                 apply_dust_clear(cmd, started_at, cursor);
             }
             apply_sserafim_shader_color(cmd, dark, truck_alpha, pulse);
+        }
+    }
+
+    pub(crate) fn apply_member_command_effects(
+        &self,
+        member: SserafimMember,
+        commands: &mut [DrawCommand],
+        cursor: Samples,
+        sample_rate: u32,
+    ) {
+        if !self.active || member != SserafimMember::Sakura {
+            return;
+        }
+        let Some(offset) = self.guitar_vibration.offset_at(cursor, sample_rate) else {
+            return;
+        };
+        for cmd in commands {
+            cmd.world_pos += offset;
+            cmd.rotation += offset.x.to_radians() * 0.35;
         }
     }
 
@@ -494,6 +520,41 @@ impl TimedFlash {
             return 0.0;
         }
         self.amount * (1.0 - elapsed as f32 / self.duration_samples as f32)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct TimedVibration {
+    duration_seconds: f32,
+    started_at: Samples,
+}
+
+impl TimedVibration {
+    fn new(duration_seconds: f32, started_at: Samples) -> Self {
+        Self {
+            duration_seconds,
+            started_at,
+        }
+    }
+
+    fn offset_at(self, cursor: Samples, sample_rate: u32) -> Option<glam::Vec2> {
+        let duration_samples = seconds_to_samples_at_rate(self.duration_seconds, sample_rate);
+        if duration_samples <= 0 {
+            return None;
+        }
+        let elapsed = cursor.0.saturating_sub(self.started_at.0).max(0);
+        if elapsed >= duration_samples {
+            return None;
+        }
+        let sample_rate = sample_rate.max(1) as f32;
+        let time = elapsed as f32 / sample_rate;
+        let decay = 1.0 - elapsed as f32 / duration_samples as f32;
+        Some(glam::vec2(
+            (time * std::f32::consts::TAU * GUITAR_VIBRATION_HZ).sin() * GUITAR_VIBRATION_X * decay,
+            (time * std::f32::consts::TAU * (GUITAR_VIBRATION_HZ * 1.7)).sin()
+                * GUITAR_VIBRATION_Y
+                * decay,
+        ))
     }
 }
 
@@ -1182,6 +1243,66 @@ mod tests {
 
         assert!(dust.color.w < 0.8);
         assert!(dust.world_pos.y > -200.0);
+    }
+
+    #[test]
+    fn guitar_vibration_offsets_sakura_member_commands_temporarily() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::GuitarVibration { duration: 0.55 }),
+            Samples(1_000),
+        );
+
+        let sakura_body = DrawCommand::sprite(
+            sserafim_texture_id("images/characters/sserafim/sakura/spritemap1.png"),
+            glam::vec2(200.0, 300.0),
+            glam::Vec2::ONE,
+        );
+        let sakura_mouth = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/sserafim-lipsync/spritemap1.png"),
+            glam::vec2(210.0, 310.0),
+            glam::Vec2::ONE,
+        );
+        let mut kazuha = DrawCommand::sprite(
+            sserafim_texture_id("images/characters/sserafim/kazuha/spritemap1.png"),
+            glam::vec2(-200.0, 300.0),
+            glam::Vec2::ONE,
+        );
+        let sakura_body_base = sakura_body.world_pos;
+        let sakura_mouth_base = sakura_mouth.world_pos;
+        let kazuha_base = kazuha.world_pos;
+        let mut sakura_commands = vec![sakura_body, sakura_mouth];
+
+        state.apply_member_command_effects(
+            SserafimMember::Sakura,
+            &mut sakura_commands,
+            Samples(2_000),
+            48_000,
+        );
+        state.apply_member_command_effects(
+            SserafimMember::Kazuha,
+            std::slice::from_mut(&mut kazuha),
+            Samples(2_000),
+            48_000,
+        );
+
+        assert!(sakura_commands[0].world_pos.distance(sakura_body_base) > 0.5);
+        assert!(sakura_commands[1].world_pos.distance(sakura_mouth_base) > 0.5);
+        assert_eq!(kazuha.world_pos, kazuha_base);
+
+        let mut later_sakura = DrawCommand::sprite(
+            sserafim_texture_id("images/characters/sserafim/sakura/spritemap1.png"),
+            sakura_body_base,
+            glam::Vec2::ONE,
+        );
+        state.apply_member_command_effects(
+            SserafimMember::Sakura,
+            std::slice::from_mut(&mut later_sakura),
+            Samples(1_000 + seconds_to_samples(0.55) + 1),
+            48_000,
+        );
+        assert_eq!(later_sakura.world_pos, sakura_body_base);
     }
 
     #[test]

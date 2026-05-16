@@ -110,40 +110,68 @@ impl CharacterSet {
         let mut commands = Vec::new();
         for extra in &self.sserafim_extras {
             if let Some(request) = state.pose_for_member(extra.member, poses, cursor) {
-                commands.extend(extra.sprite.commands_with_lip_sync(
+                let mut member_commands = extra.sprite.commands_with_lip_sync(
                     request,
                     cursor,
                     sample_rate,
                     state.member_sings(extra.member),
-                ));
+                );
+                state.apply_member_command_effects(
+                    extra.member,
+                    &mut member_commands,
+                    cursor,
+                    sample_rate,
+                );
+                commands.extend(member_commands);
             }
         }
         if let Some(girlfriend) = &self.girlfriend {
             if let Some(request) = state.pose_for_member(SserafimMember::Girlfriend, poses, cursor)
             {
-                commands.extend(girlfriend.commands_with_lip_sync(
+                let mut member_commands = girlfriend.commands_with_lip_sync(
                     request,
                     cursor,
                     sample_rate,
                     state.member_sings(SserafimMember::Girlfriend),
-                ));
+                );
+                state.apply_member_command_effects(
+                    SserafimMember::Girlfriend,
+                    &mut member_commands,
+                    cursor,
+                    sample_rate,
+                );
+                commands.extend(member_commands);
             }
         }
         if let Some(request) = state.pose_for_member(SserafimMember::Kazuha, poses, cursor) {
-            commands.extend(self.opponent.commands_with_lip_sync(
+            let mut member_commands = self.opponent.commands_with_lip_sync(
                 request,
                 cursor,
                 sample_rate,
                 state.member_sings(SserafimMember::Kazuha),
-            ));
+            );
+            state.apply_member_command_effects(
+                SserafimMember::Kazuha,
+                &mut member_commands,
+                cursor,
+                sample_rate,
+            );
+            commands.extend(member_commands);
         }
         if let Some(request) = state.pose_for_member(SserafimMember::Sakura, poses, cursor) {
-            commands.extend(self.player.commands_with_lip_sync(
+            let mut member_commands = self.player.commands_with_lip_sync(
                 request,
                 cursor,
                 sample_rate,
                 state.member_sings(SserafimMember::Sakura),
-            ));
+            );
+            state.apply_member_command_effects(
+                SserafimMember::Sakura,
+                &mut member_commands,
+                cursor,
+                sample_rate,
+            );
+            commands.extend(member_commands);
         }
         commands
     }
