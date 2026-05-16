@@ -57,6 +57,7 @@ use crate::stress_pico_cutscene::StressPicoEndCutsceneState;
 use crate::subtitle_track::SubtitleTrack;
 use crate::thorns_intro_cutscene::{should_play_thorns_intro_cutscene, ThornsIntroCutsceneState};
 use crate::title_assets::TitleScreenAssets;
+use crate::weekend1_can_effects::Weekend1CanEffects;
 use crate::winter_horrorland_cutscene::{
     should_play_winter_horrorland_cutscene, WinterHorrorlandCutsceneState,
 };
@@ -131,6 +132,7 @@ struct App {
     held_lanes: HeldLanes,
     opponent_receptors: AutoReceptors,
     weekend1_gun_cocked_until: Option<Samples>,
+    weekend1_can_effects: Weekend1CanEffects,
     preview_selection: PreviewSelection,
     mode: AppMode,
     title_assets: Option<TitleScreenAssets>,
@@ -228,6 +230,7 @@ impl App {
             held_lanes: HeldLanes::default(),
             opponent_receptors: AutoReceptors::default(),
             weekend1_gun_cocked_until: None,
+            weekend1_can_effects: Weekend1CanEffects::default(),
             preview_selection: PreviewSelection::from_env(),
             mode: AppMode::Title,
             title_assets: None,
@@ -297,9 +300,18 @@ impl App {
             .reset_for_song(self.preview_selection.song);
         self.tankman_erect_stage
             .reset_for_selection(self.preview_selection);
+        self.weekend1_can_effects
+            .reset_for_song(self.preview_selection.song);
         self.atlases = scene.textures;
         if let Some(runtime) = self.runtime.as_ref() {
             ensure_pause_overlay_texture(&runtime.rs.device, &runtime.rs.queue, &mut self.atlases);
+            if let Err(e) = self.weekend1_can_effects.load_assets(
+                &runtime.rs.device,
+                &runtime.rs.queue,
+                &mut self.atlases,
+            ) {
+                tracing::warn!(target: "rustic.asset", "Weekend 1 spraycan effects unavailable: {e:#}");
+            }
         }
         self.characters = scene.characters;
         self.character_anim.set_timings(anim_timings);
@@ -459,6 +471,8 @@ impl App {
         self.stress_pico_end_cutscene = None;
         self.tankman_erect_stage
             .reset_for_selection(self.preview_selection);
+        self.weekend1_can_effects
+            .reset_for_song(self.preview_selection.song);
         self.countdown_audio.reset();
         self.character_anim.reset_song();
         (
@@ -664,6 +678,11 @@ impl App {
                 }
                 anim.girlfriend_combo_drop(miss.combo_count, cursor);
                 play_miss_sfx(&self.mixer, cursor, MissNoteKind::Scoreable);
+                if miss.kind == Some(rustic_game::NoteKind::Weekend1FireGun) {
+                    self.weekend1_gun_cocked_until = None;
+                    self.weekend1_can_effects
+                        .impact_next_can(cursor, sample_rate);
+                }
             }
             if had_late_misses {
                 set_vocals_gain(&self.mixer, 0.0);
@@ -673,6 +692,9 @@ impl App {
             for hit in opponent_hits {
                 opponent_receptors.confirm(hit.lane, cursor, confirm_duration);
                 anim.opponent_note_hit_kind(hit.lane, hit.kind, cursor, sample_rate, bpm);
+                if hit.kind == Some(rustic_game::NoteKind::Weekend1KickCan) {
+                    self.weekend1_can_effects.spawn_can(cursor);
+                }
                 if let Some(hold_end_at) = hit.hold_end_at {
                     opponent_receptors.start_hold(hit.lane, hold_end_at, cursor, hit.note_id);
                     self.hold_covers
@@ -745,6 +767,8 @@ impl App {
         ) {
             self.cmds.push(cmd);
         }
+        self.weekend1_can_effects
+            .append_commands(&mut self.cmds, cursor, sample_rate);
         if let Some(characters) = &self.characters {
             let poses = spooky_lightning_pose_overrides(
                 self.preview_selection.song,
@@ -894,6 +918,8 @@ impl App {
         }
         self.sserafim_stage
             .apply_commands(self.cmds.iter_mut(), cursor, sample_rate, stage_bpm);
+        self.weekend1_can_effects
+            .apply_stage_dimming(self.cmds.iter_mut(), cursor, sample_rate);
         if let Some(cutscene) = self.winter_horrorland_cutscene.as_ref() {
             cutscene.apply_commands(self.cmds.iter_mut(), cursor, sample_rate);
             cutscene.append_commands(&mut self.cmds, cursor, sample_rate);

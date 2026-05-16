@@ -114,6 +114,7 @@ impl App {
         let should_enter_game_over;
         let gun_cocked_until = self.weekend1_gun_cocked_until;
         let mut gun_cocked_update = GunCockedUpdate::Keep;
+        let mut shoot_weekend1_can = false;
         {
             let Some(play_state) = self.play_state.as_mut() else {
                 return;
@@ -148,6 +149,7 @@ impl App {
                         }
                         Some(NoteKind::Weekend1FireGun) => {
                             gun_cocked_update = GunCockedUpdate::Clear;
+                            shoot_weekend1_can = true;
                         }
                         _ => {}
                     }
@@ -192,6 +194,10 @@ impl App {
             GunCockedUpdate::Keep => {}
             GunCockedUpdate::Set(until) => self.weekend1_gun_cocked_until = Some(until),
             GunCockedUpdate::Clear => self.weekend1_gun_cocked_until = None,
+        }
+        if shoot_weekend1_can {
+            self.weekend1_can_effects
+                .shoot_next_can(cursor, sample_rate);
         }
         if should_enter_game_over {
             self.enter_game_over(cursor);

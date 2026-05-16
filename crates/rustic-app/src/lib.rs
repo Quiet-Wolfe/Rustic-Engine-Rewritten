@@ -70,6 +70,7 @@ pub(crate) mod subtitle_track;
 pub(crate) mod tankman_erect_stage;
 pub(crate) mod thorns_intro_cutscene;
 pub mod title_assets;
+pub(crate) mod weekend1_can_effects;
 pub(crate) mod winter_horrorland_cutscene;
 
 pub use app::run;
