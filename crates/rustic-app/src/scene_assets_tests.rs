@@ -199,6 +199,33 @@ fn sserafim_source_stage_registers_cutscene_and_dust_props() {
 }
 
 #[test]
+fn sserafim_source_stage_art_uses_full_reference_images() {
+    let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root")
+        .to_path_buf();
+    let resolver = OverlayResolver::new().with_baked_root(workspace.join("assets/source"));
+
+    for (path, min_width, min_height) in [
+        ("images/sserafim/bg.png", 5_000, 1_000),
+        ("images/sserafim/floor.png", 5_000, 700),
+        ("images/sserafim/back-tables.png", 4_000, 400),
+        ("images/sserafim/truck-stuff.png", 3_000, 1_500),
+        ("images/sserafim/lights/truck-light1.png", 2_000, 1_000),
+    ] {
+        let image = rustic_asset::load_png(&resolver, &AssetPath::new(path).unwrap())
+            .unwrap_or_else(|error| panic!("load {path}: {error:#}"));
+        assert!(
+            image.width >= min_width && image.height >= min_height,
+            "{path} should be full-size art, got {}x{}",
+            image.width,
+            image.height
+        );
+    }
+}
+
+#[test]
 fn tankman_bloody_source_character_aliases_heh_pretty_good() {
     let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
