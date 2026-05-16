@@ -196,6 +196,7 @@ impl App {
         self.options_menu_assets = None;
         self.freeplay_assets = None;
         self.story_menu_assets = None;
+        self.story_menu_confirm_started_at = None;
         self.clear_play_state_for_menu();
         self.start_menu_music();
         self.update_window_title();
@@ -224,12 +225,20 @@ impl App {
     pub(super) fn rebuild_story_menu_commands(&mut self) {
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = self.title_cursor(sample_rate);
+        if let Some(started_at) = self.story_menu_confirm_started_at {
+            if cursor.0 >= started_at.0.saturating_add(i64::from(sample_rate.max(1))) {
+                self.story_menu_confirm_started_at = None;
+                self.start_confirmed_story_playlist();
+                return;
+            }
+        }
         if let Some(assets) = self.story_menu_assets.as_ref() {
             self.cmds = assets.commands(
                 self.story_menu_index,
                 self.story_menu_difficulty,
                 cursor,
                 sample_rate,
+                self.story_menu_confirm_started_at,
             );
             self.text_cmds =
                 assets.text_commands(self.story_menu_index, self.story_menu_difficulty);
@@ -350,6 +359,9 @@ impl App {
         if state != ElementState::Pressed {
             return true;
         }
+        if self.story_menu_confirm_started_at.is_some() {
+            return true;
+        }
         // ref: bdedc0aa:source/funkin/ui/story/StoryMenuState.hx:357-428
         let item_count = self
             .story_menu_assets
@@ -407,17 +419,32 @@ impl App {
         let Some(assets) = self.story_menu_assets.as_ref() else {
             return;
         };
-        let difficulty =
-            assets.difficulty_for_level(self.story_menu_index, self.story_menu_difficulty);
-        if let Some(songs) = assets.preview_playlist(self.story_menu_index) {
+        if assets.preview_playlist(self.story_menu_index).is_some() {
             self.play_menu_sound(MenuSound::Confirm);
-            self.start_story_playlist(songs, difficulty);
+            self.start_story_menu_confirm();
         } else if let Some(selection) =
             assets.preview_selection(self.story_menu_index, self.story_menu_difficulty)
         {
             self.play_menu_sound(MenuSound::Confirm);
             self.preview_selection = selection;
             self.enter_play();
+        }
+    }
+
+    fn start_story_menu_confirm(&mut self) {
+        let sample_rate = play_sample_rate(&self.mixer);
+        self.story_menu_confirm_started_at = Some(self.title_cursor(sample_rate));
+        self.rebuild_story_menu_commands();
+    }
+
+    fn start_confirmed_story_playlist(&mut self) {
+        let Some(assets) = self.story_menu_assets.as_ref() else {
+            return;
+        };
+        let difficulty =
+            assets.difficulty_for_level(self.story_menu_index, self.story_menu_difficulty);
+        if let Some(songs) = assets.preview_playlist(self.story_menu_index) {
+            self.start_story_playlist(songs, difficulty);
         }
     }
 
@@ -669,6 +696,7 @@ impl App {
         self.game_over_restart = None;
         self.pause_menu = None;
         self.freeplay_confirm_at = None;
+        self.story_menu_confirm_started_at = None;
         self.pause_music.stop(&self.mixer);
         self.game_over_audio.stop(&self.mixer);
         self.stop_freeplay_preview();

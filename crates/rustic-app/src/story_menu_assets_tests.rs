@@ -130,6 +130,39 @@ fn story_prop_prefers_starting_animation_without_dance_pair() {
 }
 
 #[test]
+fn story_prop_confirm_animation_uses_confirm_anchor() {
+    let prop = StoryPropClip {
+        texture_id: WHITE_TEXTURE_ID,
+        texture_width: 1,
+        texture_height: 1,
+        position: glam::Vec2::ZERO,
+        scale: glam::Vec2::ONE,
+        alpha: 1.0,
+        starting_animation: Some("idle".to_string()),
+        animations: vec![story_clip("idle", true), story_clip("confirm", false)],
+    };
+
+    let (animation, started_at) = prop
+        .animation_for_cursor_with_confirm(Samples(1_200), 48_000, Some(Samples(1_000)))
+        .unwrap();
+
+    assert_eq!(animation.name, "confirm");
+    assert_eq!(started_at, Samples(1_000));
+}
+
+#[test]
+fn selected_story_title_flashes_cyan_during_confirm() {
+    assert_eq!(
+        title_confirm_flash_color(Samples(0), 48_000, Some(Samples(0)), 1.0),
+        glam::Vec4::ONE
+    );
+    assert_eq!(
+        title_confirm_flash_color(Samples(2_400), 48_000, Some(Samples(0)), 1.0),
+        glam::vec4(0x33 as f32 / 255.0, 1.0, 1.0, 1.0)
+    );
+}
+
+#[test]
 fn story_animation_respects_looped_level_metadata() {
     let level = LevelDefinition::parse(
         br#"{

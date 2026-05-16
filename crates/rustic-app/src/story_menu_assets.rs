@@ -52,6 +52,7 @@ impl StoryMenuAssets {
         difficulty: PreviewDifficulty,
         cursor: Samples,
         sample_rate: u32,
+        confirm_started_at: Option<Samples>,
     ) -> RenderCommandList {
         let mut commands = RenderCommandList::new();
         let Some(level) = self.level(selected_index) else {
@@ -69,9 +70,15 @@ impl StoryMenuAssets {
             color_from_story_hex(&level.data.background),
             1,
         ));
-        self.push_level_titles(&mut commands, selected_index);
+        self.push_level_titles(
+            &mut commands,
+            selected_index,
+            cursor,
+            sample_rate,
+            confirm_started_at,
+        );
         for (index, prop) in level.props.iter().enumerate() {
-            if let Some(command) = prop.command(index, cursor, sample_rate) {
+            if let Some(command) = prop.command(index, cursor, sample_rate, confirm_started_at) {
                 commands.push(command);
             }
         }
@@ -204,13 +211,25 @@ impl StoryMenuAssets {
         level.difficulties[next]
     }
 
-    fn push_level_titles(&self, commands: &mut RenderCommandList, selected_index: usize) {
+    fn push_level_titles(
+        &self,
+        commands: &mut RenderCommandList,
+        selected_index: usize,
+        cursor: Samples,
+        sample_rate: u32,
+        confirm_started_at: Option<Samples>,
+    ) {
         let title_y = title_y_positions(&self.levels, selected_index);
         for (index, level) in self.levels.iter().enumerate() {
             let alpha = if index == selected_index { 1.0 } else { 0.6 };
+            let color = if index == selected_index {
+                title_confirm_flash_color(cursor, sample_rate, confirm_started_at, alpha)
+            } else {
+                glam::Vec4::new(1.0, 1.0, 1.0, alpha)
+            };
             commands.push(level.title.command(
                 glam::vec2((1280.0 - level.title.width as f32) * 0.5, title_y[index]),
-                glam::Vec4::new(1.0, 1.0, 1.0, alpha),
+                color,
                 15,
             ));
         }
@@ -332,12 +351,19 @@ struct StoryPropClip {
 }
 
 impl StoryPropClip {
-    fn command(&self, index: usize, cursor: Samples, sample_rate: u32) -> Option<DrawCommand> {
-        let animation = self.animation_for_cursor(cursor, sample_rate)?;
+    fn command(
+        &self,
+        index: usize,
+        cursor: Samples,
+        sample_rate: u32,
+        confirm_started_at: Option<Samples>,
+    ) -> Option<DrawCommand> {
+        let (animation, started_at) =
+            self.animation_for_cursor_with_confirm(cursor, sample_rate, confirm_started_at)?;
         let frame_index = animation_frame_index(
             cursor,
             sample_rate,
-            animation.started_at(cursor, sample_rate),
+            started_at,
             animation.fps,
             animation.frames.len(),
             animation.looped,
@@ -360,11 +386,27 @@ impl StoryPropClip {
         ))
     }
 
+    #[cfg(test)]
     fn animation_for_cursor(
         &self,
         cursor: Samples,
         sample_rate: u32,
     ) -> Option<&StoryAnimationClip> {
+        self.animation_for_cursor_with_confirm(cursor, sample_rate, None)
+            .map(|(animation, _)| animation)
+    }
+
+    fn animation_for_cursor_with_confirm(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        confirm_started_at: Option<Samples>,
+    ) -> Option<(&StoryAnimationClip, Samples)> {
+        if let Some(started_at) = confirm_started_at {
+            if let Some(confirm) = self.animations.iter().find(|anim| anim.name == "confirm") {
+                return Some((confirm, started_at));
+            }
+        }
         let left = self.animations.iter().find(|anim| anim.name == "danceLeft");
         let right = self
             .animations
@@ -373,16 +415,17 @@ impl StoryPropClip {
         match (left, right) {
             (Some(left), Some(right)) => {
                 if story_beat(cursor, sample_rate) % 2 == 0 {
-                    Some(left)
+                    Some((left, left.started_at(cursor, sample_rate)))
                 } else {
-                    Some(right)
+                    Some((right, right.started_at(cursor, sample_rate)))
                 }
             }
             _ => self
                 .starting_animation
                 .as_deref()
                 .and_then(|name| self.animations.iter().find(|anim| anim.name == name))
-                .or_else(|| self.animations.first()),
+                .or_else(|| self.animations.first())
+                .map(|animation| (animation, animation.started_at(cursor, sample_rate))),
         }
     }
 }

@@ -123,6 +123,24 @@ pub(super) fn current_beat_start(cursor: Samples, sample_rate: u32) -> Samples {
     Samples((story_beat(cursor, sample_rate) as f64 * beat_samples).round() as i64)
 }
 
+pub(super) fn title_confirm_flash_color(
+    cursor: Samples,
+    sample_rate: u32,
+    confirm_started_at: Option<Samples>,
+    alpha: f32,
+) -> glam::Vec4 {
+    let Some(started_at) = confirm_started_at else {
+        return glam::Vec4::new(1.0, 1.0, 1.0, alpha);
+    };
+    let elapsed = cursor.0.saturating_sub(started_at.0).max(0);
+    let tick_samples = i64::from(sample_rate.max(1)) / 20;
+    if tick_samples > 0 && elapsed / tick_samples % 2 == 1 {
+        glam::Vec4::new(0x33 as f32 / 255.0, 1.0, 1.0, alpha)
+    } else {
+        glam::Vec4::new(1.0, 1.0, 1.0, alpha)
+    }
+}
+
 fn frame_draw_size(frame: &SparrowFrame) -> glam::Vec2 {
     if frame.rotated {
         glam::vec2(frame.height as f32, frame.width as f32)
