@@ -121,7 +121,12 @@ impl CharacterSet {
         if let Some(girlfriend) = &self.girlfriend {
             if let Some(request) = state.pose_for_member(SserafimMember::Girlfriend, poses, cursor)
             {
-                commands.extend(girlfriend.commands(request, cursor, sample_rate));
+                commands.extend(girlfriend.commands_with_lip_sync(
+                    request,
+                    cursor,
+                    sample_rate,
+                    state.member_sings(SserafimMember::Girlfriend),
+                ));
             }
         }
         if let Some(request) = state.pose_for_member(SserafimMember::Kazuha, poses, cursor) {

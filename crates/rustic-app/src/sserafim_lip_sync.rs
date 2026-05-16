@@ -170,6 +170,14 @@ fn sserafim_lip_sync_spec(character: &CharacterDefinition) -> Option<SserafimLip
             1.0,
             true,
         )
+    } else if path.ends_with("sserafim/sserafim-gf") {
+        (
+            "sserafim/sserafim-lipsync",
+            "gf mouth",
+            GIRLFRIEND_LIP_SYNC,
+            1.0,
+            false,
+        )
     } else {
         return None;
     };
@@ -189,7 +197,13 @@ fn lip_sync_pose_for_request(
     if let Some(pose) = offsets.iter().find(|pose| pose.name == request_name) {
         return *pose;
     }
-    let base = request_name.strip_suffix("miss").unwrap_or(request_name);
+    let base = request_name
+        .strip_suffix("-beautiful")
+        .unwrap_or(request_name);
+    if let Some(pose) = offsets.iter().find(|pose| pose.name == base) {
+        return *pose;
+    }
+    let base = base.strip_suffix("miss").unwrap_or(base);
     offsets
         .iter()
         .find(|pose| pose.name == base)
@@ -239,6 +253,15 @@ const SAKURA_LIP_SYNC: &[SserafimLipSyncPose] = &[
     lip_pose("singRIGHT-joint", 6.0, 3.0, -15.0),
     lip_pose("singDOWN-joint", 5.0, 5.0, -15.0),
     lip_pose("singLEFT-joint", 7.0, 2.0, -16.0),
+];
+
+const GIRLFRIEND_LIP_SYNC: &[SserafimLipSyncPose] = &[
+    lip_pose("danceLeft", 0.0, 0.0, 0.0),
+    lip_pose("danceRight", 0.0, 0.0, 0.0),
+    lip_pose("singUP", 0.0, 0.0, 0.0),
+    lip_pose("singRIGHT", 0.0, 0.0, 0.0),
+    lip_pose("singDOWN", 0.0, 0.0, 0.0),
+    lip_pose("singLEFT", 0.0, 0.0, 0.0),
 ];
 
 const fn lip_pose(
@@ -362,6 +385,13 @@ mod tests {
     }
 
     #[test]
+    fn girlfriend_beautiful_poses_reuse_base_lip_offsets() {
+        let pose = lip_sync_pose_for_request(GIRLFRIEND_LIP_SYNC, "singRIGHT-beautiful");
+
+        assert_eq!(pose.name, "singRIGHT");
+    }
+
+    #[test]
     fn lip_sync_miss_poses_reuse_base_pose_offsets() {
         let pose = lip_sync_pose_for_request(KAZUHA_LIP_SYNC, "singRIGHTmiss");
 
@@ -414,6 +444,29 @@ mod tests {
     }
 
     #[test]
+    fn girlfriend_lip_sync_uses_character_mouth_symbol() {
+        let character = match CharacterDefinition::parse(
+            br#"{
+              "name": "sserafim-gf",
+              "renderType": "animateatlas",
+              "assetPath": "shared:characters/sserafim/sserafim-gf",
+              "animations": [{ "name": "danceLeft", "prefix": "danceLeft" }]
+            }"#,
+        ) {
+            Ok(character) => character,
+            Err(error) => panic!("test fixture should parse: {error}"),
+        };
+        let spec = match sserafim_lip_sync_spec(&character) {
+            Some(spec) => spec,
+            None => panic!("expected girlfriend lip sync spec"),
+        };
+
+        assert_eq!(spec.asset_path, "sserafim/sserafim-lipsync");
+        assert_eq!(spec.mouth_keyword, "gf mouth");
+        assert!(!spec.flip_x);
+    }
+
+    #[test]
     fn sserafim_character_assets_expose_scripted_mouth_symbols() {
         let resolver = source_resolver();
 
@@ -422,6 +475,7 @@ mod tests {
         assert_mouth_symbol_in_pose(&resolver, "sserafim-chaewon", "idle");
         assert_mouth_symbol_in_pose(&resolver, "sserafim-eunchae", "idle");
         assert_mouth_symbol_in_pose(&resolver, "sserafim-sakura", "singDOWN-joint");
+        assert_mouth_symbol_in_pose(&resolver, "sserafim-gf", "danceLeft");
     }
 
     #[test]
