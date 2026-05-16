@@ -60,6 +60,15 @@ impl HudSkin {
     }
 
     pub fn commands_with_icon_scale(&self, health: f32, icon_scale: f32) -> Vec<DrawCommand> {
+        self.commands_with_icon_scale_and_visibility(health, icon_scale, true)
+    }
+
+    pub fn commands_with_icon_scale_and_visibility(
+        &self,
+        health: f32,
+        icon_scale: f32,
+        show_opponent_icon: bool,
+    ) -> Vec<DrawCommand> {
         let mut commands = Vec::with_capacity(5);
         let bar_x = (FNF_WIDTH - HEALTH_BAR_WIDTH) * 0.5;
         let bar_y = FNF_HEIGHT * 0.9;
@@ -104,15 +113,17 @@ impl HudSkin {
             glam::vec2(marker - ICON_OFFSET, fill_y - player_size * 0.5),
             player_size,
         ));
-        commands.push(self.icon_command(
-            self.dad_icon,
-            dad_frame,
-            glam::vec2(
-                marker - (opponent_size - ICON_OFFSET),
-                fill_y - opponent_size * 0.5,
-            ),
-            opponent_size,
-        ));
+        if show_opponent_icon {
+            commands.push(self.icon_command(
+                self.dad_icon,
+                dad_frame,
+                glam::vec2(
+                    marker - (opponent_size - ICON_OFFSET),
+                    fill_y - opponent_size * 0.5,
+                ),
+                opponent_size,
+            ));
+        }
         commands
     }
 
@@ -431,6 +442,14 @@ mod tests {
 
         assert_eq!(high_health[4].uv_min, dad_frame_zero_min);
         assert_eq!(high_health[4].uv_max, dad_frame_zero_max);
+    }
+
+    #[test]
+    fn opponent_health_icon_can_be_hidden_for_scripted_cutscenes() {
+        let commands = skin().commands_with_icon_scale_and_visibility(1.0, 1.0, false);
+
+        assert_eq!(commands.len(), 4);
+        assert_eq!(commands[3].texture, AssetId::new(2));
     }
 
     #[test]

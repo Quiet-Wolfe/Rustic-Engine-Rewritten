@@ -71,6 +71,14 @@ impl SserafimStageState {
         self.member_sings_player(member)
     }
 
+    pub(crate) fn opponent_strumline_visible(&self) -> bool {
+        !self.active
+    }
+
+    pub(crate) fn opponent_health_icon_visible(&self) -> bool {
+        !self.active || self.girlfriend_visible
+    }
+
     pub(crate) fn finish_cursor_override(&self) -> Option<Samples> {
         let started_at = self.end_started_at?;
         Some(Samples(
@@ -1068,6 +1076,8 @@ mod tests {
         let mut state = SserafimStageState::default();
         state.reset_for_song(PreviewSong::SPAGHETTI);
 
+        assert!(!state.opponent_strumline_visible());
+        assert!(!state.opponent_health_icon_visible());
         assert!(state
             .pose_for_member(SserafimMember::Girlfriend, poses(), Samples(0))
             .is_none());
@@ -1080,6 +1090,7 @@ mod tests {
         assert!(state
             .pose_for_member(SserafimMember::Girlfriend, poses(), Samples(10))
             .is_some());
+        assert!(state.opponent_health_icon_visible());
     }
 
     #[test]

@@ -107,6 +107,16 @@ impl HoldCovers {
         cursor: Samples,
         sample_rate: u32,
     ) -> Vec<DrawCommand> {
+        self.commands_with_opponent_visibility(skin, cursor, sample_rate, true)
+    }
+
+    pub fn commands_with_opponent_visibility(
+        &mut self,
+        skin: &HoldCoverSkin,
+        cursor: Samples,
+        sample_rate: u32,
+        show_opponent: bool,
+    ) -> Vec<DrawCommand> {
         let mut commands = Vec::new();
         for side_index in 0..self.active.len() {
             for lane_slot in 0..self.active[side_index].len() {
@@ -123,6 +133,9 @@ impl HoldCovers {
                     self.active[side_index][lane_slot] = None;
                     continue;
                 };
+                if active.side == StrumlineSide::Opponent && !show_opponent {
+                    continue;
+                }
                 commands.push(command_for_frame(
                     lane_skin,
                     active.side,
@@ -586,6 +599,18 @@ mod tests {
         let opponent = command_for_frame(&skin, StrumlineSide::Opponent, Lane::Left, frame);
 
         assert!((player.world_pos.x - opponent.world_pos.x - FNF_WIDTH * 0.5).abs() < 1e-3);
+    }
+
+    #[test]
+    fn opponent_hold_covers_can_be_hidden_with_strumline() {
+        let mut covers = HoldCovers::default();
+        covers.start_opponent(Lane::Left, Samples(0), Samples(48_000));
+        covers.start(Lane::Right, Samples(0), Samples(48_000));
+
+        let commands = covers.commands_with_opponent_visibility(&skin(), Samples(0), 48_000, false);
+
+        assert_eq!(commands.len(), 1);
+        assert!(commands[0].world_pos.x > FNF_WIDTH * 0.5);
     }
 
     #[test]

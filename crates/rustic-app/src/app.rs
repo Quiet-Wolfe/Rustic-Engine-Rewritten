@@ -616,6 +616,7 @@ impl App {
             return;
         };
         let blazin_middlescroll = self.preview_selection.song == PreviewSong::BLAZIN;
+        let show_opponent_strumline = self.sserafim_stage.opponent_strumline_visible();
         let player_x_offset = if blazin_middlescroll {
             BLAZIN_MIDDLESCROLL_PLAYER_X_OFFSET
         } else {
@@ -625,19 +626,19 @@ impl App {
         for cmd in strumline_background_commands(
             self.options_preferences.strumline_background,
             downscroll,
-            !blazin_middlescroll,
+            !blazin_middlescroll && show_opponent_strumline,
             player_x_offset,
         ) {
             self.cmds.push(cmd);
         }
         for view in play_state.hold_trail_views(cursor, sample_rate, |lane, opp| {
             if opp {
-                true
+                show_opponent_strumline
             } else {
                 self.held_lanes.is_held(lane)
             }
         }) {
-            if blazin_middlescroll && view.opponent {
+            if (blazin_middlescroll || !show_opponent_strumline) && view.opponent {
                 continue;
             }
             let mut view = view;
@@ -658,7 +659,7 @@ impl App {
         let receptor_commands = note_skin.receptor_commands_with_layout(
             cursor,
             sample_rate,
-            !blazin_middlescroll,
+            !blazin_middlescroll && show_opponent_strumline,
             player_x_offset,
             |player, lane| match player {
                 1 => self.held_lanes.receptor_state(lane, cursor),
@@ -671,7 +672,7 @@ impl App {
             self.cmds.push(cmd);
         }
         for view in play_state.note_views(cursor, sample_rate) {
-            if blazin_middlescroll && view.opponent {
+            if (blazin_middlescroll || !show_opponent_strumline) && view.opponent {
                 continue;
             }
             let mut view = view;
@@ -698,19 +699,22 @@ impl App {
             }
         }
         if let Some(hold_cover_skin) = &self.hold_cover_skin {
-            for cmd in self
-                .hold_covers
-                .commands(hold_cover_skin, cursor, sample_rate)
-            {
+            for cmd in self.hold_covers.commands_with_opponent_visibility(
+                hold_cover_skin,
+                cursor,
+                sample_rate,
+                show_opponent_strumline,
+            ) {
                 let mut cmd = cmd;
                 apply_downscroll(&mut cmd, downscroll);
                 self.cmds.push(cmd);
             }
         }
         if let Some(hud_skin) = &self.hud_skin {
-            for cmd in hud_skin.commands_with_icon_scale(
+            for cmd in hud_skin.commands_with_icon_scale_and_visibility(
                 play_state.health,
                 health_icon_scale(cursor, sample_rate, play_state.bpm),
+                self.sserafim_stage.opponent_health_icon_visible(),
             ) {
                 self.cmds.push(cmd);
             }
