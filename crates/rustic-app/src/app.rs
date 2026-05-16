@@ -52,6 +52,7 @@ use crate::stage_sfx::StageSfx;
 use crate::story_menu_assets::{StoryMenuAssets, DEFAULT_STORY_MENU_INDEX};
 use crate::stress_pico_cutscene::StressPicoEndCutsceneState;
 use crate::subtitle_track::SubtitleTrack;
+use crate::thorns_intro_cutscene::{should_play_thorns_intro_cutscene, ThornsIntroCutsceneState};
 use crate::title_assets::TitleScreenAssets;
 use crate::winter_horrorland_cutscene::{
     should_play_winter_horrorland_cutscene, WinterHorrorlandCutsceneState,
@@ -103,6 +104,7 @@ struct App {
     tankman_erect_stage: crate::tankman_erect_stage::TankmanErectStageState,
     stress_pico_end_cutscene: Option<StressPicoEndCutsceneState>,
     winter_horrorland_cutscene: Option<WinterHorrorlandCutsceneState>,
+    thorns_intro_cutscene: Option<ThornsIntroCutsceneState>,
     cmds: RenderCommandList,
     text_cmds: TextCommandList,
     atlases: HashMap<AssetId, Texture>,
@@ -197,6 +199,7 @@ impl App {
             tankman_erect_stage: crate::tankman_erect_stage::TankmanErectStageState::default(),
             stress_pico_end_cutscene: None,
             winter_horrorland_cutscene: None,
+            thorns_intro_cutscene: None,
             cmds: RenderCommandList::new(),
             text_cmds: TextCommandList::new(),
             atlases: HashMap::new(),
@@ -338,16 +341,18 @@ impl App {
                 let bpm = play_state.bpm;
                 self.play_state = Some(play_state);
                 self.reset_song_runtime(bpm);
-                self.dialogue = match DialogueState::load_for_selection(
-                    self.preview_selection,
-                    !self.story_playlist.is_empty(),
-                ) {
-                    Ok(dialogue) => dialogue,
-                    Err(e) => {
-                        tracing::warn!(target: "rustic.asset", "dialogue unavailable: {e:#}");
-                        None
-                    }
-                };
+                let story_mode = !self.story_playlist.is_empty();
+                self.dialogue =
+                    match DialogueState::load_for_selection(self.preview_selection, story_mode) {
+                        Ok(dialogue) => dialogue,
+                        Err(e) => {
+                            tracing::warn!(target: "rustic.asset", "dialogue unavailable: {e:#}");
+                            None
+                        }
+                    };
+                if should_play_thorns_intro_cutscene(self.preview_selection, story_mode) {
+                    self.load_thorns_intro_cutscene_or_warn();
+                }
                 self.subtitle_track =
                     match SubtitleTrack::load_for_selection(self.preview_selection) {
                         Ok(track) => track,
@@ -391,10 +396,28 @@ impl App {
             tracing::warn!(target: "rustic.audio", "pause countdown audio: {e:#}");
         }
     }
+    fn load_thorns_intro_cutscene_or_warn(&mut self) {
+        let Some(runtime) = self.runtime.as_ref() else {
+            return;
+        };
+        match ThornsIntroCutsceneState::load(
+            &runtime.rs.device,
+            &runtime.rs.queue,
+            &mut self.atlases,
+        ) {
+            Ok(cutscene) => {
+                self.thorns_intro_cutscene = Some(cutscene);
+            }
+            Err(e) => {
+                tracing::warn!(target: "rustic.asset", "Thorns intro cutscene unavailable: {e:#}");
+            }
+        }
+    }
     fn reset_song_runtime(&mut self, bpm: f64) {
         let sample_rate = play_sample_rate(&self.mixer);
         let countdown_cursor = countdown_start_cursor(sample_rate, bpm);
         self.winter_horrorland_cutscene = None;
+        self.thorns_intro_cutscene = None;
         self.song_start_cursor = if self.preview_selection.song == PreviewSong::SPAGHETTI {
             sserafim_intro_start_cursor(sample_rate, bpm)
         } else if should_play_winter_horrorland_cutscene(self.preview_selection) {
@@ -427,6 +450,70 @@ impl App {
             .reset(&mut self.cameras, self.base_camera_zoom);
         focus_initial(&mut self.cameras, &mut self.camera_fx, self.camera_focus);
         set_vocals_gain(&self.mixer, 1.0);
+    }
+    fn rebuild_thorns_intro_commands(&mut self) {
+        let sample_rate = play_sample_rate(&self.mixer);
+        if self.audio_output.is_some() {
+            if let Some(cutscene) = self.thorns_intro_cutscene.as_mut() {
+                cutscene.tick_audio_or_warn(&self.mixer, sample_rate);
+            }
+        }
+        if self
+            .thorns_intro_cutscene
+            .as_ref()
+            .is_some_and(|cutscene| cutscene.finished(sample_rate))
+        {
+            self.finish_thorns_intro_cutscene(sample_rate);
+            return;
+        }
+        let Some(cutscene) = self.thorns_intro_cutscene.as_ref() else {
+            return;
+        };
+        self.text_cmds = TextCommandList::new();
+        self.cmds = self.static_cmds.clone();
+        let cursor = self.song_start_cursor;
+        let bpm = self
+            .play_state
+            .as_ref()
+            .map(|play_state| play_state.bpm)
+            .unwrap_or(100.0);
+        for cmd in
+            self.stage_props
+                .commands(cursor, sample_rate, bpm, Some(self.preview_selection.song))
+        {
+            self.cmds.push(cmd);
+        }
+        if let Some(characters) = &self.characters {
+            for cmd in characters.commands(self.character_anim.poses(), cursor, sample_rate) {
+                self.cmds.push(cmd);
+            }
+        }
+        cutscene.append_commands(&mut self.cmds, sample_rate);
+        self.append_debug_overlay_commands(cutscene.elapsed_cursor(sample_rate), sample_rate);
+    }
+    fn finish_thorns_intro_cutscene(&mut self, sample_rate: u32) {
+        self.thorns_intro_cutscene = None;
+        if self.dialogue.is_some() {
+            self.rebuild_dialogue_commands();
+            return;
+        }
+        let bpm = self
+            .play_state
+            .as_ref()
+            .map(|play_state| play_state.bpm)
+            .unwrap_or_else(|| {
+                f64::from(
+                    self.preview_selection
+                        .song
+                        .starting_bpm_for(self.preview_selection.difficulty),
+                )
+            });
+        self.song_start_cursor = countdown_start_cursor(sample_rate, bpm);
+        self.song_start = Instant::now();
+        self.song_started = false;
+        self.audio_clock.reset(self.song_start);
+        self.countdown_audio.reset();
+        self.rebuild_frame_commands();
     }
     fn refresh_camera_focus(&mut self) {
         // ref: bdedc0aa:source/funkin/play/event/FocusCameraSongEvent.hx:97-145
@@ -474,6 +561,10 @@ impl App {
         }
         if self.pause_menu.is_some() {
             self.rebuild_pause_commands();
+            return;
+        }
+        if self.thorns_intro_cutscene.is_some() {
+            self.rebuild_thorns_intro_commands();
             return;
         }
         if self.dialogue.is_some() {
@@ -816,6 +907,9 @@ impl ApplicationHandler for App {
                             .unwrap_or(false);
                     if event.state == ElementState::Pressed && action == InputAction::Debug {
                         self.toggle_debug_overlay();
+                        return;
+                    }
+                    if self.thorns_intro_cutscene.is_some() {
                         return;
                     }
                     if self.handle_dialogue_input(action, event.state) {

@@ -789,6 +789,7 @@ impl App {
         self.subtitle_track = None;
         self.stress_pico_end_cutscene = None;
         self.winter_horrorland_cutscene = None;
+        self.thorns_intro_cutscene = None;
         self.game_over = None;
         self.game_over_restart = None;
         self.pause_menu = None;

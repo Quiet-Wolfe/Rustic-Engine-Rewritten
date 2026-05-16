@@ -37,6 +37,7 @@ impl App {
         // ref: bdedc0aa:source/funkin/play/PauseSubState.hx:1152-1157
         self.stress_pico_end_cutscene = None;
         self.winter_horrorland_cutscene = None;
+        self.thorns_intro_cutscene = None;
         self.death_counter = 0;
         self.practice_mode = false;
         if self.story_playlist.is_empty() {
@@ -90,6 +91,7 @@ impl App {
         // ref: bdedc0aa:source/funkin/play/PlayState.hx:3435
         self.stress_pico_end_cutscene = None;
         self.winter_horrorland_cutscene = None;
+        self.thorns_intro_cutscene = None;
         self.death_counter = 0;
         self.practice_mode = false;
         if self.story_playlist.is_empty() {

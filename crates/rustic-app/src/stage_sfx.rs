@@ -28,6 +28,7 @@ const SSERAFIM_END_1_PATH: &str = "sounds/sserafim/cutscene/end1.ogg";
 const SSERAFIM_END_2_PATH: &str = "sounds/sserafim/cutscene/end2.ogg";
 const STRESS_PICO_END_CUTSCENE_PATH: &str = "sounds/erect/endCutscene.ogg";
 const WINTER_HORRORLAND_LIGHTS_PATH: &str = "sounds/Lights_Turn_On.ogg";
+const SENPAI_DIES_PATH: &str = "sounds/Senpai_Dies.ogg";
 
 static TRAIN_SOUND_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static CAR_PASS_0_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
@@ -44,6 +45,7 @@ static SSERAFIM_END_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_END_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static STRESS_PICO_END_CUTSCENE_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static WINTER_HORRORLAND_LIGHTS_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static SENPAI_DIES_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 
 #[derive(Debug, Default)]
 pub(crate) struct StageSfx {
@@ -178,6 +180,7 @@ impl StageSfx {
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start,
             StageSound::StressPicoEndCutscene => None,
             StageSound::WinterHorrorlandLights => None,
+            StageSound::SenpaiDies => None,
             StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => None,
         }
     }
@@ -193,6 +196,7 @@ impl StageSfx {
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start = Some(start),
             StageSound::StressPicoEndCutscene => {}
             StageSound::WinterHorrorlandLights => {}
+            StageSound::SenpaiDies => {}
             StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => {}
         }
     }
@@ -211,6 +215,7 @@ enum StageSound {
     SserafimEnd2,
     StressPicoEndCutscene,
     WinterHorrorlandLights,
+    SenpaiDies,
 }
 
 pub(crate) fn play_sserafim_event_sound_or_warn(mixer: &SharedMixer, kind: &ChartEventKind) {
@@ -231,6 +236,12 @@ pub(crate) fn play_stress_pico_end_cutscene_sound_or_warn(mixer: &SharedMixer) {
 pub(crate) fn play_winter_horrorland_lights_sound_or_warn(mixer: &SharedMixer) {
     if let Err(e) = play_stage_sound(mixer, StageSound::WinterHorrorlandLights) {
         tracing::warn!(target: "rustic.audio", "play Winter Horrorland lights sound: {e:#}");
+    }
+}
+
+pub(crate) fn play_thorns_senpai_death_sound_or_warn(mixer: &SharedMixer) {
+    if let Err(e) = play_stage_sound(mixer, StageSound::SenpaiDies) {
+        tracing::warn!(target: "rustic.audio", "play Thorns Senpai death sound: {e:#}");
     }
 }
 
@@ -282,6 +293,7 @@ fn cached_stage_sound(sound: StageSound) -> Option<&'static Arc<[u8]>> {
             &WINTER_HORRORLAND_LIGHTS_BYTES,
             WINTER_HORRORLAND_LIGHTS_PATH,
         ),
+        StageSound::SenpaiDies => (&SENPAI_DIES_BYTES, SENPAI_DIES_PATH),
     };
     cache
         .get_or_init(|| match load_stage_sound(path) {
@@ -359,6 +371,7 @@ mod tests {
             "sounds/erect/endCutscene.ogg"
         );
         assert_eq!(WINTER_HORRORLAND_LIGHTS_PATH, "sounds/Lights_Turn_On.ogg");
+        assert_eq!(SENPAI_DIES_PATH, "sounds/Senpai_Dies.ogg");
     }
 
     #[test]
