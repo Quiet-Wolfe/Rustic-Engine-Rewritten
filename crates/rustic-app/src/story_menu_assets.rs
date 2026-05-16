@@ -25,6 +25,7 @@ const STORY_LEVEL_IDS: [&str; 10] = [
     "tutorial", "week1", "week2", "week3", "week4", "week5", "week6", "week7", "weekend1",
     "sserafim",
 ];
+pub(crate) const DEFAULT_STORY_MENU_INDEX: usize = 0;
 const STORY_DIFFICULTIES: [PreviewDifficulty; 3] = [
     PreviewDifficulty::Easy,
     PreviewDifficulty::Normal,

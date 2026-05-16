@@ -68,6 +68,11 @@ fn story_menu_registry_includes_all_vslice_levels() {
 }
 
 #[test]
+fn story_menu_default_selection_matches_upstream_tutorial() {
+    assert_eq!(STORY_LEVEL_IDS[DEFAULT_STORY_MENU_INDEX], "tutorial");
+}
+
+#[test]
 fn sserafim_level_resolves_spaghetti_playlist() {
     let level = match LevelDefinition::parse(
         br#"{

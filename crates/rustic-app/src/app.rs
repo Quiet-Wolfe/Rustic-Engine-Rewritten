@@ -49,7 +49,7 @@ use crate::spooky_mansion_stage::spooky_lightning_pose_overrides;
 use crate::sserafim_stage::sserafim_intro_start_cursor;
 use crate::stage_object_assets::StagePropSet;
 use crate::stage_sfx::StageSfx;
-use crate::story_menu_assets::StoryMenuAssets;
+use crate::story_menu_assets::{StoryMenuAssets, DEFAULT_STORY_MENU_INDEX};
 use crate::stress_pico_cutscene::StressPicoEndCutsceneState;
 use crate::subtitle_track::SubtitleTrack;
 use crate::title_assets::TitleScreenAssets;
@@ -233,7 +233,7 @@ impl App {
             freeplay_variation: crate::preview_song::VARIATION_BF,
             freeplay_confirm_at: None,
             story_menu_assets: None,
-            story_menu_index: 1,
+            story_menu_index: DEFAULT_STORY_MENU_INDEX,
             story_menu_difficulty: PreviewDifficulty::Normal,
             story_menu_confirm_started_at: None,
             story_playlist: Vec::new(),
