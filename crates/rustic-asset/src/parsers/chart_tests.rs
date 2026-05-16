@@ -41,6 +41,7 @@ const VSLICE_CHART: &str = r#"{
         { "t": 3250.0, "e": "SetHealthIcon",
           "v": { "char": 1, "id": "tankman-bloody", "scale": 1.1,
                  "flipX": true, "isPixel": false, "offsetX": 2, "offsetY": -3 } },
+        { "t": 3400.0, "e": "EnableMask", "v": {} },
         { "t": 3500.0, "e": "SetCameraBop",
           "v": { "rate": 1, "offset": 0.25, "intensity": 0.6 } }
     ],
@@ -181,7 +182,7 @@ fn parses_vslice_chart_and_metadata() {
     assert_eq!(p.chart.note_style, "funkin");
     assert!(p.chart.valid_score);
     assert!(p.chart.sections.is_empty());
-    assert_eq!(p.chart.events.len(), 6);
+    assert_eq!(p.chart.events.len(), 7);
     assert_eq!(p.chart.events[0].time_ms, 0.0);
     assert_eq!(
         p.chart.events[0].kind,
@@ -232,8 +233,9 @@ fn parses_vslice_chart_and_metadata() {
             offset_y: -3.0
         }
     );
+    assert_eq!(p.chart.events[5].kind, ChartEventKind::EnableMask);
     assert_eq!(
-        p.chart.events[5].kind,
+        p.chart.events[6].kind,
         ChartEventKind::SetCameraBop {
             rate: 1.0,
             offset: 0.25,

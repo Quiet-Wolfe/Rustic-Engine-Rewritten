@@ -312,6 +312,7 @@ pub enum ChartEventKind {
         offset_x: f32,
         offset_y: f32,
     },
+    EnableMask,
     Sserafim(SserafimEvent),
     Unknown {
         name: String,

@@ -45,6 +45,9 @@ impl App {
         if self.sserafim_stage.apply_event(kind, cursor) {
             return;
         }
+        if self.tankman_erect_stage.apply_event(kind) {
+            return;
+        }
         if let ChartEventKind::PlayAnimation {
             target,
             animation,

@@ -66,6 +66,7 @@ pub(crate) mod stage_static_prop;
 pub mod story_menu_assets;
 pub(crate) mod stress_pico_cutscene;
 pub(crate) mod subtitle_track;
+pub(crate) mod tankman_erect_stage;
 pub mod title_assets;
 pub(crate) mod winter_horrorland_cutscene;
 

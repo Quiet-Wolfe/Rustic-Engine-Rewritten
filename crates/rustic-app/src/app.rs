@@ -100,6 +100,7 @@ struct App {
     stage_props: StagePropSet,
     stage_sfx: StageSfx,
     sserafim_stage: crate::sserafim_stage::SserafimStageState,
+    tankman_erect_stage: crate::tankman_erect_stage::TankmanErectStageState,
     stress_pico_end_cutscene: Option<StressPicoEndCutsceneState>,
     winter_horrorland_cutscene: Option<WinterHorrorlandCutsceneState>,
     cmds: RenderCommandList,
@@ -193,6 +194,7 @@ impl App {
             stage_props: StagePropSet::default(),
             stage_sfx: StageSfx::default(),
             sserafim_stage: crate::sserafim_stage::SserafimStageState::default(),
+            tankman_erect_stage: crate::tankman_erect_stage::TankmanErectStageState::default(),
             stress_pico_end_cutscene: None,
             winter_horrorland_cutscene: None,
             cmds: RenderCommandList::new(),
@@ -283,6 +285,8 @@ impl App {
         self.stage_sfx.reset();
         self.sserafim_stage
             .reset_for_song(self.preview_selection.song);
+        self.tankman_erect_stage
+            .reset_for_selection(self.preview_selection);
         self.atlases = scene.textures;
         if let Some(runtime) = self.runtime.as_ref() {
             ensure_pause_overlay_texture(&runtime.rs.device, &runtime.rs.queue, &mut self.atlases);
@@ -404,6 +408,8 @@ impl App {
         self.game_over = None;
         self.dialogue = None;
         self.stress_pico_end_cutscene = None;
+        self.tankman_erect_stage
+            .reset_for_selection(self.preview_selection);
         self.countdown_audio.reset();
         self.character_anim.reset_song();
         (
@@ -619,9 +625,10 @@ impl App {
                 sample_rate,
                 stage_bpm,
             );
-            for cmd in
+            for mut cmd in
                 characters.commands_with_sserafim(&self.sserafim_stage, poses, cursor, sample_rate)
             {
+                self.tankman_erect_stage.apply_character_command(&mut cmd);
                 self.cmds.push(cmd);
             }
         }

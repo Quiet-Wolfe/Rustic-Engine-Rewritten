@@ -81,6 +81,7 @@ fn parse_vslice_event_kind(event: &VSliceEvent) -> ChartEventKind {
             offset_x: event_float(&event.value, "offsetX", 0.0),
             offset_y: event_float(&event.value, "offsetY", 0.0),
         },
+        "EnableMask" => ChartEventKind::EnableMask,
         "sserafimShow" => ChartEventKind::Sserafim(SserafimEvent::Show {
             visible: event_bool_array(&event.value, "visible"),
         }),
