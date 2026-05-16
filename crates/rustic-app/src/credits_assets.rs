@@ -6,12 +6,15 @@
 //!
 //! ref: bdedc0aa:source/funkin/ui/credits/CreditsState.hx:16-294
 
+use crate::asset_roots::baked_assets_root;
+use rustic_asset::{load_bytes, AssetPath, OverlayResolver};
 use rustic_core::ids::{AssetId, CameraId};
 use rustic_core::render::RenderLayer;
 use rustic_core::time::Samples;
 use rustic_render::{
     DrawCommand, FilterMode, RenderCommandList, TextCommand, TextCommandList, Texture,
 };
+use serde::Deserialize;
 use std::collections::HashMap;
 
 const WHITE_TEXTURE_ID: AssetId = AssetId::new(0x6372_6564_6974_0001);
@@ -23,6 +26,7 @@ const BODY_SIZE: f32 = 24.0;
 
 #[derive(Debug)]
 pub struct CreditsAssets {
+    entries: Vec<CreditEntry>,
     pub textures: HashMap<AssetId, Texture>,
 }
 
@@ -49,10 +53,12 @@ impl CreditsAssets {
         let scroll_y =
             720.0 - cursor.0.max(0) as f32 * CREDITS_SCROLL_BASE_SPEED / sample_rate.max(1) as f32;
         let mut y = scroll_y;
-        for entry in CREDITS {
-            push_line(&mut commands, entry.header, y, true);
-            y += HEADER_SIZE * 2.0;
-            for line in entry.body {
+        for entry in &self.entries {
+            if let Some(header) = entry.header.as_deref() {
+                push_line(&mut commands, header, y, true);
+                y += HEADER_SIZE * 2.0;
+            }
+            for line in &entry.body {
                 push_line(&mut commands, line, y, false);
                 y += BODY_SIZE;
             }
@@ -63,6 +69,14 @@ impl CreditsAssets {
 }
 
 pub fn load_credits_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> CreditsAssets {
+    let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
+    let entries = match load_credits_entries(&resolver) {
+        Ok(entries) => entries,
+        Err(e) => {
+            tracing::warn!(target: "rustic.asset", "credits data unavailable: {e:#}");
+            fallback_credits()
+        }
+    };
     let mut textures = HashMap::new();
     textures.insert(
         WHITE_TEXTURE_ID,
@@ -76,45 +90,97 @@ pub fn load_credits_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Credit
             Some("rustic.credits.white"),
         ),
     );
-    CreditsAssets { textures }
+    CreditsAssets { entries, textures }
 }
 
 #[derive(Debug)]
 struct CreditEntry {
+    header: Option<String>,
+    body: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreditsData {
+    entries: Vec<CreditsDataEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreditsDataEntry {
+    #[serde(default)]
+    header: Option<String>,
+    #[serde(default)]
+    body: Vec<CreditsDataLine>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreditsDataLine {
+    line: String,
+}
+
+#[derive(Debug)]
+struct StaticCreditEntry {
     header: &'static str,
     body: &'static [&'static str],
 }
 
-const CREDITS: &[CreditEntry] = &[
-    CreditEntry {
+const FALLBACK_CREDITS: &[StaticCreditEntry] = &[
+    StaticCreditEntry {
         header: "Friday Night Funkin'",
         body: &["A video game created by", "The Funkin' Crew Inc."],
     },
-    CreditEntry {
+    StaticCreditEntry {
         header: "The Funkin' Crew Inc. Shareholders",
         body: &["ninjamuffin99", "PhantomArcade", "Kawai Sprite", "evilsk8r"],
     },
-    CreditEntry {
+    StaticCreditEntry {
         header: "Direction and Art Lead",
         body: &["PhantomArcade"],
     },
-    CreditEntry {
+    StaticCreditEntry {
         header: "Music Lead",
         body: &["Isaac \"Kawai Sprite\" Garcia"],
     },
-    CreditEntry {
+    StaticCreditEntry {
         header: "Co-Direction and Programming Lead",
         body: &["ninjamuffin99"],
     },
-    CreditEntry {
+    StaticCreditEntry {
         header: "Production Manager",
         body: &["Hundrec"],
     },
-    CreditEntry {
+    StaticCreditEntry {
         header: "Artists",
         body: &["PhantomArcade", "evilsk8r", "beck"],
     },
 ];
+
+fn load_credits_entries(resolver: &OverlayResolver) -> anyhow::Result<Vec<CreditEntry>> {
+    let path = AssetPath::new("data/credits.json")?;
+    let bytes = load_bytes(resolver, &path)?;
+    parse_credits_entries(&bytes)
+}
+
+fn parse_credits_entries(bytes: &[u8]) -> anyhow::Result<Vec<CreditEntry>> {
+    let data: CreditsData = serde_json::from_slice(bytes)?;
+    Ok(data
+        .entries
+        .into_iter()
+        .map(|entry| CreditEntry {
+            header: entry.header,
+            body: entry.body.into_iter().map(|line| line.line).collect(),
+        })
+        .collect())
+}
+
+fn fallback_credits() -> Vec<CreditEntry> {
+    FALLBACK_CREDITS
+        .iter()
+        .map(|entry| CreditEntry {
+            header: Some(entry.header.to_string()),
+            body: entry.body.iter().map(|line| (*line).to_string()).collect(),
+        })
+        .collect()
+}
 
 fn push_line(commands: &mut TextCommandList, text: &str, y: f32, header: bool) {
     let mut cmd = TextCommand::new(
@@ -135,6 +201,7 @@ mod tests {
     #[test]
     fn credits_start_below_screen_and_scroll_up() {
         let assets = CreditsAssets {
+            entries: fallback_credits(),
             textures: HashMap::new(),
         };
         let start = assets.text_commands(Samples(0), 48_000);
@@ -142,5 +209,23 @@ mod tests {
 
         assert_eq!(start.as_slice()[0].position.y, 720.0);
         assert_eq!(later.as_slice()[0].position.y, 620.0);
+    }
+
+    #[test]
+    fn parses_upstream_credits_data() {
+        let entries = parse_credits_entries(
+            br#"{
+                "entries": [
+                    {
+                        "header": "Mobile Lead",
+                        "body": [{ "line": "MoonDroid (Zack)" }]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(entries[0].header.as_deref(), Some("Mobile Lead"));
+        assert_eq!(entries[0].body, vec!["MoonDroid (Zack)"]);
     }
 }
