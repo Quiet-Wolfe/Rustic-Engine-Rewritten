@@ -54,6 +54,7 @@ pub(crate) mod scripted_stage_objects;
 pub mod settings;
 pub mod song_audio;
 pub(crate) mod sparrow_character_assets;
+pub(crate) mod spooky_mansion_stage;
 pub(crate) mod sserafim_lip_sync;
 pub(crate) mod sserafim_stage;
 pub(crate) mod stage_object_asset_helpers;

@@ -44,6 +44,7 @@ use crate::scene_assets::{
 use crate::screen::ScreenStack;
 use crate::settings::{load_settings_or_default, Settings};
 use crate::song_audio::{load_preview_stems_for, play_sample_rate, set_vocals_gain};
+use crate::spooky_mansion_stage::spooky_lightning_pose_overrides;
 use crate::sserafim_stage::sserafim_intro_start_cursor;
 use crate::stage_object_assets::StagePropSet;
 use crate::stage_sfx::StageSfx;
@@ -603,12 +604,16 @@ impl App {
             self.cmds.push(cmd);
         }
         if let Some(characters) = &self.characters {
-            for cmd in characters.commands_with_sserafim(
-                &self.sserafim_stage,
+            let poses = spooky_lightning_pose_overrides(
+                self.preview_selection.song,
                 self.character_anim.poses(),
                 cursor,
                 sample_rate,
-            ) {
+                stage_bpm,
+            );
+            for cmd in
+                characters.commands_with_sserafim(&self.sserafim_stage, poses, cursor, sample_rate)
+            {
                 self.cmds.push(cmd);
             }
         }
