@@ -109,11 +109,72 @@ fn sserafim_level_resolves_spaghetti_playlist() {
     );
 }
 
+#[test]
+fn story_prop_prefers_starting_animation_without_dance_pair() {
+    let prop = StoryPropClip {
+        texture_id: WHITE_TEXTURE_ID,
+        texture_width: 1,
+        texture_height: 1,
+        position: glam::Vec2::ZERO,
+        scale: glam::Vec2::ONE,
+        alpha: 1.0,
+        starting_animation: Some("spin".to_string()),
+        animations: vec![story_clip("idle", false), story_clip("spin", true)],
+    };
+
+    assert_eq!(
+        prop.animation_for_cursor(Samples(48_000), 48_000)
+            .map(|animation| animation.name.as_str()),
+        Some("spin")
+    );
+}
+
+#[test]
+fn story_animation_respects_looped_level_metadata() {
+    let level = LevelDefinition::parse(
+        br#"{
+            "name":"LE SSERAFIM",
+            "titleAsset":"storymenu/titles/sserafim",
+            "props":[{
+                "assetPath":"storymenu/props/spaghetti",
+                "startingAnimation":"spin",
+                "animations":[{
+                    "name":"spin",
+                    "prefix":"SPL_0",
+                    "looped":true
+                }]
+            }],
+            "songs":["spaghetti"]
+        }"#,
+    )
+    .unwrap();
+    let atlas = SparrowAtlas::parse(
+        br#"<TextureAtlas imagePath="spaghetti.png">
+          <SubTexture name="SPL_0000" x="0" y="0" width="20" height="20"/>
+          <SubTexture name="SPL_0001" x="20" y="0" width="20" height="20"/>
+        </TextureAtlas>"#,
+    )
+    .unwrap();
+    let animation = &level.props[0].animations[0];
+
+    assert!(story_animation(&atlas, animation).unwrap().looped);
+}
+
 fn dummy_arrow() -> SparrowStill {
     SparrowStill {
         texture_id: WHITE_TEXTURE_ID,
         texture_width: 1,
         texture_height: 1,
         frame: SparrowFrame::untrimmed("dummy".to_string(), 0, 0, 1, 1),
+    }
+}
+
+fn story_clip(name: &str, looped: bool) -> StoryAnimationClip {
+    StoryAnimationClip {
+        name: name.to_string(),
+        fps: 24,
+        looped,
+        offset: glam::Vec2::ZERO,
+        frames: vec![SparrowFrame::untrimmed(format!("{name}0000"), 0, 0, 1, 1)],
     }
 }

@@ -327,6 +327,7 @@ struct StoryPropClip {
     position: glam::Vec2,
     scale: glam::Vec2,
     alpha: f32,
+    starting_animation: Option<String>,
     animations: Vec<StoryAnimationClip>,
 }
 
@@ -377,7 +378,11 @@ impl StoryPropClip {
                     Some(right)
                 }
             }
-            _ => self.animations.first(),
+            _ => self
+                .starting_animation
+                .as_deref()
+                .and_then(|name| self.animations.iter().find(|anim| anim.name == name))
+                .or_else(|| self.animations.first()),
         }
     }
 }
@@ -513,6 +518,8 @@ fn load_story_prop(
         position: glam::vec2(prop.offset.x + 320.0 * index as f32, prop.offset.y),
         scale: glam::Vec2::splat(prop.scale * if prop.is_pixel { 6.0 } else { 1.0 }),
         alpha: prop.alpha,
+        starting_animation: (!prop.starting_animation.is_empty())
+            .then(|| prop.starting_animation.clone()),
         animations,
     })
 }
@@ -532,7 +539,7 @@ fn story_animation(
     Ok(StoryAnimationClip {
         name: animation.name.clone(),
         fps: animation.fps,
-        looped: animation.name == "idle",
+        looped: animation.looped || animation.name == "idle",
         offset: glam::vec2(animation.offset.x, animation.offset.y),
         frames,
     })
