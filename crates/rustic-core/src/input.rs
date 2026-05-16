@@ -21,6 +21,8 @@ pub enum InputAction {
     Back,
     Pause,
     UiPauseScroll,
+    UiJumpTop,
+    UiJumpBottom,
     Reset,
     Debug,
 }

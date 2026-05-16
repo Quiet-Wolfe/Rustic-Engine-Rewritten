@@ -30,6 +30,8 @@ pub fn map_key(key: PhysicalKey) -> Option<InputAction> {
         KeyCode::KeyQ | KeyCode::F6 => InputAction::UiLeft,
         KeyCode::KeyE | KeyCode::F7 => InputAction::UiRight,
         KeyCode::Tab => InputAction::UiSelect,
+        KeyCode::Home => InputAction::UiJumpTop,
+        KeyCode::End => InputAction::UiJumpBottom,
         KeyCode::Pause => InputAction::Pause,
         _ => return None,
     })
@@ -86,6 +88,18 @@ mod tests {
         assert_eq!(
             map_key(PhysicalKey::Code(KeyCode::Tab)),
             Some(InputAction::UiSelect)
+        );
+    }
+
+    #[test]
+    fn home_and_end_drive_freeplay_jump_actions() {
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::Home)),
+            Some(InputAction::UiJumpTop)
+        );
+        assert_eq!(
+            map_key(PhysicalKey::Code(KeyCode::End)),
+            Some(InputAction::UiJumpBottom)
         );
     }
 

@@ -148,7 +148,7 @@ const ROOT_ACTIONS: [OptionsMenuAction; 4] = [
     OptionsMenuAction::ClearSaveData,
     OptionsMenuAction::Exit,
 ];
-const CONTROL_ITEMS: [&str; 12] = [
+const CONTROL_ITEMS: [&str; 14] = [
     "NOTE LEFT        A / LEFT",
     "NOTE DOWN        S / DOWN",
     "NOTE UP          W / UP",
@@ -160,6 +160,8 @@ const CONTROL_ITEMS: [&str; 12] = [
     "FREEPLAY LEFT    Q / F6",
     "FREEPLAY RIGHT   E / F7",
     "CHAR SELECT      TAB",
+    "JUMP TOP         HOME",
+    "JUMP BOTTOM      END",
     "BACK",
 ];
 const CLEAR_SAVE_CONFIRM_ITEMS: [&str; 2] = ["DELETE", "CANCEL"];
@@ -330,7 +332,7 @@ mod tests {
             textures: HashMap::new(),
         };
 
-        assert_eq!(assets.item_count(OptionsMenuPage::Controls), 12);
+        assert_eq!(assets.item_count(OptionsMenuPage::Controls), 14);
         assert_eq!(
             item_label(OptionsMenuPage::Controls, 4, OptionsPreferences::default()).as_deref(),
             Some("ACCEPT           Z / SPACE / ENTER")
@@ -338,6 +340,10 @@ mod tests {
         assert_eq!(
             item_label(OptionsMenuPage::Controls, 8, OptionsPreferences::default()).as_deref(),
             Some("FREEPLAY LEFT    Q / F6")
+        );
+        assert_eq!(
+            item_label(OptionsMenuPage::Controls, 12, OptionsPreferences::default()).as_deref(),
+            Some("JUMP BOTTOM      END")
         );
         assert_eq!(
             item_label(

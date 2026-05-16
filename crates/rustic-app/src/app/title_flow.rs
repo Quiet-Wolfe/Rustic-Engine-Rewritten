@@ -527,6 +527,12 @@ impl App {
             InputAction::UiSelect => {
                 self.toggle_freeplay_character();
             }
+            InputAction::UiJumpTop => {
+                self.jump_freeplay_selection(0);
+            }
+            InputAction::UiJumpBottom => {
+                self.jump_freeplay_selection_to_bottom();
+            }
             InputAction::Confirm => {
                 self.play_menu_sound(MenuSound::Confirm);
                 if self.current_freeplay_is_random() && !self.choose_random_freeplay_song() {
@@ -683,6 +689,37 @@ impl App {
         self.preview_selection =
             self.freeplay_selection_for_song(song, self.preview_selection.difficulty);
         true
+    }
+
+    fn jump_freeplay_selection_to_bottom(&mut self) {
+        let Some(last_index) = self
+            .freeplay_assets
+            .as_ref()
+            .and_then(|assets| assets.item_count().checked_sub(1))
+        else {
+            return;
+        };
+        self.jump_freeplay_selection(last_index);
+    }
+
+    fn jump_freeplay_selection(&mut self, index: usize) {
+        let count = self
+            .freeplay_assets
+            .as_ref()
+            .map(|assets| assets.item_count())
+            .unwrap_or(0);
+        if count == 0 {
+            return;
+        }
+        self.freeplay_selected_index = index.min(count - 1);
+        if let Some(song) = self
+            .freeplay_assets
+            .as_ref()
+            .and_then(|assets| assets.song_at(self.freeplay_selected_index))
+        {
+            self.preview_selection =
+                self.freeplay_selection_for_song(song, self.preview_selection.difficulty);
+        }
     }
 
     fn toggle_freeplay_character(&mut self) {
