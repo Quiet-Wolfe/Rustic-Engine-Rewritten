@@ -497,6 +497,12 @@ impl FreeplayAssets {
         }
     }
 
+    pub fn dj_on_player_action(&mut self, cursor: Samples) {
+        if let Some(dj) = self.dj.as_mut() {
+            dj.on_player_action(cursor);
+        }
+    }
+
     pub fn item_count(&self) -> usize {
         self.songs.len()
     }

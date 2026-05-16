@@ -511,6 +511,13 @@ impl App {
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:2578-2634 (random confirm)
         let old_index = self.freeplay_selected_index;
         let old = self.preview_selection;
+        if is_freeplay_player_action(action) {
+            let sample_rate = play_sample_rate(&self.mixer);
+            let cursor = self.title_cursor(sample_rate);
+            if let Some(assets) = self.freeplay_assets.as_mut() {
+                assets.dj_on_player_action(cursor);
+            }
+        }
         match action {
             InputAction::LaneUp | InputAction::UiUp => {
                 self.move_freeplay_selection(-1);
@@ -839,6 +846,25 @@ impl App {
     }
 }
 
+fn is_freeplay_player_action(action: InputAction) -> bool {
+    matches!(
+        action,
+        InputAction::LaneUp
+            | InputAction::UiUp
+            | InputAction::LaneDown
+            | InputAction::UiDown
+            | InputAction::LaneLeft
+            | InputAction::UiLeft
+            | InputAction::LaneRight
+            | InputAction::UiRight
+            | InputAction::UiSelect
+            | InputAction::UiJumpTop
+            | InputAction::UiJumpBottom
+            | InputAction::Confirm
+            | InputAction::Back
+    )
+}
+
 fn open_url(url: &str) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     let mut command = {
@@ -872,4 +898,17 @@ fn open_url(url: &str) -> std::io::Result<()> {
 
     command.spawn()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn freeplay_player_actions_reset_dj_idle_timer() {
+        assert!(is_freeplay_player_action(InputAction::UiUp));
+        assert!(is_freeplay_player_action(InputAction::UiSelect));
+        assert!(is_freeplay_player_action(InputAction::Confirm));
+        assert!(!is_freeplay_player_action(InputAction::Debug));
+    }
 }

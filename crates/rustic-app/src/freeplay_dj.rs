@@ -1,7 +1,7 @@
 //! Freeplay DJ sprite from Funkin' v0.8.5.
 //!
 //! Drives BF's `Intro → Idle` and `Confirm` frame labels. FistPump, FistPumpLoss,
-//! AFK easter egg, NewUnlock, and CharSelect states are deferred.
+//! NewUnlock, and CharSelect states are deferred.
 //!
 //! ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx
 //! ref: bdedc0aa:source/funkin/ui/freeplay/dj/AnimateAtlasFreeplayDJ.hx
@@ -24,6 +24,8 @@ const DJ_FPS: u16 = 24;
 const DJ_INTRO_LABEL: &str = "Intro";
 const DJ_IDLE_LABEL: &str = "Idle";
 const DJ_CONFIRM_LABEL: &str = "Confirm";
+const DJ_AFK_LABEL: &str = "AFK";
+const DJ_IDLE_EGG_SECONDS: f64 = 60.0;
 
 /// Logical paths to assets the BF DJ depends on.
 pub const REQUIRED_DJ_ASSETS: &[&str] = &[
@@ -32,13 +34,13 @@ pub const REQUIRED_DJ_ASSETS: &[&str] = &[
     "images/freeplay/freeplay-boyfriend/spritemap1.png",
 ];
 
-/// Subset of FreeplayDJState we drive in Phase 1 (Intro → Idle, plus Confirm
-/// on song select). Easter-egg / fist-pump / char-select branches are deferred.
+/// Subset of FreeplayDJState we drive in Phase 1.
 /// ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx:10-59
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DjState {
     Intro,
     Idle,
+    IdleEasterEgg,
     Confirm,
 }
 
@@ -50,6 +52,7 @@ pub struct FreeplayDJ {
     intro_frame_count: u32,
     idle_frame_count: u32,
     confirm_frame_count: u32,
+    afk_frame_count: u32,
     state: DjState,
     state_started_at: Samples,
     pub texture: Option<Texture>,
@@ -60,6 +63,7 @@ impl FreeplayDJ {
         let (label, frame_count, looped) = match self.state {
             DjState::Intro => (DJ_INTRO_LABEL, self.intro_frame_count, false),
             DjState::Idle => (DJ_IDLE_LABEL, self.idle_frame_count, true),
+            DjState::IdleEasterEgg => (DJ_AFK_LABEL, self.afk_frame_count, false),
             DjState::Confirm => (DJ_CONFIRM_LABEL, self.confirm_frame_count, false),
         };
         let frame_offset = label_frame_offset(
@@ -94,22 +98,51 @@ impl FreeplayDJ {
         self.state_started_at = cursor;
     }
 
-    /// Advance the DJ state machine. Currently only used to drop Intro → Idle
-    /// when the Intro label finishes; Confirm/Idle terminate themselves via
-    /// the frame-offset clamp/wrap in `commands()`.
-    pub fn tick(&mut self, cursor: Samples, sample_rate: u32) {
-        if self.state != DjState::Intro {
-            return;
-        }
-        let elapsed = cursor.0.saturating_sub(self.state_started_at.0).max(0) as u128;
-        let frame = (elapsed * u128::from(DJ_FPS) / u128::from(sample_rate.max(1))) as u32;
-        if frame >= self.intro_frame_count {
-            let intro_samples = (u128::from(self.intro_frame_count)
-                * u128::from(sample_rate.max(1))
-                / u128::from(DJ_FPS)) as i64;
+    /// Reset the AFK timer after any Freeplay player action.
+    /// ref: bdedc0aa:source/funkin/ui/freeplay/dj/BaseFreeplayDJ.hx:117-128
+    pub fn on_player_action(&mut self, cursor: Samples) {
+        if matches!(self.state, DjState::Idle | DjState::IdleEasterEgg) {
             self.state = DjState::Idle;
-            self.state_started_at = Samples(self.state_started_at.0 + intro_samples);
+            self.state_started_at = cursor;
         }
+    }
+
+    /// Advance the DJ state machine. Currently only used to drop Intro → Idle
+    /// when the Intro label finishes and Idle → AFK → Idle around the easter
+    /// egg timer; Confirm terminates via frame-offset clamping.
+    pub fn tick(&mut self, cursor: Samples, sample_rate: u32) {
+        match self.state {
+            DjState::Intro => {
+                if self.state_frame(cursor, sample_rate) >= self.intro_frame_count {
+                    let intro_samples =
+                        animation_duration_samples(self.intro_frame_count, sample_rate, DJ_FPS);
+                    self.state = DjState::Idle;
+                    self.state_started_at = Samples(self.state_started_at.0 + intro_samples);
+                }
+            }
+            DjState::Idle => {
+                if self.afk_frame_count > 0
+                    && cursor.0.saturating_sub(self.state_started_at.0)
+                        >= seconds_to_samples(DJ_IDLE_EGG_SECONDS, sample_rate)
+                {
+                    self.state = DjState::IdleEasterEgg;
+                    self.state_started_at = cursor;
+                }
+            }
+            DjState::IdleEasterEgg => {
+                if self.state_frame(cursor, sample_rate) >= self.afk_frame_count {
+                    let afk_samples =
+                        animation_duration_samples(self.afk_frame_count, sample_rate, DJ_FPS);
+                    self.state = DjState::Idle;
+                    self.state_started_at = Samples(self.state_started_at.0 + afk_samples);
+                }
+            }
+            DjState::Confirm => {}
+        }
+    }
+
+    fn state_frame(&self, cursor: Samples, sample_rate: u32) -> u32 {
+        elapsed_frame(cursor, self.state_started_at, sample_rate, DJ_FPS)
     }
 
     fn command_for_part(&self, part: &AnimateDrawPart) -> Option<DrawCommand> {
@@ -177,6 +210,10 @@ pub fn load_freeplay_dj_for_asset(
         .label(DJ_CONFIRM_LABEL)
         .map(|label| label.duration.max(1))
         .unwrap_or(1);
+    let afk_frame_count = animation
+        .label(DJ_AFK_LABEL)
+        .map(|label| label.duration.max(1))
+        .unwrap_or(0);
     Ok(FreeplayDJ {
         texture_id,
         animation,
@@ -184,6 +221,7 @@ pub fn load_freeplay_dj_for_asset(
         intro_frame_count,
         idle_frame_count,
         confirm_frame_count,
+        afk_frame_count,
         // Caller calls `reset_intro(cursor)` from `enter_song_select` so the
         // intro plays from the moment the screen mounts. Default to Idle so a
         // stale/uninitialized DJ never gets stuck on a frozen first intro frame.
@@ -204,13 +242,26 @@ fn label_frame_offset(
     if frame_count <= 1 {
         return 0;
     }
-    let elapsed = cursor.0.saturating_sub(state_started_at.0).max(0) as u128;
-    let frame = (elapsed * u128::from(fps) / u128::from(sample_rate.max(1))) as u32;
+    let frame = elapsed_frame(cursor, state_started_at, sample_rate, fps);
     if looped {
         frame % frame_count.max(1)
     } else {
         frame.min(frame_count.saturating_sub(1))
     }
+}
+
+fn elapsed_frame(cursor: Samples, state_started_at: Samples, sample_rate: u32, fps: u16) -> u32 {
+    let elapsed = cursor.0.saturating_sub(state_started_at.0).max(0) as u128;
+    (elapsed * u128::from(fps) / u128::from(sample_rate.max(1))) as u32
+}
+
+fn animation_duration_samples(frame_count: u32, sample_rate: u32, fps: u16) -> i64 {
+    (u128::from(frame_count.max(1)) * u128::from(sample_rate.max(1)) / u128::from(fps.max(1)))
+        as i64
+}
+
+fn seconds_to_samples(seconds: f64, sample_rate: u32) -> i64 {
+    (seconds.max(0.0) * f64::from(sample_rate.max(1))).round() as i64
 }
 
 fn asset_id_for_path(path: &AssetPath) -> AssetId {
@@ -281,6 +332,13 @@ mod tests {
             ),
             2
         );
+    }
+
+    #[test]
+    fn elapsed_frame_and_duration_use_freeplay_dj_rate() {
+        assert_eq!(elapsed_frame(Samples(2_000), Samples(0), 48_000, 24), 1);
+        assert_eq!(animation_duration_samples(24, 48_000, 24), 48_000);
+        assert_eq!(seconds_to_samples(DJ_IDLE_EGG_SECONDS, 48_000), 2_880_000);
     }
 
     /// Locks the DJ source asset inventory.
