@@ -200,6 +200,7 @@ impl AnimateCharacterSprite {
         part: &AnimateDrawPart,
         matrix: [f32; 6],
         alpha: f32,
+        flip_x: bool,
     ) -> Option<DrawCommand> {
         let frame = overlay.atlas.frame(&part.frame_name)?;
         let mut cmd = DrawCommand::sprite(
@@ -225,7 +226,7 @@ impl AnimateCharacterSprite {
         cmd.color = glam::Vec4::from_array(part.color);
         cmd.color.w *= alpha;
         cmd.color_offset = glam::Vec4::from_array(part.color_offset);
-        if effective_flip_x(&self.character, self.is_player) {
+        if effective_flip_x(&self.character, self.is_player) ^ flip_x {
             std::mem::swap(&mut cmd.uv_min.x, &mut cmd.uv_max.x);
         }
         Some(cmd)

@@ -16,6 +16,7 @@ pub(crate) struct SserafimLipSyncOverlay {
     mouth_keyword: &'static str,
     offsets: &'static [SserafimLipSyncPose],
     alpha: f32,
+    flip_x: bool,
 }
 
 impl SserafimLipSyncOverlay {
@@ -29,9 +30,6 @@ impl SserafimLipSyncOverlay {
         cursor: Samples,
         sample_rate: u32,
     ) -> Vec<DrawCommand> {
-        if !should_sing {
-            return Vec::new();
-        }
         let lip_pose = self.pose_for_request(request_name);
         let Some(mouth) = parts.iter().find(|part| {
             part.symbol_stack
@@ -40,7 +38,11 @@ impl SserafimLipSyncOverlay {
         }) else {
             return Vec::new();
         };
-        let frame_index = lip_sync_frame_index(cursor, sample_rate);
+        let frame_index = if should_sing {
+            lip_sync_frame_index(cursor, sample_rate)
+        } else {
+            0
+        };
         let lip_parts = self
             .asset
             .animation
@@ -56,7 +58,14 @@ impl SserafimLipSyncOverlay {
                     ),
                     part.matrix,
                 );
-                owner.command_for_overlay_part(pose, &self.asset, part, matrix, self.alpha)
+                owner.command_for_overlay_part(
+                    pose,
+                    &self.asset,
+                    part,
+                    matrix,
+                    self.alpha,
+                    self.flip_x,
+                )
             })
             .collect()
     }
@@ -84,6 +93,7 @@ pub(crate) fn load_sserafim_lip_sync(
         mouth_keyword: spec.mouth_keyword,
         offsets: spec.offsets,
         alpha: spec.alpha,
+        flip_x: spec.flip_x,
     }))
 }
 
@@ -93,6 +103,7 @@ struct SserafimLipSyncSpec {
     mouth_keyword: &'static str,
     offsets: &'static [SserafimLipSyncPose],
     alpha: f32,
+    flip_x: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -110,6 +121,7 @@ fn sserafim_lip_sync_spec(character: &CharacterDefinition) -> Option<SserafimLip
             "mouth yunjin",
             YUNJIN_LIP_SYNC,
             1.0,
+            false,
         )
     } else if path.ends_with("sserafim/sakura") {
         (
@@ -117,6 +129,7 @@ fn sserafim_lip_sync_spec(character: &CharacterDefinition) -> Option<SserafimLip
             "mouth edit",
             SAKURA_LIP_SYNC,
             1.0,
+            true,
         )
     } else if path.ends_with("sserafim/chaewon") {
         (
@@ -124,6 +137,7 @@ fn sserafim_lip_sync_spec(character: &CharacterDefinition) -> Option<SserafimLip
             "mouth default",
             CHAEWON_LIP_SYNC,
             0.5,
+            false,
         )
     } else if path.ends_with("sserafim/eunchae") {
         (
@@ -131,6 +145,7 @@ fn sserafim_lip_sync_spec(character: &CharacterDefinition) -> Option<SserafimLip
             "mouth default",
             EUNCHAE_LIP_SYNC,
             1.0,
+            false,
         )
     } else if path.ends_with("sserafim/kazuha") {
         (
@@ -138,6 +153,7 @@ fn sserafim_lip_sync_spec(character: &CharacterDefinition) -> Option<SserafimLip
             "mouth default",
             KAZUHA_LIP_SYNC,
             1.0,
+            true,
         )
     } else {
         return None;
@@ -147,6 +163,7 @@ fn sserafim_lip_sync_spec(character: &CharacterDefinition) -> Option<SserafimLip
         mouth_keyword: spec.1,
         offsets: spec.2,
         alpha: spec.3,
+        flip_x: spec.4,
     })
 }
 
@@ -284,5 +301,27 @@ mod tests {
 
         assert_eq!(spec.asset_path, "sserafim/sserafim-lipsync-yunjin");
         assert_eq!(spec.mouth_keyword, "mouth yunjin");
+        assert!(!spec.flip_x);
+    }
+
+    #[test]
+    fn kazuha_lip_sync_matches_script_local_flip() {
+        let character = match CharacterDefinition::parse(
+            br#"{
+              "name": "sserafim-kazuha",
+              "renderType": "animateatlas",
+              "assetPath": "shared:characters/sserafim/kazuha",
+              "animations": [{ "name": "idle", "prefix": "idle" }]
+            }"#,
+        ) {
+            Ok(character) => character,
+            Err(error) => panic!("test fixture should parse: {error}"),
+        };
+        let spec = match sserafim_lip_sync_spec(&character) {
+            Some(spec) => spec,
+            None => panic!("expected kazuha lip sync spec"),
+        };
+
+        assert!(spec.flip_x);
     }
 }
