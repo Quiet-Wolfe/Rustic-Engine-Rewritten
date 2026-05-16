@@ -4,7 +4,9 @@ use crate::animate_character_assets::{
     load_animate_atlas, AnimateCharacterPose, AnimateCharacterSprite, LoadedAnimateAtlas,
 };
 use anyhow::Result;
-use rustic_asset::{AnimateDrawPart, AssetPath, CharacterDefinition, OverlayResolver};
+use rustic_asset::{
+    AnimateAnimation, AnimateDrawPart, AssetPath, CharacterDefinition, OverlayResolver,
+};
 use rustic_core::ids::AssetId;
 use rustic_core::time::Samples;
 use rustic_render::{DrawCommand, FilterMode, Texture};
@@ -13,6 +15,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub(crate) struct SserafimLipSyncOverlay {
     asset: LoadedAnimateAtlas,
+    symbol_name: String,
     mouth_keyword: &'static str,
     offsets: &'static [SserafimLipSyncPose],
     alpha: f32,
@@ -46,7 +49,7 @@ impl SserafimLipSyncOverlay {
         let lip_parts = self
             .asset
             .animation
-            .flatten_symbol_frame(&self.asset.animation.symbol_name, frame_index)
+            .flatten_symbol_frame(&self.symbol_name, frame_index)
             .unwrap_or_default();
         lip_parts
             .iter()
@@ -88,13 +91,25 @@ pub(crate) fn load_sserafim_lip_sync(
     };
     let asset_path = AssetPath::new(spec.asset_path)?;
     let asset = load_animate_atlas(device, queue, resolver, &asset_path, filter, textures)?;
+    let symbol_name = sserafim_lip_sync_root_symbol(&asset.animation).to_owned();
     Ok(Some(SserafimLipSyncOverlay {
         asset,
+        symbol_name,
         mouth_keyword: spec.mouth_keyword,
         offsets: spec.offsets,
         alpha: spec.alpha,
         flip_x: spec.flip_x,
     }))
+}
+
+fn sserafim_lip_sync_root_symbol(animation: &AnimateAnimation) -> &str {
+    if animation.has_symbol(&animation.symbol_name) {
+        &animation.symbol_name
+    } else if animation.has_symbol("lip sync all") {
+        "lip sync all"
+    } else {
+        &animation.symbol_name
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -264,6 +279,79 @@ fn compose_affine(parent: [f32; 6], child: [f32; 6]) -> [f32; 6] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::asset_roots::baked_assets_root;
+    use rustic_asset::{load_animate_animation, load_character};
+
+    fn source_resolver() -> OverlayResolver {
+        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("crate should live under workspace/crates");
+        OverlayResolver::new().with_baked_root(workspace.join("assets/source"))
+    }
+
+    fn baked_resolver() -> OverlayResolver {
+        OverlayResolver::new().with_baked_root(baked_assets_root())
+    }
+
+    fn character_from_source(resolver: &OverlayResolver, id: &str) -> CharacterDefinition {
+        load_character(
+            resolver,
+            &AssetPath::new(format!("data/characters/{id}.json")).unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn animate_animation(resolver: &OverlayResolver, raw_path: &str) -> AnimateAnimation {
+        let stripped = raw_path
+            .split_once(':')
+            .map(|(_, path)| path)
+            .unwrap_or(raw_path);
+        load_animate_animation(
+            resolver,
+            &AssetPath::new(format!("images/{stripped}/Animation.json")).unwrap(),
+        )
+        .unwrap()
+    }
+
+    fn assert_mouth_symbol_in_pose(
+        resolver: &OverlayResolver,
+        character_id: &str,
+        animation_name: &str,
+    ) {
+        let character = character_from_source(resolver, character_id);
+        let spec = sserafim_lip_sync_spec(&character).unwrap();
+        let animation =
+            animate_animation(resolver, character.asset_path.as_ref().unwrap().as_str());
+        let character_animation = character
+            .animations
+            .iter()
+            .find(|animation| animation.name == animation_name)
+            .unwrap();
+        let parts = animation
+            .flatten_label_frame(&character_animation.prefix, 0)
+            .unwrap();
+
+        assert!(
+            parts.iter().any(|part| part
+                .symbol_stack
+                .iter()
+                .any(|symbol| symbol == spec.mouth_keyword)),
+            "{character_id}:{animation_name} should contain {}",
+            spec.mouth_keyword
+        );
+    }
+
+    fn assert_lip_sync_asset_has_draw_parts(resolver: &OverlayResolver, asset_path: &str) {
+        let animation = animate_animation(resolver, asset_path);
+        let symbol_name = sserafim_lip_sync_root_symbol(&animation);
+        let parts = animation.flatten_symbol_frame(symbol_name, 3).unwrap();
+
+        assert!(
+            !parts.is_empty(),
+            "{asset_path} should flatten from its root symbol"
+        );
+    }
 
     #[test]
     fn sakura_lip_sync_uses_script_joint_offsets() {
@@ -323,5 +411,27 @@ mod tests {
         };
 
         assert!(spec.flip_x);
+    }
+
+    #[test]
+    fn sserafim_character_assets_expose_scripted_mouth_symbols() {
+        let resolver = source_resolver();
+
+        assert_mouth_symbol_in_pose(&resolver, "sserafim-yunjin", "idle");
+        assert_mouth_symbol_in_pose(&resolver, "sserafim-kazuha", "idle");
+        assert_mouth_symbol_in_pose(&resolver, "sserafim-chaewon", "idle");
+        assert_mouth_symbol_in_pose(&resolver, "sserafim-eunchae", "idle");
+        assert_mouth_symbol_in_pose(&resolver, "sserafim-sakura", "singDOWN-joint");
+    }
+
+    #[test]
+    fn sserafim_lip_sync_assets_flatten_despite_exported_root_typo() {
+        let resolver = baked_resolver();
+        let default_lips = animate_animation(&resolver, "sserafim/sserafim-lipsync");
+
+        assert_eq!(default_lips.symbol_name, "ssearafim-lipsync");
+        assert_eq!(sserafim_lip_sync_root_symbol(&default_lips), "lip sync all");
+        assert_lip_sync_asset_has_draw_parts(&resolver, "sserafim/sserafim-lipsync");
+        assert_lip_sync_asset_has_draw_parts(&resolver, "sserafim/sserafim-lipsync-yunjin");
     }
 }
