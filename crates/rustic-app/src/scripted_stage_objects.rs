@@ -1,7 +1,9 @@
 //! Script-created stage objects that are absent from v-slice stage JSON.
 
 use anyhow::Result;
-use rustic_asset::{AssetPath, AssetVec2, StageObject};
+use rustic_asset::{
+    AssetPath, AssetVec2, StageObject, StageObjectAnimation, StageObjectRenderType,
+};
 use rustic_core::render::RenderLayer;
 
 pub(crate) fn scripted_stage_objects(stage_id: &str) -> Result<Vec<StageObject>> {
@@ -148,6 +150,40 @@ fn limo_erect_objects() -> Result<Vec<StageObject>> {
 fn sserafim_objects() -> Result<Vec<StageObject>> {
     Ok(vec![
         sserafim_floor_object()?,
+        sserafim_cutscene_floor_object()?,
+        sserafim_animate_object(
+            "sserafimCutsceneMain",
+            "images/sserafim/cutscene/cutsceneMain",
+            glam::vec2(-395.0, 10.0),
+            glam::vec2(0.94, 0.94),
+            25,
+            1.0,
+            "intro",
+            "",
+            Some("symbol"),
+        )?,
+        sserafim_animate_object(
+            "sserafimGfGetUp",
+            "images/sserafim/cutscene/gfGetUp",
+            glam::vec2(655.0, -104.0),
+            glam::vec2(0.95, 0.95),
+            25,
+            0.5,
+            "getup",
+            "getup",
+            None,
+        )?,
+        sserafim_animate_object(
+            "sserafimBfGetUp",
+            "images/sserafim/cutscene/bfGetUp",
+            glam::vec2(1220.0, 531.0),
+            glam::vec2(0.99, 0.99),
+            305,
+            1.0,
+            "getup",
+            "getup",
+            None,
+        )?,
         sserafim_flash_object()?,
         sserafim_end_card(
             "sserafimEnd1",
@@ -277,6 +313,49 @@ fn sserafim_floor_object() -> Result<StageObject> {
     )
 }
 
+fn sserafim_cutscene_floor_object() -> Result<StageObject> {
+    png_object(
+        "sserafimCutsceneFloor",
+        "images/sserafim/cutscene/floor-cutscene.png",
+        glam::vec2(790.0, 625.0),
+        glam::Vec2::ONE,
+        glam::vec2(0.93, 0.93),
+        11,
+        0.0,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sserafim_animate_object(
+    id: &str,
+    image: &str,
+    position: glam::Vec2,
+    scroll: glam::Vec2,
+    z: i32,
+    alpha: f32,
+    animation_name: &str,
+    prefix: &str,
+    anim_type: Option<&str>,
+) -> Result<StageObject> {
+    let mut animation = StageObjectAnimation::default();
+    animation.name = animation_name.to_owned();
+    animation.prefix = prefix.to_owned();
+    animation.anim_type = anim_type.map(str::to_owned);
+    animation.frame_rate = 24;
+    animation.looped = false;
+
+    let mut object = StageObject::png(id, AssetPath::new(image)?);
+    object.render_type = StageObjectRenderType::AnimateAtlas;
+    object.animation = Some(animation.clone());
+    object.animations = vec![animation];
+    object.layer = RenderLayer::Stage;
+    object.position = AssetVec2::new(position.x, position.y);
+    object.scroll_factor = AssetVec2::new(scroll.x, scroll.y);
+    object.z = z;
+    object.alpha = alpha;
+    Ok(object)
+}
+
 fn sserafim_dust_object(
     id: &str,
     image: &str,
@@ -336,17 +415,26 @@ mod tests {
         assert_eq!(tank[0].id, "tankCloudsScrolling");
 
         let sserafim = scripted_stage_objects("sserafim").unwrap();
-        assert_eq!(sserafim.len(), 8);
+        assert_eq!(sserafim.len(), 12);
         assert_eq!(sserafim[0].id, "sserafimFloor");
         assert_eq!(sserafim[0].image.as_str(), "images/sserafim/floor.png");
         assert_eq!(sserafim[0].position.x, 790.0);
-        assert_eq!(sserafim[1].id, "sserafimFlash");
-        assert_eq!(sserafim[1].layer, RenderLayer::Overlay);
-        assert_eq!(sserafim[1].solid_color, Some([255, 255, 255, 255]));
-        assert_eq!(sserafim[2].id, "sserafimEnd1");
-        assert_eq!(sserafim[3].image.as_str(), "images/sserafim/end/end2.png");
+        assert_eq!(sserafim[1].id, "sserafimCutsceneFloor");
         assert_eq!(
-            sserafim[4].image.as_str(),
+            sserafim[1].image.as_str(),
+            "images/sserafim/cutscene/floor-cutscene.png"
+        );
+        assert_eq!(sserafim[2].id, "sserafimCutsceneMain");
+        assert_eq!(sserafim[2].render_type, StageObjectRenderType::AnimateAtlas);
+        assert_eq!(sserafim[3].id, "sserafimGfGetUp");
+        assert_eq!(sserafim[4].id, "sserafimBfGetUp");
+        assert_eq!(sserafim[5].id, "sserafimFlash");
+        assert_eq!(sserafim[5].layer, RenderLayer::Overlay);
+        assert_eq!(sserafim[5].solid_color, Some([255, 255, 255, 255]));
+        assert_eq!(sserafim[6].id, "sserafimEnd1");
+        assert_eq!(sserafim[7].image.as_str(), "images/sserafim/end/end2.png");
+        assert_eq!(
+            sserafim[8].image.as_str(),
             "images/sserafim/dust/dustMid.png"
         );
 

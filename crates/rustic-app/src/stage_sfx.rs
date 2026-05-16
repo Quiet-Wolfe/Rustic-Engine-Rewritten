@@ -2,7 +2,7 @@
 
 use crate::asset_roots::baked_assets_root;
 use crate::preview_song::PreviewSong;
-use crate::sserafim_stage::SserafimStageState;
+use crate::sserafim_stage::{sserafim_intro_event_cursor, SserafimStageState};
 use crate::stage_scripted_motion::{
     limo_fast_car_position, limo_fast_car_start, philly_blazin_lightning_start, philly_train_start,
 };
@@ -20,6 +20,7 @@ const LIGHTNING_2_PATH: &str = "sounds/Lightning2.ogg";
 const LIGHTNING_3_PATH: &str = "sounds/Lightning3.ogg";
 const SSERAFIM_DOOR_KICK_1_PATH: &str = "sounds/sserafim/doorKick1.ogg";
 const SSERAFIM_DOOR_KICK_2_PATH: &str = "sounds/sserafim/doorKick2.ogg";
+const SSERAFIM_START_CUTSCENE_PATH: &str = "sounds/sserafim/cutscene/startCutscene.ogg";
 const SSERAFIM_END_1_PATH: &str = "sounds/sserafim/cutscene/end1.ogg";
 const SSERAFIM_END_2_PATH: &str = "sounds/sserafim/cutscene/end2.ogg";
 
@@ -31,6 +32,7 @@ static LIGHTNING_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static LIGHTNING_3_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_DOOR_KICK_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_DOOR_KICK_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
+static SSERAFIM_START_CUTSCENE_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_END_1_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 static SSERAFIM_END_2_BYTES: OnceLock<Option<Arc<[u8]>>> = OnceLock::new();
 
@@ -39,6 +41,7 @@ pub(crate) struct StageSfx {
     last_train_start: Option<Samples>,
     last_limo_car_start: Option<Samples>,
     last_lightning_start: Option<Samples>,
+    last_sserafim_intro_start: Option<Samples>,
     last_sserafim_end1_start: Option<Samples>,
     last_sserafim_end2_start: Option<Samples>,
 }
@@ -99,6 +102,13 @@ impl StageSfx {
             }
         }
         if song == PreviewSong::SPAGHETTI {
+            self.play_once_near_start(
+                mixer,
+                cursor,
+                sample_rate,
+                sserafim_intro_event_cursor(20.0, sample_rate, bpm),
+                StageSound::SserafimStartCutscene,
+            )?;
             if let Some(start) = sserafim.end_started_at() {
                 self.play_once_near_start(
                     mixer,
@@ -141,6 +151,7 @@ impl StageSfx {
             StageSound::Train => self.last_train_start,
             StageSound::CarPass(_) => self.last_limo_car_start,
             StageSound::Lightning(_) => self.last_lightning_start,
+            StageSound::SserafimStartCutscene => self.last_sserafim_intro_start,
             StageSound::SserafimEnd1 => self.last_sserafim_end1_start,
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start,
             StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => None,
@@ -152,6 +163,7 @@ impl StageSfx {
             StageSound::Train => self.last_train_start = Some(start),
             StageSound::CarPass(_) => self.last_limo_car_start = Some(start),
             StageSound::Lightning(_) => self.last_lightning_start = Some(start),
+            StageSound::SserafimStartCutscene => self.last_sserafim_intro_start = Some(start),
             StageSound::SserafimEnd1 => self.last_sserafim_end1_start = Some(start),
             StageSound::SserafimEnd2 => self.last_sserafim_end2_start = Some(start),
             StageSound::SserafimDoorKick1 | StageSound::SserafimDoorKick2 => {}
@@ -166,6 +178,7 @@ enum StageSound {
     Lightning(u8),
     SserafimDoorKick1,
     SserafimDoorKick2,
+    SserafimStartCutscene,
     SserafimEnd1,
     SserafimEnd2,
 }
@@ -212,6 +225,9 @@ fn cached_stage_sound(sound: StageSound) -> Option<&'static Arc<[u8]>> {
         StageSound::Lightning(_) => (&LIGHTNING_3_BYTES, LIGHTNING_3_PATH),
         StageSound::SserafimDoorKick1 => (&SSERAFIM_DOOR_KICK_1_BYTES, SSERAFIM_DOOR_KICK_1_PATH),
         StageSound::SserafimDoorKick2 => (&SSERAFIM_DOOR_KICK_2_BYTES, SSERAFIM_DOOR_KICK_2_PATH),
+        StageSound::SserafimStartCutscene => {
+            (&SSERAFIM_START_CUTSCENE_BYTES, SSERAFIM_START_CUTSCENE_PATH)
+        }
         StageSound::SserafimEnd1 => (&SSERAFIM_END_1_BYTES, SSERAFIM_END_1_PATH),
         StageSound::SserafimEnd2 => (&SSERAFIM_END_2_BYTES, SSERAFIM_END_2_PATH),
     };
@@ -261,6 +277,10 @@ mod tests {
         assert_eq!(CAR_PASS_0_PATH, "sounds/carPass0.ogg");
         assert_eq!(LIGHTNING_3_PATH, "sounds/Lightning3.ogg");
         assert_eq!(SSERAFIM_DOOR_KICK_1_PATH, "sounds/sserafim/doorKick1.ogg");
+        assert_eq!(
+            SSERAFIM_START_CUTSCENE_PATH,
+            "sounds/sserafim/cutscene/startCutscene.ogg"
+        );
         assert_eq!(SSERAFIM_END_2_PATH, "sounds/sserafim/cutscene/end2.ogg");
     }
 

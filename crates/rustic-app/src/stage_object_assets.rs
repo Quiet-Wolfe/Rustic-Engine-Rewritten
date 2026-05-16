@@ -2,6 +2,9 @@
 // LINT-ALLOW: long-file stage prop loading, animation dispatch, and tests share fixtures.
 
 use crate::preview_song::PreviewSong;
+use crate::sserafim_stage::{
+    sserafim_intro_elapsed, sserafim_intro_event_cursor, sserafim_intro_start_cursor,
+};
 use crate::stage_object_asset_helpers::{
     asset_id_for_path, filter_for_antialiasing, halloween_lightning_start, stage_beat,
     stage_beat_start, stage_frame_index,
@@ -64,7 +67,7 @@ impl StagePropSprite {
         match self {
             Self::Static(prop) => prop.commands(cursor, sample_rate, bpm),
             Self::Sparrow(prop) => prop.commands(cursor, sample_rate, bpm, song),
-            Self::Animate(prop) => prop.commands(cursor, sample_rate),
+            Self::Animate(prop) => prop.commands(cursor, sample_rate, bpm, song),
         }
     }
 }
@@ -313,11 +316,22 @@ impl SparrowStagePropSprite {
 }
 
 impl AnimateStagePropSprite {
-    fn commands(&self, cursor: Samples, sample_rate: u32) -> Vec<DrawCommand> {
+    fn commands(
+        &self,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+        song: Option<PreviewSong>,
+    ) -> Vec<DrawCommand> {
+        let Some(started_at) =
+            animate_stage_started_at(&self.object.id, cursor, sample_rate, bpm, song)
+        else {
+            return Vec::new();
+        };
         let frame_index = stage_frame_index(
             cursor,
             sample_rate,
-            Samples(0),
+            started_at,
             self.frame_rate,
             self.frame_count,
             self.looped,
@@ -553,7 +567,9 @@ fn load_animate_stage_object(
         looped: animation_def.looped,
         filter,
     };
-    if sprite.commands(Samples(0), 48_000).is_empty() {
+    if sprite.commands(Samples(0), 48_000, 100.0, None).is_empty()
+        && !is_sserafim_cutscene_animate(&sprite.object.id)
+    {
         anyhow::bail!(
             "resolve animate stage prop frame {}:{}",
             object.id,
@@ -561,6 +577,51 @@ fn load_animate_stage_object(
         );
     }
     Ok(Some(StagePropSprite::Animate(sprite)))
+}
+
+fn animate_stage_started_at(
+    id: &str,
+    cursor: Samples,
+    sample_rate: u32,
+    bpm: f64,
+    song: Option<PreviewSong>,
+) -> Option<Samples> {
+    if !is_sserafim_cutscene_animate(id) {
+        return Some(Samples(0));
+    }
+    if song != Some(PreviewSong::SPAGHETTI) {
+        return None;
+    }
+    sserafim_cutscene_animate_started_at(id, cursor, sample_rate, bpm)
+}
+
+fn is_sserafim_cutscene_animate(id: &str) -> bool {
+    matches!(
+        id,
+        "sserafimCutsceneMain" | "sserafimBfGetUp" | "sserafimGfGetUp"
+    )
+}
+
+fn sserafim_cutscene_animate_started_at(
+    id: &str,
+    cursor: Samples,
+    sample_rate: u32,
+    bpm: f64,
+) -> Option<Samples> {
+    let elapsed = sserafim_intro_elapsed(cursor, sample_rate, bpm)?;
+    match id {
+        "sserafimCutsceneMain" => (elapsed < frame_samples_at_rate(563.0, sample_rate))
+            .then_some(sserafim_intro_start_cursor(sample_rate, bpm)),
+        "sserafimBfGetUp" | "sserafimGfGetUp" => {
+            let started_at = sserafim_intro_event_cursor(710.0, sample_rate, bpm);
+            (cursor >= started_at).then_some(started_at)
+        }
+        _ => None,
+    }
+}
+
+fn frame_samples_at_rate(frame: f32, sample_rate: u32) -> i64 {
+    ((frame / 24.0).max(0.0) * sample_rate.max(1) as f32).round() as i64
 }
 
 fn base_stage_command(

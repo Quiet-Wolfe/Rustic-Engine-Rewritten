@@ -44,6 +44,7 @@ use crate::scene_assets::{
 use crate::screen::ScreenStack;
 use crate::settings::{load_settings_or_default, Settings};
 use crate::song_audio::{load_preview_stems_for, play_sample_rate, set_vocals_gain};
+use crate::sserafim_stage::sserafim_intro_start_cursor;
 use crate::stage_object_assets::StagePropSet;
 use crate::stage_sfx::StageSfx;
 use crate::story_menu_assets::StoryMenuAssets;
@@ -359,7 +360,12 @@ impl App {
         }
     }
     fn reset_song_runtime(&mut self, bpm: f64) {
-        self.song_start_cursor = countdown_start_cursor(play_sample_rate(&self.mixer), bpm);
+        let sample_rate = play_sample_rate(&self.mixer);
+        self.song_start_cursor = if self.preview_selection.song == PreviewSong::SPAGHETTI {
+            sserafim_intro_start_cursor(sample_rate, bpm)
+        } else {
+            countdown_start_cursor(sample_rate, bpm)
+        };
         self.song_start = Instant::now();
         self.song_started = false;
         self.audio_clock.reset(self.song_start);

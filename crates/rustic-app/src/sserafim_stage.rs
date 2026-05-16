@@ -2,6 +2,7 @@
 // LINT-ALLOW: long-file Sserafim stage script state and tests stay together.
 
 use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
+use crate::countdown_assets::countdown_start_cursor;
 use crate::preview_song::PreviewSong;
 use crate::stage_object_asset_helpers::{asset_id_for_path, stage_beat, stage_beat_start};
 use rustic_asset::{AssetPath, ChartEventKind, SserafimEvent};
@@ -13,6 +14,8 @@ use rustic_render::DrawCommand;
 const BASE_VISIBLE: [bool; 5] = [true, false, false, false, false];
 const BASE_SINGING: [bool; 6] = [false, false, false, false, false, false];
 const FLASH_OVERLAY_Z: i32 = 10_001;
+const CUTSCENE_FPS: f32 = 24.0;
+const INTRO_DURATION_FRAMES: f32 = 730.0;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SserafimStageState {
@@ -76,6 +79,10 @@ impl SserafimStageState {
 
     pub(crate) fn end_started_at(&self) -> Option<Samples> {
         self.end_started_at
+    }
+
+    pub(crate) fn intro_active_at(&self, cursor: Samples, sample_rate: u32, bpm: f64) -> bool {
+        self.active && sserafim_intro_elapsed(cursor, sample_rate, bpm).is_some()
     }
 
     pub(crate) fn apply_event(&mut self, kind: &ChartEventKind, cursor: Samples) -> bool {
@@ -170,12 +177,18 @@ impl SserafimStageState {
         if !self.active {
             return;
         }
+        let intro_active = self.intro_active_at(cursor, sample_rate, bpm);
+        let intro_cover = self.intro_cover_alpha(cursor, sample_rate, bpm);
+        let intro_flash = self.intro_flash_alpha(cursor, sample_rate, bpm);
         let dark = self.dark.value_at(cursor).clamp(0.0, 1.0);
         let truck_alpha = self.truck_lights.alpha_at(cursor);
         let pulse = self.pulse.value_at(cursor, sample_rate, bpm);
         for cmd in commands {
-            if self.end_cutscene_active(cursor)
-                && matches!(cmd.layer, RenderLayer::Notes | RenderLayer::Hud)
+            if (intro_active || self.end_cutscene_active(cursor))
+                && matches!(
+                    cmd.layer,
+                    RenderLayer::Characters | RenderLayer::Notes | RenderLayer::Hud
+                )
             {
                 cmd.color.w = 0.0;
             }
@@ -188,11 +201,15 @@ impl SserafimStageState {
                 cmd.color.w = if self.cover_visible || self.end_cover_visible(cursor) {
                     1.0
                 } else {
-                    0.0
+                    intro_cover
                 };
             } else if is_flash_overlay(cmd) {
                 apply_sserafim_overlay_camera(cmd);
-                cmd.color = glam::vec4(1.0, 1.0, 1.0, self.flash.alpha_at(cursor));
+                cmd.color = glam::vec4(1.0, 1.0, 1.0, self.flash.alpha_at(cursor).max(intro_flash));
+            } else if is_sserafim_cutscene_only_texture(cmd.texture) {
+                cmd.color.w = if intro_active { 1.0 } else { 0.0 };
+            } else if intro_active && is_sserafim_gameplay_only_texture(cmd.texture) {
+                cmd.color.w = 0.0;
             } else if cmd.texture == sserafim_texture_id("images/sserafim/lights/truck-light1.png")
                 || cmd.texture == sserafim_texture_id("images/sserafim/lights/truck-light2.png")
             {
@@ -266,6 +283,73 @@ impl SserafimStageState {
         let started_at = self.end_started_at?;
         Some(cursor.0.saturating_sub(started_at.0).max(0))
     }
+
+    fn intro_cover_alpha(&self, cursor: Samples, sample_rate: u32, bpm: f64) -> f32 {
+        let Some(elapsed) = sserafim_intro_elapsed(cursor, sample_rate, bpm) else {
+            return 0.0;
+        };
+        let intro_fade = seconds_to_samples_at_rate(3.0, sample_rate).max(1);
+        if elapsed < intro_fade {
+            return 1.0 - elapsed as f32 / intro_fade as f32;
+        }
+        let crash = frame_samples_at_rate(563.0, sample_rate);
+        let reveal = frame_samples_at_rate(650.0, sample_rate);
+        if (crash..reveal).contains(&elapsed) {
+            return 1.0;
+        }
+        if elapsed >= reveal {
+            let reveal_elapsed = elapsed.saturating_sub(reveal);
+            if reveal_elapsed < intro_fade {
+                return 1.0 - reveal_elapsed as f32 / intro_fade as f32;
+            }
+        }
+        0.0
+    }
+
+    fn intro_flash_alpha(&self, cursor: Samples, sample_rate: u32, bpm: f64) -> f32 {
+        let Some(elapsed) = sserafim_intro_elapsed(cursor, sample_rate, bpm) else {
+            return 0.0;
+        };
+        let crash = frame_samples_at_rate(563.0, sample_rate);
+        if elapsed < crash {
+            return 0.0;
+        }
+        let flash_duration = frame_samples_at_rate(30.0, sample_rate).max(1);
+        let flash_elapsed = elapsed.saturating_sub(crash);
+        if flash_elapsed >= flash_duration {
+            0.0
+        } else {
+            1.0 - flash_elapsed as f32 / flash_duration as f32
+        }
+    }
+}
+
+pub(crate) fn sserafim_intro_start_cursor(sample_rate: u32, bpm: f64) -> Samples {
+    Samples(
+        countdown_start_cursor(sample_rate, bpm)
+            .0
+            .saturating_sub(seconds_to_samples_at_rate(
+                INTRO_DURATION_FRAMES / CUTSCENE_FPS,
+                sample_rate,
+            )),
+    )
+}
+
+pub(crate) fn sserafim_intro_event_cursor(frame: f32, sample_rate: u32, bpm: f64) -> Samples {
+    Samples(
+        sserafim_intro_start_cursor(sample_rate, bpm)
+            .0
+            .saturating_add(seconds_to_samples_at_rate(
+                frame / CUTSCENE_FPS,
+                sample_rate,
+            )),
+    )
+}
+
+pub(crate) fn sserafim_intro_elapsed(cursor: Samples, sample_rate: u32, bpm: f64) -> Option<i64> {
+    let start = sserafim_intro_start_cursor(sample_rate, bpm);
+    let countdown = countdown_start_cursor(sample_rate, bpm);
+    (cursor >= start && cursor < countdown).then_some(cursor.0.saturating_sub(start.0))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -515,6 +599,10 @@ fn seconds_to_samples(seconds: f32) -> i64 {
     (seconds.max(0.0) * 48_000.0).round() as i64
 }
 
+fn seconds_to_samples_at_rate(seconds: f32, sample_rate: u32) -> i64 {
+    (seconds.max(0.0) * sample_rate.max(1) as f32).round() as i64
+}
+
 fn parse_sserafim_color(value: &str) -> glam::Vec4 {
     let hex = value
         .trim()
@@ -606,6 +694,26 @@ fn sserafim_texture_id(path: &str) -> rustic_core::ids::AssetId {
     asset_id_for_path(&AssetPath::new(path).expect("valid built-in Sserafim asset path"))
 }
 
+fn is_sserafim_cutscene_only_texture(texture: rustic_core::ids::AssetId) -> bool {
+    texture == sserafim_texture_id("images/sserafim/cutscene/floor-cutscene.png")
+        || texture == sserafim_texture_id("images/sserafim/cutscene/counter-stretch.png")
+        || texture == sserafim_texture_id("images/sserafim/cutscene/burger-cutscene.png")
+}
+
+fn is_sserafim_gameplay_only_texture(texture: rustic_core::ids::AssetId) -> bool {
+    texture == sserafim_texture_id("images/sserafim/floor.png")
+        || texture == sserafim_texture_id("images/sserafim/back-tables.png")
+        || texture == sserafim_texture_id("images/sserafim/back-stools.png")
+        || texture == sserafim_texture_id("images/sserafim/front-stool.png")
+        || texture == sserafim_texture_id("images/sserafim/truck-stuff.png")
+        || texture == sserafim_texture_id("images/sserafim/dust/dustMid.png")
+        || texture == sserafim_texture_id("images/sserafim/dust/dustBack.png")
+}
+
+fn frame_samples_at_rate(frame: f32, sample_rate: u32) -> i64 {
+    seconds_to_samples_at_rate(frame / CUTSCENE_FPS, sample_rate)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -625,6 +733,115 @@ mod tests {
                 started_at: Samples(3),
             },
         }
+    }
+
+    #[test]
+    fn intro_timing_extends_before_countdown() {
+        let start = sserafim_intro_start_cursor(48_000, 120.0);
+        assert_eq!(start, Samples(-1_580_000));
+        assert_eq!(
+            sserafim_intro_event_cursor(730.0, 48_000, 120.0),
+            countdown_start_cursor(48_000, 120.0)
+        );
+        assert_eq!(sserafim_intro_elapsed(start, 48_000, 120.0), Some(0));
+        assert_eq!(
+            sserafim_intro_elapsed(countdown_start_cursor(48_000, 120.0), 48_000, 120.0),
+            None
+        );
+    }
+
+    #[test]
+    fn intro_switches_cutscene_and_gameplay_visibility() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        let cursor = sserafim_intro_start_cursor(48_000, 120.0);
+        let mut gameplay_floor = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/floor.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        gameplay_floor.layer = RenderLayer::Stage;
+        let mut cutscene_floor = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/cutscene/floor-cutscene.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        cutscene_floor.layer = RenderLayer::Stage;
+        cutscene_floor.color.w = 0.0;
+        let mut note = DrawCommand::sprite(
+            sserafim_texture_id("images/NOTE_assets.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        note.layer = RenderLayer::Notes;
+        let mut character = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/yunjin/spritemap1.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        character.layer = RenderLayer::Characters;
+        let mut cover = DrawCommand::sprite(
+            sserafim_texture_id("generated/stage/solid-000000.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+
+        state.apply_commands(
+            [
+                &mut gameplay_floor,
+                &mut cutscene_floor,
+                &mut note,
+                &mut character,
+                &mut cover,
+            ]
+            .into_iter(),
+            cursor,
+            48_000,
+            120.0,
+        );
+
+        assert_eq!(gameplay_floor.color.w, 0.0);
+        assert_eq!(cutscene_floor.color.w, 1.0);
+        assert_eq!(note.color.w, 0.0);
+        assert_eq!(character.color.w, 0.0);
+        assert_eq!(cover.color.w, 1.0);
+    }
+
+    #[test]
+    fn cutscene_props_hide_after_intro_window() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        let mut burger = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/cutscene/burger-cutscene.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        burger.layer = RenderLayer::Stage;
+        let mut flash = DrawCommand::sprite(
+            sserafim_texture_id("generated/stage/solid-FFFFFF.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        flash.layer = RenderLayer::Overlay;
+        flash.z = FLASH_OVERLAY_Z;
+
+        state.apply_commands(
+            [&mut burger, &mut flash].into_iter(),
+            sserafim_intro_event_cursor(563.0, 48_000, 120.0),
+            48_000,
+            120.0,
+        );
+        assert_eq!(burger.color.w, 1.0);
+        assert_eq!(flash.color.w, 1.0);
+
+        state.apply_commands(
+            [&mut burger, &mut flash].into_iter(),
+            countdown_start_cursor(48_000, 120.0),
+            48_000,
+            120.0,
+        );
+        assert_eq!(burger.color.w, 0.0);
+        assert_eq!(flash.color.w, 0.0);
     }
 
     #[test]
