@@ -186,10 +186,10 @@ impl App {
     }
 
     fn resume_song_clock_from(&mut self, cursor: Samples) {
-        if !self.song_started || self.audio_output.is_none() {
-            self.song_start_cursor = cursor;
-            self.song_start = Instant::now();
-        }
+        let now = Instant::now();
+        self.song_start_cursor = cursor;
+        self.song_start = now;
+        self.audio_clock.resume_from_pause(cursor, now);
         set_vocals_gain(&self.mixer, 1.0);
     }
 
