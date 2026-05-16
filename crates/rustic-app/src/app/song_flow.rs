@@ -48,7 +48,11 @@ impl App {
             return false;
         };
         let tail = i64::from(sample_rate.max(1)) * SONG_END_TAIL_SECONDS;
-        if cursor.0 < play_state.chart_end_cursor().0.saturating_add(tail) {
+        let mut finish_at = play_state.chart_end_cursor().0.saturating_add(tail);
+        if let Some(sserafim_finish_at) = self.sserafim_stage.finish_cursor_override() {
+            finish_at = finish_at.max(sserafim_finish_at.0);
+        }
+        if cursor.0 < finish_at {
             return false;
         }
         self.finish_current_song();

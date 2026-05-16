@@ -63,6 +63,13 @@ impl SserafimStageState {
         self.member_sings_player(member)
     }
 
+    pub(crate) fn finish_cursor_override(&self) -> Option<Samples> {
+        let started_at = self.end_started_at?;
+        Some(Samples(
+            started_at.0.saturating_add(seconds_to_samples(9.0)),
+        ))
+    }
+
     pub(crate) fn apply_event(&mut self, kind: &ChartEventKind, cursor: Samples) -> bool {
         let ChartEventKind::Sserafim(event) = kind else {
             return false;
@@ -155,6 +162,11 @@ impl SserafimStageState {
         let truck_alpha = self.truck_lights.alpha_at(cursor);
         let pulse = self.pulse.value_at(cursor, sample_rate, bpm);
         for cmd in commands {
+            if self.end_cutscene_active(cursor)
+                && matches!(cmd.layer, RenderLayer::Notes | RenderLayer::Hud)
+            {
+                cmd.color.w = 0.0;
+            }
             if matches!(cmd.layer, RenderLayer::Stage | RenderLayer::Characters) && dark > 0.0 {
                 cmd.color.x *= 1.0 - dark;
                 cmd.color.y *= 1.0 - dark;
@@ -209,6 +221,10 @@ impl SserafimStageState {
     fn end_cover_visible(&self, cursor: Samples) -> bool {
         self.end_elapsed(cursor)
             .is_some_and(|elapsed| elapsed >= seconds_to_samples(0.05))
+    }
+
+    fn end_cutscene_active(&self, cursor: Samples) -> bool {
+        self.end_cover_visible(cursor)
     }
 
     fn end_card_alpha(&self, cursor: Samples, card: EndCard) -> f32 {
@@ -748,5 +764,38 @@ mod tests {
         assert_eq!(first.color.w, 0.0);
         assert_eq!(second.color.w, 1.0);
         assert_eq!(second.camera, CameraId(2));
+    }
+
+    #[test]
+    fn end_cutscene_hides_gameplay_layers_until_scripted_finish() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::End),
+            Samples(1_000),
+        );
+        let mut note = DrawCommand::sprite(
+            sserafim_texture_id("images/NOTE_assets.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        note.layer = RenderLayer::Notes;
+        let mut hud = DrawCommand::sprite(
+            sserafim_texture_id("images/healthBar.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        hud.layer = RenderLayer::Hud;
+
+        state.apply_commands(
+            [&mut note, &mut hud].into_iter(),
+            Samples(4_000),
+            48_000,
+            100.0,
+        );
+
+        assert_eq!(note.color.w, 0.0);
+        assert_eq!(hud.color.w, 0.0);
+        assert_eq!(state.finish_cursor_override(), Some(Samples(433_000)));
     }
 }
