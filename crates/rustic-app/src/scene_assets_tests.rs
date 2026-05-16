@@ -199,6 +199,26 @@ fn sserafim_source_stage_registers_cutscene_and_dust_props() {
 }
 
 #[test]
+fn tankman_bloody_source_character_aliases_heh_pretty_good() {
+    let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("workspace root")
+        .to_path_buf();
+    let resolver = OverlayResolver::new().with_baked_root(workspace.join("assets/source"));
+    let character = load_character(
+        &resolver,
+        &AssetPath::new("data/characters/tankman-bloody.json").unwrap(),
+    )
+    .unwrap();
+
+    assert!(character
+        .animations
+        .iter()
+        .any(|animation| animation.name == "hehPrettyGood"));
+}
+
+#[test]
 fn all_registered_story_scenes_load_available_assets() {
     let render_state =
         pollster::block_on(rustic_render::RenderState::headless()).expect("headless render state");

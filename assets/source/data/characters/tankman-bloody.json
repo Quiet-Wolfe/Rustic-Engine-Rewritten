@@ -67,6 +67,12 @@
     },
     {
       "assetPath": "shared:characters/tankman/bloody",
+      "name": "hehPrettyGood",
+      "prefix": "pretty good bloody",
+      "offsets": [67, 110]
+    },
+    {
+      "assetPath": "shared:characters/tankman/bloody",
       "name": "redheadsAnim",
       "prefix": "redheads",
       "offsets": [67, 110]

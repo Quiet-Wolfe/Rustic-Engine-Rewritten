@@ -185,11 +185,36 @@ fn stress_pico_chart_events_trigger_scripted_poses() {
 
     assert!(state.play_chart_animation("dad", "redheadsAnim", Samples(1_000), true));
     assert!(state.play_chart_animation("boyfriend", "knifeToss", Samples(2_000), true));
+    assert!(state.play_chart_animation("dad", "hehPrettyGood", Samples(3_000), true));
 
-    assert_eq!(state.poses().opponent.name, "redheadsAnim");
-    assert_eq!(state.poses().opponent.started_at, Samples(1_000));
+    assert_eq!(state.poses().opponent.name, "hehPrettyGood");
+    assert_eq!(state.poses().opponent.started_at, Samples(3_000));
     assert_eq!(state.poses().player.name, "knifeToss");
     assert_eq!(state.poses().player.started_at, Samples(2_000));
+}
+
+#[test]
+fn week7_pico_chart_events_trigger_extra_poses() {
+    let mut state = CharacterAnimState::default();
+
+    for (target, animation, pose) in [
+        ("dad", "augh", "augh"),
+        ("dad", "ugh", "ugh"),
+        ("dad", "laugh", "laugh"),
+        ("dad", "beat it", "beat it"),
+        ("boyfriend", "burpShit", "burpShit"),
+        ("boyfriend", "burpSmile", "burpSmile"),
+        ("boyfriend", "burpSmileLong", "burpSmileLong"),
+        ("boyfriend", "shit", "shit"),
+    ] {
+        assert!(state.play_chart_animation(target, animation, Samples(4_000), true));
+        let actual = if target == "dad" {
+            state.poses().opponent.name
+        } else {
+            state.poses().player.name
+        };
+        assert_eq!(actual, pose);
+    }
 }
 
 #[test]
