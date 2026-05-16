@@ -212,6 +212,8 @@ impl SserafimStageState {
                 cmd.color = glam::vec4(1.0, 1.0, 1.0, self.flash.alpha_at(cursor).max(intro_flash));
             } else if is_sserafim_cutscene_only_texture(cmd.texture) {
                 cmd.color.w = if intro_active { 1.0 } else { 0.0 };
+            } else if is_sserafim_getup_cutscene_texture(cmd.texture) && self.girlfriend_visible {
+                cmd.color.w = 0.0;
             } else if intro_active && is_sserafim_gameplay_only_texture(cmd.texture) {
                 cmd.color.w = 0.0;
             } else if cmd.texture == sserafim_texture_id("images/sserafim/lights/truck-light1.png")
@@ -847,6 +849,11 @@ fn is_sserafim_cutscene_only_texture(texture: rustic_core::ids::AssetId) -> bool
         || texture == sserafim_texture_id("images/sserafim/cutscene/burger-cutscene.png")
 }
 
+fn is_sserafim_getup_cutscene_texture(texture: rustic_core::ids::AssetId) -> bool {
+    texture == sserafim_texture_id("images/sserafim/cutscene/gfGetUp/spritemap1.png")
+        || texture == sserafim_texture_id("images/sserafim/cutscene/bfGetUp/spritemap1.png")
+}
+
 fn is_sserafim_gameplay_only_texture(texture: rustic_core::ids::AssetId) -> bool {
     texture == sserafim_texture_id("images/sserafim/floor.png")
         || texture == sserafim_texture_id("images/sserafim/back-tables.png")
@@ -1125,6 +1132,29 @@ mod tests {
             100.0,
         );
         assert_eq!(door.color.w, 1.0);
+    }
+
+    #[test]
+    fn final_kick_hides_sserafim_getup_cutscene_sprites() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        let mut getup = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/cutscene/gfGetUp/spritemap1.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        getup.layer = RenderLayer::Stage;
+        getup.color.w = 0.5;
+
+        state.apply_commands(std::iter::once(&mut getup), Samples(0), 48_000, 100.0);
+        assert_eq!(getup.color.w, 0.5);
+
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::Kick { final_kick: true }),
+            Samples(1_000),
+        );
+        state.apply_commands(std::iter::once(&mut getup), Samples(1_000), 48_000, 100.0);
+        assert_eq!(getup.color.w, 0.0);
     }
 
     #[test]

@@ -608,10 +608,12 @@ fn sserafim_cutscene_animate_started_at(
     sample_rate: u32,
     bpm: f64,
 ) -> Option<Samples> {
-    let elapsed = sserafim_intro_elapsed(cursor, sample_rate, bpm)?;
     match id {
-        "sserafimCutsceneMain" => (elapsed < frame_samples_at_rate(563.0, sample_rate))
-            .then_some(sserafim_intro_start_cursor(sample_rate, bpm)),
+        "sserafimCutsceneMain" => {
+            let elapsed = sserafim_intro_elapsed(cursor, sample_rate, bpm)?;
+            (elapsed < frame_samples_at_rate(563.0, sample_rate))
+                .then_some(sserafim_intro_start_cursor(sample_rate, bpm))
+        }
         "sserafimBfGetUp" | "sserafimGfGetUp" => {
             let started_at = sserafim_intro_event_cursor(710.0, sample_rate, bpm);
             (cursor >= started_at).then_some(started_at)

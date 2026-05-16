@@ -1,6 +1,7 @@
 // LINT-ALLOW: long-file stage prop animation parity tests share fixtures and helpers.
 
 use super::*;
+use crate::countdown_assets::countdown_start_cursor;
 use crate::stage_scripted_motion::tank_rolling_pose;
 use rustic_asset::StageDefinition;
 
@@ -446,6 +447,29 @@ fn blazin_lightning_prop_only_draws_during_scripted_strikes() {
     assert!(prop
         .commands(Samples(216_000), 48_000, 180.0, None)
         .is_empty());
+}
+
+#[test]
+fn sserafim_getup_cutscene_sprites_continue_into_gameplay() {
+    let getup_start = sserafim_intro_event_cursor(710.0, 48_000, 120.0);
+
+    assert_eq!(
+        sserafim_cutscene_animate_started_at("sserafimGfGetUp", getup_start, 48_000, 120.0),
+        Some(getup_start)
+    );
+    assert_eq!(
+        sserafim_cutscene_animate_started_at(
+            "sserafimBfGetUp",
+            countdown_start_cursor(48_000, 120.0),
+            48_000,
+            120.0
+        ),
+        Some(getup_start)
+    );
+    assert_eq!(
+        sserafim_cutscene_animate_started_at("sserafimCutsceneMain", getup_start, 48_000, 120.0),
+        None
+    );
 }
 
 #[test]
