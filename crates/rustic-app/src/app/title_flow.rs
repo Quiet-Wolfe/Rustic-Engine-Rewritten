@@ -94,6 +94,7 @@ impl App {
             }
         }
         if let Some(assets) = self.freeplay_assets.as_mut() {
+            assets.set_selected_index(self.freeplay_selected_index, cursor, sample_rate);
             assets.tick(cursor, sample_rate);
         }
         if let Some(assets) = self.freeplay_assets.as_ref() {
@@ -580,6 +581,9 @@ impl App {
         self.clear_play_state_for_menu();
         self.load_freeplay_assets();
         self.sync_freeplay_selection_to_preview();
+        if let Some(assets) = self.freeplay_assets.as_mut() {
+            assets.snap_selected_index(self.freeplay_selected_index);
+        }
         // Drop the DJ into its Intro animation anchored at "now" so the eject-in
         // plays once before settling into Idle.
         // ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:848-857
@@ -750,6 +754,7 @@ impl App {
         let sample_rate = play_sample_rate(&self.mixer);
         let cursor = self.title_cursor(sample_rate);
         if let Some(assets) = self.freeplay_assets.as_mut() {
+            assets.snap_selected_index(self.freeplay_selected_index);
             assets.reset_dj_intro(cursor);
         }
     }
@@ -778,6 +783,7 @@ impl App {
         match load_freeplay_screen_assets(&runtime.rs.device, &runtime.rs.queue, style) {
             Ok(mut freeplay) => {
                 self.atlases = std::mem::take(&mut freeplay.textures);
+                freeplay.snap_selected_index(self.freeplay_selected_index);
                 self.freeplay_assets = Some(freeplay);
             }
             Err(e) => tracing::warn!(target: "rustic.asset", "freeplay assets unavailable: {e:#}"),

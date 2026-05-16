@@ -96,6 +96,7 @@ const WHITE_TEXTURE_ID: AssetId = AssetId::new(0x4672_6565_706c_6179);
 
 const ENTER_DURATION_SECS: f64 = 0.6;
 const CAPSULE_ENTER_OFFSET_X: f32 = 600.0;
+const SELECTION_TWEEN_SECS: f64 = 0.16;
 
 #[derive(Debug)]
 pub struct FreeplayAssets {
@@ -131,6 +132,10 @@ pub struct FreeplayAssets {
     backing_text: FreeplayBackingText,
     backing_text_skin: Option<BitmapTextSkin>,
     enter_started_at: Option<Samples>,
+    visual_selected_index: f32,
+    visual_selected_from: f32,
+    visual_selected_to: f32,
+    visual_selected_started_at: Option<Samples>,
     pub start_delay_secs: f64,
     capsule_text_colors: [glam::Vec4; 2],
     pub textures: HashMap<AssetId, Texture>,
@@ -216,11 +221,13 @@ impl FreeplayAssets {
         }
 
         let selected_index = self.clamped_index(selected_index);
+        let visual_selected_index = self.visual_selected_index(cursor, sample_rate);
         let capsule_enter_offset = (1.0 - enter_t) * CAPSULE_ENTER_OFFSET_X;
         self.push_capsules(
             &mut commands,
             selection,
             selected_index,
+            visual_selected_index,
             cursor,
             sample_rate,
             capsule_enter_offset,
@@ -232,7 +239,12 @@ impl FreeplayAssets {
         self.push_album(&mut commands, selection, cursor, sample_rate);
         self.push_letter_sort(&mut commands);
         self.push_difficulty_dots(&mut commands, selection.difficulty);
-        self.push_sparkles(&mut commands, selected_index, cursor, sample_rate);
+        self.push_sparkles(
+            &mut commands,
+            selected_index as f32 - visual_selected_index,
+            cursor,
+            sample_rate,
+        );
         commands
     }
 
@@ -240,7 +252,7 @@ impl FreeplayAssets {
     fn push_sparkles(
         &self,
         commands: &mut RenderCommandList,
-        selected_index: usize,
+        selected_offset: f32,
         cursor: Samples,
         sample_rate: u32,
     ) {
@@ -250,9 +262,7 @@ impl FreeplayAssets {
         ) else {
             return;
         };
-        let offset = 0.0f32; // selected capsule sits at offset 0
-        let capsule_pos = capsule_position(offset);
-        let _ = selected_index;
+        let capsule_pos = capsule_position(selected_offset);
         let ranking_pos =
             capsule_pos + glam::vec2(420.0 * CAPSULE_REAL_SCALED, 41.0 * CAPSULE_REAL_SCALED);
         commands.push(sparrow_scaled_command(
@@ -380,6 +390,7 @@ impl FreeplayAssets {
     ) -> TextCommandList {
         let mut commands = TextCommandList::new();
         let selected_index = self.clamped_index(selected_index);
+        let visual_selected_index = self.visual_selected_index(cursor, sample_rate);
 
         let enter_t = self.enter_progress(cursor, sample_rate);
         let top_y_offset = -(1.0 - enter_t) * 164.0;
@@ -422,7 +433,7 @@ impl FreeplayAssets {
         commands.push(hint);
 
         for (index, capsule) in self.songs.iter().enumerate() {
-            let offset = index as f32 - selected_index as f32;
+            let offset = index as f32 - visual_selected_index;
             let pos = capsule_position(offset) + glam::vec2(capsule_enter_offset_x, 0.0);
             let is_selected = index == selected_index;
             let text_pos = pos + capsule_text_offset();
@@ -474,6 +485,33 @@ impl FreeplayAssets {
         if let Some(dj) = self.dj.as_mut() {
             dj.tick(cursor, sample_rate);
         }
+        if self.visual_selected_started_at.is_some()
+            && selection_tween_elapsed(self.visual_selected_started_at, cursor, sample_rate) >= 1.0
+        {
+            self.visual_selected_index = self.visual_selected_to;
+            self.visual_selected_from = self.visual_selected_to;
+            self.visual_selected_started_at = None;
+        }
+    }
+
+    pub fn set_selected_index(&mut self, selected_index: usize, cursor: Samples, sample_rate: u32) {
+        let selected_index = self.clamped_index(selected_index);
+        if selected_index as f32 == self.visual_selected_to {
+            return;
+        }
+        let current = self.visual_selected_index(cursor, sample_rate);
+        self.visual_selected_index = current;
+        self.visual_selected_from = current;
+        self.visual_selected_to = selected_index as f32;
+        self.visual_selected_started_at = Some(cursor);
+    }
+
+    pub fn snap_selected_index(&mut self, selected_index: usize) {
+        let selected_index = self.clamped_index(selected_index) as f32;
+        self.visual_selected_index = selected_index;
+        self.visual_selected_from = selected_index;
+        self.visual_selected_to = selected_index;
+        self.visual_selected_started_at = None;
     }
 
     /// Reset the DJ into the Intro animation AND restart the menu slide-in
@@ -499,6 +537,15 @@ impl FreeplayAssets {
         let secs = elapsed / f64::from(sample_rate.max(1));
         let t = (secs / ENTER_DURATION_SECS).clamp(0.0, 1.0) as f32;
         1.0 - (1.0 - t).powi(4)
+    }
+
+    fn visual_selected_index(&self, cursor: Samples, sample_rate: u32) -> f32 {
+        let t = selection_tween_elapsed(self.visual_selected_started_at, cursor, sample_rate);
+        if t >= 1.0 {
+            return self.visual_selected_to;
+        }
+        let eased = 1.0 - (1.0 - t).powi(4);
+        self.visual_selected_from + (self.visual_selected_to - self.visual_selected_from) * eased
     }
 
     /// Trigger the DJ Confirm animation when a song is selected.
@@ -558,6 +605,7 @@ impl FreeplayAssets {
         commands: &mut RenderCommandList,
         selection: PreviewSelection,
         selected_index: usize,
+        visual_selected_index: f32,
         cursor: Samples,
         sample_rate: u32,
         enter_offset_x: f32,
@@ -569,7 +617,7 @@ impl FreeplayAssets {
         let enter_anchor = self.enter_started_at.unwrap_or(Samples(0));
         let (beat_scale_x, beat_scale_y) = capsule_beat_scale(cursor, enter_anchor, sample_rate);
         for index in 0..self.songs.len() {
-            let offset = index as f32 - selected_index as f32;
+            let offset = index as f32 - visual_selected_index;
             let pos = capsule_position(offset) + glam::vec2(enter_offset_x, 0.0);
             let is_selected = index == selected_index;
             let frames = if is_selected {
@@ -806,6 +854,14 @@ impl FreeplayAssets {
     }
 }
 
+fn selection_tween_elapsed(started_at: Option<Samples>, cursor: Samples, sample_rate: u32) -> f32 {
+    let Some(started_at) = started_at else {
+        return 1.0;
+    };
+    let elapsed = cursor.0.saturating_sub(started_at.0).max(0) as f64;
+    (elapsed / f64::from(sample_rate.max(1)) / SELECTION_TWEEN_SECS).clamp(0.0, 1.0) as f32
+}
+
 #[derive(Debug)]
 struct FreeplayCapsule {
     kind: CapsuleKind,
@@ -825,4 +881,25 @@ enum CapsuleKind {
     /// ref: bdedc0aa:source/funkin/ui/freeplay/FreeplayState.hx:971-981
     Random,
     Song(PreviewSong),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selection_tween_elapsed_clamps_to_transition_duration() {
+        let sample_rate = 48_000;
+        let start = Samples(1_000);
+        let half = Samples(start.0 + (f64::from(sample_rate) * SELECTION_TWEEN_SECS * 0.5) as i64);
+        let done = Samples(start.0 + (f64::from(sample_rate) * SELECTION_TWEEN_SECS) as i64);
+
+        assert_eq!(selection_tween_elapsed(None, start, sample_rate), 1.0);
+        assert!((selection_tween_elapsed(Some(start), half, sample_rate) - 0.5).abs() < 0.01);
+        assert_eq!(selection_tween_elapsed(Some(start), done, sample_rate), 1.0);
+        assert_eq!(
+            selection_tween_elapsed(Some(start), Samples(start.0 - 10), sample_rate),
+            0.0
+        );
+    }
 }
