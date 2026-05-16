@@ -2,6 +2,7 @@ use super::App;
 use crate::menu_audio::MenuSound;
 use crate::options_menu_assets::{load_options_menu_assets, OptionsMenuAction, OptionsMenuPage};
 use crate::options_preferences::{PreferenceChange, PreferenceInput};
+use crate::settings::Settings;
 use rustic_core::input::InputAction;
 use rustic_core::time::Samples;
 use rustic_render::{RenderCommandList, TextCommandList};
@@ -86,6 +87,10 @@ impl App {
             self.apply_options_preference_input(PreferenceInput::Confirm);
             return;
         }
+        if self.options_menu_page == OptionsMenuPage::ClearSaveConfirm {
+            self.confirm_clear_save_data();
+            return;
+        }
         if self.options_menu_page != OptionsMenuPage::Root {
             self.back_from_options_menu();
             return;
@@ -101,8 +106,31 @@ impl App {
                 self.options_menu_index = 0;
                 self.rebuild_options_menu_commands();
             }
+            Some(OptionsMenuAction::ClearSaveData) => {
+                self.options_menu_page = OptionsMenuPage::ClearSaveConfirm;
+                self.options_menu_index = 1;
+                self.rebuild_options_menu_commands();
+            }
             Some(OptionsMenuAction::Exit) | None => self.load_main_menu(),
         }
+    }
+
+    fn confirm_clear_save_data(&mut self) {
+        if self.options_menu_index != 0 {
+            self.back_from_options_menu();
+            return;
+        }
+        self.play_menu_sound(MenuSound::Confirm);
+        self.settings = Settings::default();
+        self.options_preferences = crate::options_preferences::OptionsPreferences::default();
+        if let Some(path) = self.settings_path.as_deref() {
+            if let Err(e) = self.settings.save_atomic(path) {
+                tracing::warn!(target: "rustic.settings", "clear save data failed: {e:#}");
+            }
+        }
+        self.options_menu_page = OptionsMenuPage::Root;
+        self.options_menu_index = 0;
+        self.rebuild_options_menu_commands();
     }
 
     fn apply_options_preference_input(&mut self, input: PreferenceInput) {

@@ -20,12 +20,13 @@ pub enum OptionsMenuPage {
     Root,
     Preferences,
     Controls,
-    SaveData,
+    ClearSaveConfirm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionsMenuAction {
     Page(OptionsMenuPage),
+    ClearSaveData,
     Exit,
 }
 
@@ -126,7 +127,7 @@ impl OptionsMenuPage {
             Self::Root => "OPTIONS",
             Self::Preferences => "PREFERENCES",
             Self::Controls => "CONTROLS",
-            Self::SaveData => "SAVE DATA OPTIONS",
+            Self::ClearSaveConfirm => "CLEAR SAVE DATA",
         }
     }
 
@@ -135,16 +136,16 @@ impl OptionsMenuPage {
             Self::Root => ROOT_ITEMS.as_slice(),
             Self::Preferences => &[],
             Self::Controls => CONTROL_ITEMS.as_slice(),
-            Self::SaveData => SAVE_DATA_ITEMS.as_slice(),
+            Self::ClearSaveConfirm => CLEAR_SAVE_CONFIRM_ITEMS.as_slice(),
         }
     }
 }
 
-const ROOT_ITEMS: [&str; 4] = ["PREFERENCES", "CONTROLS", "SAVE DATA OPTIONS", "EXIT"];
+const ROOT_ITEMS: [&str; 4] = ["PREFERENCES", "CONTROLS", "CLEAR SAVE DATA", "EXIT"];
 const ROOT_ACTIONS: [OptionsMenuAction; 4] = [
     OptionsMenuAction::Page(OptionsMenuPage::Preferences),
     OptionsMenuAction::Page(OptionsMenuPage::Controls),
-    OptionsMenuAction::Page(OptionsMenuPage::SaveData),
+    OptionsMenuAction::ClearSaveData,
     OptionsMenuAction::Exit,
 ];
 const CONTROL_ITEMS: [&str; 5] = [
@@ -154,7 +155,7 @@ const CONTROL_ITEMS: [&str; 5] = [
     "RIGHT       D / RIGHT",
     "BACK",
 ];
-const SAVE_DATA_ITEMS: [&str; 2] = ["CLEAR SAVE DATA", "BACK"];
+const CLEAR_SAVE_CONFIRM_ITEMS: [&str; 2] = ["DELETE", "CANCEL"];
 
 fn item_label(
     page: OptionsMenuPage,
@@ -262,7 +263,24 @@ mod tests {
             assets.action_for_root(0),
             Some(OptionsMenuAction::Page(OptionsMenuPage::Preferences))
         );
+        assert_eq!(
+            assets.action_for_root(2),
+            Some(OptionsMenuAction::ClearSaveData)
+        );
         assert_eq!(assets.action_for_root(3), Some(OptionsMenuAction::Exit));
+        assert_eq!(
+            item_label(OptionsMenuPage::Root, 2, OptionsPreferences::default()).as_deref(),
+            Some("CLEAR SAVE DATA")
+        );
+        assert_eq!(
+            item_label(
+                OptionsMenuPage::ClearSaveConfirm,
+                1,
+                OptionsPreferences::default()
+            )
+            .as_deref(),
+            Some("CANCEL")
+        );
     }
 
     #[test]
