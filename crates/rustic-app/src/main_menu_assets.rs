@@ -24,6 +24,7 @@ const ACCEPT_BG_FLICKER_INTERVAL_SECONDS: f32 = 0.15;
 pub enum MainMenuAction {
     StoryMode,
     Freeplay,
+    Merch,
     Options,
     Credits,
 }
@@ -148,50 +149,61 @@ pub fn load_main_menu_assets(device: &wgpu::Device, queue: &wgpu::Queue) -> Resu
     let resolver = OverlayResolver::new().with_baked_root(baked_assets_root());
     let mut textures = HashMap::new();
     let background = load_background(device, queue, &resolver, &mut textures)?;
-    let items = vec![
-        load_menu_item(
-            device,
-            queue,
-            &resolver,
-            &mut textures,
-            MainMenuAction::StoryMode,
-            "images/mainmenu/storymode.xml",
-            "storymode",
-        )?,
-        load_menu_item(
-            device,
-            queue,
-            &resolver,
-            &mut textures,
-            MainMenuAction::Freeplay,
-            "images/mainmenu/freeplay.xml",
-            "freeplay",
-        )?,
-        load_menu_item(
-            device,
-            queue,
-            &resolver,
-            &mut textures,
-            MainMenuAction::Options,
-            "images/mainmenu/options.xml",
-            "options",
-        )?,
-        load_menu_item(
-            device,
-            queue,
-            &resolver,
-            &mut textures,
-            MainMenuAction::Credits,
-            "images/mainmenu/credits.xml",
-            "credits",
-        )?,
-    ];
+    let items = MAIN_MENU_ITEMS
+        .iter()
+        .map(|item| {
+            load_menu_item(
+                device,
+                queue,
+                &resolver,
+                &mut textures,
+                item.action,
+                item.atlas_path,
+                item.prefix,
+            )
+        })
+        .collect::<Result<Vec<_>>>()?;
     Ok(MainMenuAssets {
         background,
         items,
         textures,
     })
 }
+
+#[derive(Debug, Clone, Copy)]
+struct MainMenuItemDefinition {
+    action: MainMenuAction,
+    atlas_path: &'static str,
+    prefix: &'static str,
+}
+
+const MAIN_MENU_ITEMS: [MainMenuItemDefinition; 5] = [
+    MainMenuItemDefinition {
+        action: MainMenuAction::StoryMode,
+        atlas_path: "images/mainmenu/storymode.xml",
+        prefix: "storymode",
+    },
+    MainMenuItemDefinition {
+        action: MainMenuAction::Freeplay,
+        atlas_path: "images/mainmenu/freeplay.xml",
+        prefix: "freeplay",
+    },
+    MainMenuItemDefinition {
+        action: MainMenuAction::Merch,
+        atlas_path: "images/mainmenu/merch.xml",
+        prefix: "merch",
+    },
+    MainMenuItemDefinition {
+        action: MainMenuAction::Options,
+        atlas_path: "images/mainmenu/options.xml",
+        prefix: "options",
+    },
+    MainMenuItemDefinition {
+        action: MainMenuAction::Credits,
+        atlas_path: "images/mainmenu/credits.xml",
+        prefix: "credits",
+    },
+];
 
 fn load_background(
     device: &wgpu::Device,
@@ -412,7 +424,25 @@ mod tests {
 
     #[test]
     fn menu_item_top_matches_og_spacing() {
-        assert_eq!(menu_top(4), 120.0);
+        assert_eq!(menu_top(5), 40.0);
+    }
+
+    #[test]
+    fn desktop_menu_order_matches_upstream() {
+        let actions = MAIN_MENU_ITEMS
+            .iter()
+            .map(|item| item.action)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actions,
+            vec![
+                MainMenuAction::StoryMode,
+                MainMenuAction::Freeplay,
+                MainMenuAction::Merch,
+                MainMenuAction::Options,
+                MainMenuAction::Credits,
+            ]
+        );
     }
 
     #[test]

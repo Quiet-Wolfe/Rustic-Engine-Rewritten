@@ -15,11 +15,13 @@ use rustic_audio::Stem;
 use rustic_core::input::InputAction;
 use rustic_core::time::Samples;
 use rustic_render::{CameraRegistry, RenderCommandList, TextCommandList};
+use std::process::Command;
 use std::time::Instant;
 use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
 
 const MAIN_MENU_CONFIRM_DELAY_SECONDS: i64 = 1;
+const MERCH_URL_FALLBACK: &str = "https://needlejuicerecords.com/en-ca/pages/friday-night-funkin";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AppMode {
@@ -386,9 +388,19 @@ impl App {
         match action {
             Some(MainMenuAction::StoryMode) => self.load_story_menu(),
             Some(MainMenuAction::Freeplay) => self.enter_song_select(),
+            Some(MainMenuAction::Merch) => {
+                self.open_merch_url();
+                self.rebuild_main_menu_commands();
+            }
             Some(MainMenuAction::Options) => self.load_options_menu(),
             Some(MainMenuAction::Credits) => self.load_credits_screen(),
             None => {}
+        }
+    }
+
+    fn open_merch_url(&self) {
+        if let Err(e) = open_url(MERCH_URL_FALLBACK) {
+            tracing::warn!(target: "rustic.app", "open merch URL failed: {e}");
         }
     }
 
@@ -787,4 +799,39 @@ impl App {
         let elapsed = self.title_start.elapsed().as_secs_f64();
         Samples((elapsed * f64::from(sample_rate)).round() as i64)
     }
+}
+
+fn open_url(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("cmd");
+        command.args(["/C", "start", "", url]);
+        command
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(url);
+        command
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(url);
+        command
+    };
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", unix)))]
+    {
+        let _ = url;
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "opening URLs is not supported on this platform",
+        ));
+    }
+
+    command.spawn()?;
+    Ok(())
 }
