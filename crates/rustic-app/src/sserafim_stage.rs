@@ -1,6 +1,7 @@
 //! Runtime hooks for the Spaghetti Sserafim stage script.
 // LINT-ALLOW: long-file Sserafim stage script state and tests stay together.
 
+use crate::camera_fx::CameraFx;
 use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
 use crate::countdown_assets::countdown_start_cursor;
 use crate::preview_song::PreviewSong;
@@ -9,7 +10,7 @@ use rustic_asset::{AssetPath, ChartEventKind, SserafimEvent};
 use rustic_core::ids::CameraId;
 use rustic_core::render::RenderLayer;
 use rustic_core::time::Samples;
-use rustic_render::DrawCommand;
+use rustic_render::{CameraRegistry, DrawCommand};
 
 const BASE_VISIBLE: [bool; 5] = [true, false, false, false, false];
 const BASE_SINGING: [bool; 6] = [false, false, false, false, false, false];
@@ -243,6 +244,39 @@ impl SserafimStageState {
                 apply_dust_clear(cmd, started_at, cursor);
             }
         }
+    }
+
+    pub(crate) fn apply_camera(
+        &self,
+        cameras: &mut CameraRegistry,
+        camera_fx: &mut CameraFx,
+        cursor: Samples,
+        sample_rate: u32,
+        bpm: f64,
+    ) {
+        if !self.active {
+            return;
+        }
+        let Some(elapsed) = sserafim_intro_elapsed(cursor, sample_rate, bpm) else {
+            return;
+        };
+        let frame_650 = frame_samples_at_rate(650.0, sample_rate);
+        let (position, zoom) = if elapsed < frame_650 {
+            let progress = circ_out(
+                elapsed as f32 / seconds_to_samples_at_rate(3.0, sample_rate).max(1) as f32,
+            );
+            (
+                glam::vec2(660.0, -200.0).lerp(glam::vec2(660.0, 300.0), progress),
+                lerp(0.5, 0.7, progress),
+            )
+        } else {
+            let progress = circ_out(
+                elapsed.saturating_sub(frame_650) as f32
+                    / seconds_to_samples_at_rate(3.0, sample_rate).max(1) as f32,
+            );
+            (glam::vec2(1070.0, 470.0), lerp(0.7, 0.55, progress))
+        };
+        camera_fx.force_game_camera(cameras, position, zoom);
     }
 
     fn member_visible(&self, member: SserafimMember) -> bool {
@@ -714,6 +748,15 @@ fn frame_samples_at_rate(frame: f32, sample_rate: u32) -> i64 {
     seconds_to_samples_at_rate(frame / CUTSCENE_FPS, sample_rate)
 }
 
+fn circ_out(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    (1.0 - (t - 1.0).powi(2)).sqrt()
+}
+
+fn lerp(from: f32, to: f32, progress: f32) -> f32 {
+    from + (to - from) * progress.clamp(0.0, 1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,6 +848,26 @@ mod tests {
         assert_eq!(note.color.w, 0.0);
         assert_eq!(character.color.w, 0.0);
         assert_eq!(cover.color.w, 1.0);
+    }
+
+    #[test]
+    fn intro_camera_matches_scripted_cutscene_beats() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        let mut cameras = CameraRegistry::with_default_fnf();
+        let mut camera_fx = CameraFx::default();
+        let start = sserafim_intro_start_cursor(48_000, 120.0);
+
+        state.apply_camera(&mut cameras, &mut camera_fx, start, 48_000, 120.0);
+        let camera = cameras.get(CameraId(0)).unwrap();
+        assert_eq!(camera.position, glam::vec2(660.0, -200.0));
+        assert_eq!(camera.zoom, 0.5);
+
+        let after_crash = sserafim_intro_event_cursor(650.0, 48_000, 120.0);
+        state.apply_camera(&mut cameras, &mut camera_fx, after_crash, 48_000, 120.0);
+        let camera = cameras.get(CameraId(0)).unwrap();
+        assert_eq!(camera.position, glam::vec2(1070.0, 470.0));
+        assert_eq!(camera.zoom, 0.7);
     }
 
     #[test]

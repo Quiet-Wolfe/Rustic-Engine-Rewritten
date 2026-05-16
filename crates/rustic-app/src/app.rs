@@ -573,6 +573,13 @@ impl App {
             }
             self.camera_fx
                 .update(&mut self.cameras, cursor, sample_rate, bpm);
+            self.sserafim_stage.apply_camera(
+                &mut self.cameras,
+                &mut self.camera_fx,
+                cursor,
+                sample_rate,
+                bpm,
+            );
             if let Some(cutscene) = self.winter_horrorland_cutscene.as_ref() {
                 cutscene.apply_camera(&mut self.cameras, &mut self.camera_fx, cursor, sample_rate);
             }
