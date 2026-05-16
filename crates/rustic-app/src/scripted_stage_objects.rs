@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use rustic_asset::{AssetPath, AssetVec2, StageObject};
+use rustic_core::render::RenderLayer;
 
 pub(crate) fn scripted_stage_objects(stage_id: &str) -> Result<Vec<StageObject>> {
     match stage_id {
@@ -147,6 +148,19 @@ fn limo_erect_objects() -> Result<Vec<StageObject>> {
 fn sserafim_objects() -> Result<Vec<StageObject>> {
     Ok(vec![
         sserafim_floor_object()?,
+        sserafim_flash_object()?,
+        sserafim_end_card(
+            "sserafimEnd1",
+            "images/sserafim/end/end1.png",
+            glam::vec2(387.745, 108.08),
+            glam::Vec2::splat(0.67),
+        )?,
+        sserafim_end_card(
+            "sserafimEnd2",
+            "images/sserafim/end/end2.png",
+            glam::vec2(516.4, 629.75),
+            glam::Vec2::splat(0.67),
+        )?,
         sserafim_dust_object(
             "sserafimDust1",
             "dustMid",
@@ -225,6 +239,32 @@ fn limo_mist_object(
     )
 }
 
+fn sserafim_flash_object() -> Result<StageObject> {
+    let mut object = png_object(
+        "sserafimFlash",
+        "generated/stage/solid-FFFFFF.png",
+        glam::Vec2::ZERO,
+        glam::vec2(1280.0, 720.0),
+        glam::Vec2::ONE,
+        10_001,
+        0.0,
+    )?;
+    object.layer = RenderLayer::Overlay;
+    object.solid_color = Some([255, 255, 255, 255]);
+    Ok(object)
+}
+
+fn sserafim_end_card(
+    id: &str,
+    image: &str,
+    position: glam::Vec2,
+    scale: glam::Vec2,
+) -> Result<StageObject> {
+    let mut object = png_object(id, image, position, scale, glam::Vec2::ONE, 10_000, 0.0)?;
+    object.layer = RenderLayer::Overlay;
+    Ok(object)
+}
+
 fn sserafim_floor_object() -> Result<StageObject> {
     png_object(
         "sserafimFloor",
@@ -296,12 +336,17 @@ mod tests {
         assert_eq!(tank[0].id, "tankCloudsScrolling");
 
         let sserafim = scripted_stage_objects("sserafim").unwrap();
-        assert_eq!(sserafim.len(), 5);
+        assert_eq!(sserafim.len(), 8);
         assert_eq!(sserafim[0].id, "sserafimFloor");
         assert_eq!(sserafim[0].image.as_str(), "images/sserafim/floor.png");
         assert_eq!(sserafim[0].position.x, 790.0);
+        assert_eq!(sserafim[1].id, "sserafimFlash");
+        assert_eq!(sserafim[1].layer, RenderLayer::Overlay);
+        assert_eq!(sserafim[1].solid_color, Some([255, 255, 255, 255]));
+        assert_eq!(sserafim[2].id, "sserafimEnd1");
+        assert_eq!(sserafim[3].image.as_str(), "images/sserafim/end/end2.png");
         assert_eq!(
-            sserafim[1].image.as_str(),
+            sserafim[4].image.as_str(),
             "images/sserafim/dust/dustMid.png"
         );
 

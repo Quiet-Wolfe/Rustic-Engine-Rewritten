@@ -5,12 +5,14 @@ use crate::character_anim::{CharacterPoseNames, CharacterPoseRequest};
 use crate::preview_song::PreviewSong;
 use crate::stage_object_asset_helpers::{asset_id_for_path, stage_beat, stage_beat_start};
 use rustic_asset::{AssetPath, ChartEventKind, SserafimEvent};
+use rustic_core::ids::CameraId;
 use rustic_core::render::RenderLayer;
 use rustic_core::time::Samples;
 use rustic_render::DrawCommand;
 
 const BASE_VISIBLE: [bool; 5] = [true, false, false, false, false];
 const BASE_SINGING: [bool; 6] = [false, false, false, false, false, false];
+const FLASH_OVERLAY_Z: i32 = 10_001;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SserafimStageState {
@@ -24,6 +26,8 @@ pub(crate) struct SserafimStageState {
     pulse: PulseLights,
     yunjin_intro: YunjinIntro,
     dust_clear: Option<Samples>,
+    flash: TimedFlash,
+    end_started_at: Option<Samples>,
 }
 
 impl Default for SserafimStageState {
@@ -39,6 +43,8 @@ impl Default for SserafimStageState {
             pulse: PulseLights::default(),
             yunjin_intro: YunjinIntro::default(),
             dust_clear: None,
+            flash: TimedFlash::default(),
+            end_started_at: None,
         }
     }
 }
@@ -94,9 +100,13 @@ impl SserafimStageState {
                     self.dust_clear = Some(cursor);
                 }
             }
-            SserafimEvent::Flash { .. }
-            | SserafimEvent::GuitarVibration { .. }
-            | SserafimEvent::End => {}
+            SserafimEvent::Flash { duration } => {
+                self.flash = TimedFlash::new(1.0, *duration, cursor);
+            }
+            SserafimEvent::End => {
+                self.end_started_at = Some(cursor);
+            }
+            SserafimEvent::GuitarVibration { .. } => {}
             _ => {}
         }
         true
@@ -151,7 +161,14 @@ impl SserafimStageState {
                 cmd.color.z *= 1.0 - dark;
             }
             if cmd.texture == sserafim_texture_id("generated/stage/solid-000000.png") {
-                cmd.color.w = if self.cover_visible { 1.0 } else { 0.0 };
+                cmd.color.w = if self.cover_visible || self.end_cover_visible(cursor) {
+                    1.0
+                } else {
+                    0.0
+                };
+            } else if is_flash_overlay(cmd) {
+                apply_sserafim_overlay_camera(cmd);
+                cmd.color = glam::vec4(1.0, 1.0, 1.0, self.flash.alpha_at(cursor));
             } else if cmd.texture == sserafim_texture_id("images/sserafim/lights/truck-light1.png")
                 || cmd.texture == sserafim_texture_id("images/sserafim/lights/truck-light2.png")
             {
@@ -165,6 +182,12 @@ impl SserafimStageState {
                 == sserafim_texture_id("images/sserafim/lights/back-light-white.png")
             {
                 cmd.color.w = pulse.alpha * 0.8;
+            } else if cmd.texture == sserafim_texture_id("images/sserafim/end/end1.png") {
+                apply_sserafim_overlay_camera(cmd);
+                cmd.color.w = self.end_card_alpha(cursor, EndCard::First);
+            } else if cmd.texture == sserafim_texture_id("images/sserafim/end/end2.png") {
+                apply_sserafim_overlay_camera(cmd);
+                cmd.color.w = self.end_card_alpha(cursor, EndCard::Second);
             }
             if let Some(started_at) = self.dust_clear {
                 apply_dust_clear(cmd, started_at, cursor);
@@ -182,6 +205,30 @@ impl SserafimStageState {
     fn member_sings_player(&self, member: SserafimMember) -> bool {
         self.singing[member.singing_index()]
     }
+
+    fn end_cover_visible(&self, cursor: Samples) -> bool {
+        self.end_elapsed(cursor)
+            .is_some_and(|elapsed| elapsed >= seconds_to_samples(0.05))
+    }
+
+    fn end_card_alpha(&self, cursor: Samples, card: EndCard) -> f32 {
+        let Some(elapsed) = self.end_elapsed(cursor) else {
+            return 0.0;
+        };
+        let first_start = seconds_to_samples(0.05);
+        let second_start = seconds_to_samples(4.0);
+        let hide_all = seconds_to_samples(8.0);
+        match card {
+            EndCard::First if (first_start..second_start).contains(&elapsed) => 1.0,
+            EndCard::Second if (second_start..hide_all).contains(&elapsed) => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    fn end_elapsed(&self, cursor: Samples) -> Option<i64> {
+        let started_at = self.end_started_at?;
+        Some(cursor.0.saturating_sub(started_at.0).max(0))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,6 +239,12 @@ pub(crate) enum SserafimMember {
     Eunchae,
     Sakura,
     Girlfriend,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EndCard {
+    First,
+    Second,
 }
 
 impl SserafimMember {
@@ -471,6 +524,17 @@ fn apply_dust_clear(cmd: &mut DrawCommand, started_at: Samples, cursor: Samples)
     cmd.world_pos.y += spec.y_offset * progress;
 }
 
+fn is_flash_overlay(cmd: &DrawCommand) -> bool {
+    cmd.texture == sserafim_texture_id("generated/stage/solid-FFFFFF.png")
+        && cmd.layer == RenderLayer::Overlay
+        && cmd.z == FLASH_OVERLAY_Z
+}
+
+fn apply_sserafim_overlay_camera(cmd: &mut DrawCommand) {
+    cmd.camera = CameraId(2);
+    cmd.layer = RenderLayer::Overlay;
+}
+
 fn dust_clear_spec(cmd: &DrawCommand) -> Option<DustClearSpec> {
     if cmd.texture == sserafim_texture_id("images/sserafim/dust/dustMid.png") {
         return Some(if cmd.world_pos.y > -300.0 {
@@ -599,5 +663,90 @@ mod tests {
 
         assert!(dust.color.w < 0.8);
         assert!(dust.world_pos.y > -200.0);
+    }
+
+    #[test]
+    fn flash_event_only_drives_flash_overlay() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::Flash { duration: 1.6 }),
+            Samples(0),
+        );
+
+        let mut flash = DrawCommand::sprite(
+            sserafim_texture_id("generated/stage/solid-FFFFFF.png"),
+            glam::Vec2::ZERO,
+            glam::vec2(1280.0, 720.0),
+        );
+        flash.layer = RenderLayer::Overlay;
+        flash.z = FLASH_OVERLAY_Z;
+        flash.color.w = 0.0;
+        let mut white_background = DrawCommand::sprite(
+            sserafim_texture_id("generated/stage/solid-FFFFFF.png"),
+            glam::vec2(-5000.0, -3000.0),
+            glam::vec2(10_000.0, 10_000.0),
+        );
+        white_background.layer = RenderLayer::Stage;
+        white_background.color.w = 1.0;
+
+        state.apply_commands(
+            [&mut flash, &mut white_background].into_iter(),
+            Samples(38_400),
+            48_000,
+            100.0,
+        );
+
+        assert!((flash.color.w - 0.5).abs() < 0.001);
+        assert_eq!(flash.camera, CameraId(2));
+        assert_eq!(white_background.color.w, 1.0);
+    }
+
+    #[test]
+    fn end_event_shows_sserafim_cards_and_cover_on_timers() {
+        let mut state = SserafimStageState::default();
+        state.reset_for_song(PreviewSong::SPAGHETTI);
+        state.apply_event(
+            &ChartEventKind::Sserafim(SserafimEvent::End),
+            Samples(1_000),
+        );
+        let mut cover = DrawCommand::sprite(
+            sserafim_texture_id("generated/stage/solid-000000.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        let mut first = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/end/end1.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+        let mut second = DrawCommand::sprite(
+            sserafim_texture_id("images/sserafim/end/end2.png"),
+            glam::Vec2::ZERO,
+            glam::Vec2::ONE,
+        );
+
+        state.apply_commands(
+            [&mut cover, &mut first, &mut second].into_iter(),
+            Samples(49_000),
+            48_000,
+            100.0,
+        );
+
+        assert_eq!(cover.color.w, 1.0);
+        assert_eq!(first.color.w, 1.0);
+        assert_eq!(first.camera, CameraId(2));
+        assert_eq!(second.color.w, 0.0);
+
+        state.apply_commands(
+            [&mut cover, &mut first, &mut second].into_iter(),
+            Samples(5 * 48_000 + 1_000),
+            48_000,
+            100.0,
+        );
+
+        assert_eq!(first.color.w, 0.0);
+        assert_eq!(second.color.w, 1.0);
+        assert_eq!(second.camera, CameraId(2));
     }
 }
