@@ -93,7 +93,9 @@ impl DialogueState {
         sprites.push(colored_rect(
             glam::vec2(70.0, 438.0),
             glam::vec2(1140.0, 220.0),
-            glam::vec4(0.03, 0.03, 0.05, 0.88),
+            self.current_line()
+                .map(|line| dialogue_box_color_for_box(&line.box_id))
+                .unwrap_or_else(|| dialogue_box_color_for_box("roses")),
             20_001,
         ));
         if let Some(line) = self.current_line() {
@@ -102,7 +104,7 @@ impl DialogueState {
                 line.speaker.to_ascii_uppercase(),
                 glam::vec2(108.0, 466.0),
                 26.0,
-                glam::vec4(1.0, 0.9, 0.62, 1.0),
+                speaker_color_for_box(&line.box_id),
                 20_010,
                 Some(1040.0),
             );
@@ -273,9 +275,32 @@ fn push_text(
 
 fn text_color_for_box(box_id: &str) -> glam::Vec4 {
     match box_id {
-        "thorns" => glam::vec4(0.92, 0.96, 1.0, 1.0),
-        _ => glam::vec4(1.0, 0.96, 0.90, 1.0),
+        "thorns" => hex_color(0xff, 0xff, 0xff),
+        _ => hex_color(0x3f, 0x20, 0x21),
     }
+}
+
+fn speaker_color_for_box(box_id: &str) -> glam::Vec4 {
+    match box_id {
+        "thorns" => glam::vec4(0.92, 0.96, 1.0, 1.0),
+        _ => glam::vec4(0.90, 0.34, 0.47, 1.0),
+    }
+}
+
+fn dialogue_box_color_for_box(box_id: &str) -> glam::Vec4 {
+    match box_id {
+        "thorns" => glam::vec4(0.04, 0.02, 0.08, 0.92),
+        _ => glam::vec4(0.96, 0.82, 0.86, 0.96),
+    }
+}
+
+fn hex_color(red: u8, green: u8, blue: u8) -> glam::Vec4 {
+    glam::vec4(
+        f32::from(red) / 255.0,
+        f32::from(green) / 255.0,
+        f32::from(blue) / 255.0,
+        1.0,
+    )
 }
 
 #[cfg(test)]
@@ -344,5 +369,12 @@ mod tests {
         let color = parse_hex_color("#BFB3DFD8").unwrap();
         assert!((color.x - 0xB3 as f32 / 255.0).abs() < 0.001);
         assert!((color.w - 0xBF as f32 / 255.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn dialogue_box_styles_match_week6_box_data_colors() {
+        assert_eq!(text_color_for_box("roses"), hex_color(0x3f, 0x20, 0x21));
+        assert_eq!(text_color_for_box("thorns"), glam::Vec4::ONE);
+        assert!(dialogue_box_color_for_box("roses").x > dialogue_box_color_for_box("thorns").x);
     }
 }
