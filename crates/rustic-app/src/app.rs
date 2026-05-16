@@ -338,7 +338,10 @@ impl App {
                 let bpm = play_state.bpm;
                 self.play_state = Some(play_state);
                 self.reset_song_runtime(bpm);
-                self.dialogue = match DialogueState::load_for_selection(self.preview_selection) {
+                self.dialogue = match DialogueState::load_for_selection(
+                    self.preview_selection,
+                    !self.story_playlist.is_empty(),
+                ) {
                     Ok(dialogue) => dialogue,
                     Err(e) => {
                         tracing::warn!(target: "rustic.asset", "dialogue unavailable: {e:#}");

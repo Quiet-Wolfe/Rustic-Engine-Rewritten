@@ -39,7 +39,13 @@ pub(crate) enum DialogueAdvance {
 }
 
 impl DialogueState {
-    pub(crate) fn load_for_selection(selection: PreviewSelection) -> Result<Option<Self>> {
+    pub(crate) fn load_for_selection(
+        selection: PreviewSelection,
+        story_mode: bool,
+    ) -> Result<Option<Self>> {
+        if !story_mode {
+            return Ok(None);
+        }
         let Some(id) = conversation_id_for_selection(selection) else {
             return Ok(None);
         };
@@ -332,6 +338,18 @@ mod tests {
             )),
             Some("thorns")
         );
+    }
+
+    #[test]
+    fn freeplay_selection_does_not_load_story_dialogue() {
+        let selection = PreviewSelection::new(PreviewSong::SENPAI, PreviewDifficulty::Normal);
+
+        assert!(DialogueState::load_for_selection(selection, false)
+            .unwrap()
+            .is_none());
+        assert!(DialogueState::load_for_selection(selection, true)
+            .unwrap()
+            .is_some());
     }
 
     #[test]
